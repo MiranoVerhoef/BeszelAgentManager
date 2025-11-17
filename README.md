@@ -52,7 +52,7 @@ python -m venv .venv
 pip install pyinstaller requests
 pip install pystray pillow
 
-python -m PyInstaller --onefile --noconsole --add-data "BeszelAgentManager_icon.ico;." --add-data "BeszelAgentManager_icon_512.png;." --icon=BeszelAgentManager_icon.ico -n BeszelAgentManager beszel_agent_manager\main.py
+pyinstaller BeszelAgentManager.spec
 ```
 
 This will produce:
