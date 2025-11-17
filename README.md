@@ -72,12 +72,7 @@ The resulting EXE will have:
 If you prefer not to use the spec file, you can also run:
 
 ```powershell
-pyinstaller --onefile --noconsole ^
-  --icon=BeszelAgentManager_icon.ico ^
-  --version-file=file_version_info.txt ^
-  --add-data "BeszelAgentManager_icon.ico;." ^
-  --add-data "BeszelAgentManager_icon_512.png;." ^
-  -n BeszelAgentManager beszel_agent_manager\main.py
+python -m PyInstaller --onefile --noconsole --add-data "BeszelAgentManager_icon.ico;." --add-data "BeszelAgentManager_icon_512.png;." --icon=BeszelAgentManager_icon.ico -n BeszelAgentManager beszel_agent_manager\main.py
 ```
 
 The EXE will be created at `dist\BeszelAgentManager.exe`.
