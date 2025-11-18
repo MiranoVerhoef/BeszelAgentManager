@@ -1,5 +1,19 @@
+
+
 # BeszelAgentManager 1.1.0
 ## Vibe Code
+
+### Main – Connection
+![Beszel Agent Manager – Connection](Images/BeszelAgentManagerMain-Connection.png)
+
+### Tray Icon
+![Beszel Agent Manager – Tray](Images/BeszelAgentManagerTray.png)
+
+### Main – Advanced
+![Beszel Agent Manager – Advanced](Images/BeszelAgentManagerMain-Advanced.png)
+
+### Main – Logging
+![Beszel Agent Manager – Logging](Images/BeszelAgentManagerMain-Logging.png)
 
 BeszelAgentManager is a Windows GUI helper that installs and manages the Beszel agent.
 
