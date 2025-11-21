@@ -3,6 +3,11 @@
 # BeszelAgentManager 1.1.0
 ## Vibe Code
 
+### TODO:
+1. Make known that an Firewall Exception is being made
+2. Make the GUI more Prettier
+3. Make it more robust
+
 BeszelAgentManager is a Windows GUI helper that installs and manages the Beszel agent.
 
 ### Main – Connection
