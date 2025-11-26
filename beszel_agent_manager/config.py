@@ -1,16 +1,16 @@
 from __future__ import annotations
-from dataclasses import dataclass, asdict
 import json
-from typing import Dict, Any
-from .constants import CONFIG_PATH, DEFAULT_LISTEN_PORT
-from .util import ensure_data_dir, log
+import dataclasses
+from dataclasses import dataclass
+from .constants import CONFIG_PATH, DATA_DIR
+
 
 @dataclass
 class AgentConfig:
     key: str = ""
     token: str = ""
     hub_url: str = ""
-    listen: int = DEFAULT_LISTEN_PORT
+    listen: int | None = None
 
     data_dir: str = ""
     docker_host: str = ""
@@ -34,40 +34,35 @@ class AgentConfig:
     system_name: str = ""
     skip_gpu: str = ""
 
-    auto_update_enabled: bool = False
+    auto_update_enabled: bool = True
     update_interval_days: int = 1
     last_known_version: str = ""
+
     debug_logging: bool = False
 
-    def to_dict(self) -> Dict[str, Any]:
-        return asdict(self)
+    # Default behavior: start hidden when launched with Windows (tray only)
+    start_hidden: bool = True
 
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AgentConfig":
-        kwargs: Dict[str, Any] = {}
-        for field in cls.__dataclass_fields__.values():  # type: ignore[attr-defined]
-            if field.name in data:
-                kwargs[field.name] = data[field.name]
-        return cls(**kwargs)
-
-    def save(self) -> None:
-        ensure_data_dir()
-        with CONFIG_PATH.open("w", encoding="utf-8") as f:
-            json.dump(self.to_dict(), f, indent=2)
-        log("Saved configuration.")
+    # Internal flag so the GUI shows only on the very first run
+    first_run_done: bool = False
 
     @classmethod
     def load(cls) -> "AgentConfig":
-        ensure_data_dir()
-        if not CONFIG_PATH.exists():
-            log("No config file found, using defaults.")
-            return cls()
-        try:
-            with CONFIG_PATH.open("r", encoding="utf-8") as f:
-                data = json.load(f)
-            cfg = cls.from_dict(data)
-            log("Loaded configuration from disk.")
-            return cfg
-        except Exception as exc:
-            log(f"Failed to load config, using defaults. Error: {exc}")
-            return cls()
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        if CONFIG_PATH.exists():
+            try:
+                with CONFIG_PATH.open("r", encoding="utf-8") as f:
+                    raw = json.load(f)
+                kwargs: dict[str, object] = {}
+                for fld in dataclasses.fields(cls):
+                    kwargs[fld.name] = raw.get(fld.name, fld.default)
+                return cls(**kwargs)
+            except Exception:
+                return cls()
+        return cls()
+
+    def save(self) -> None:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        data = dataclasses.asdict(self)
+        with CONFIG_PATH.open("w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)

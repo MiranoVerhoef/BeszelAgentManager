@@ -13,8 +13,28 @@ else:
 
 
 def ensure_data_dir() -> None:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    LOG_PATH.touch(exist_ok=True)
+    """
+    Ensure the data directory and log file exist.
+
+    Any PermissionError is treated as non-fatal: logging will just fall back
+    to printing to stdout instead of crashing the whole app.
+    """
+    try:
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
+    except PermissionError:
+        # Can't create data dir; nothing we can do, but don't crash.
+        return
+    except OSError:
+        # Some other filesystem error; also non-fatal.
+        return
+
+    try:
+        LOG_PATH.touch(exist_ok=True)
+    except PermissionError:
+        # No permission to create/touch the log file; silently ignore.
+        pass
+    except OSError:
+        pass
 
 
 def log(message: str) -> None:
@@ -25,6 +45,7 @@ def log(message: str) -> None:
         with LOG_PATH.open("a", encoding="utf-8") as f:
             f.write(line + "\n")
     except OSError:
+        # Fall back to stdout if we can't write the log file.
         print(line)
 
 

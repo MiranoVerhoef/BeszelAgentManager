@@ -1,53 +1,81 @@
 from __future__ import annotations
-from pathlib import Path
+import os
 import sys
+from pathlib import Path
 
-try:
-    import winreg  # type: ignore[attr-defined]
-except ImportError:
-    winreg = None  # type: ignore
+from .constants import PROJECT_NAME, PROGRAM_FILES
 
-from .constants import PROJECT_NAME, DATA_DIR
-from .util import log
-
-RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
-VALUE_NAME = PROJECT_NAME
+if os.name == "nt":
+    import winreg  # type: ignore
 
 
-def _get_executable_path() -> Path:
+def _get_exe_path() -> Path:
     if getattr(sys, "frozen", False):
-        return Path(sys.executable)
-    return Path(sys.argv[0]).resolve()
+        exe = Path(sys.executable).resolve()
+    else:
+        exe = Path(sys.argv[0]).resolve()
+
+    pf_exe = Path(PROGRAM_FILES) / PROJECT_NAME / exe.name
+    if pf_exe.exists():
+        return pf_exe
+    return exe
 
 
 def is_autostart_enabled() -> bool:
-    if winreg is None:
+    if os.name != "nt":
         return False
     try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_READ) as key:
-            value, _ = winreg.QueryValueEx(key, VALUE_NAME)
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+        ) as key:
+            value, _ = winreg.QueryValueEx(key, PROJECT_NAME)
             return bool(value)
+    except FileNotFoundError:
+        return False
     except OSError:
         return False
 
 
-def set_autostart(enabled: bool) -> None:
-    if winreg is None:
-        log("winreg not available, cannot configure autostart.")
+def set_autostart(enabled: bool, start_hidden: bool) -> None:
+    """Create or remove the Run entry.
+
+    When start_hidden is True, append --hidden so the GUI starts to tray only.
+    """
+    if os.name != "nt":
         return
-    exe_path = _get_executable_path()
+
+    exe_path = _get_exe_path()
+    cmd = f'"{exe_path}"'
+    if start_hidden:
+        cmd += " --hidden"
+
+    run_key = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
     try:
-        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            run_key,
+            0,
+            winreg.KEY_SET_VALUE,
+        ) as key:
             if enabled:
-                winreg.SetValueEx(key, VALUE_NAME, 0, winreg.REG_SZ, str(exe_path))
-                log(f"Autostart enabled for {exe_path}")
+                winreg.SetValueEx(key, PROJECT_NAME, 0, winreg.REG_SZ, cmd)
             else:
                 try:
-                    winreg.DeleteValue(key, VALUE_NAME)
-                    log("Autostart disabled.")
+                    winreg.DeleteValue(key, PROJECT_NAME)
                 except FileNotFoundError:
                     pass
     except FileNotFoundError:
-        with winreg.CreateKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
-            if enabled:
-                winreg.SetValueEx(key, VALUE_NAME, 0, winreg.REG_SZ, str(exe_path))
+        if enabled:
+            try:
+                with winreg.CreateKey(
+                    winreg.HKEY_CURRENT_USER,
+                    run_key,
+                ) as key:
+                    winreg.SetValueEx(key, PROJECT_NAME, 0, winreg.REG_SZ, cmd)
+            except OSError:
+                pass
+    except OSError:
+        # Non-fatal; just don't crash if registry access fails.
+        pass

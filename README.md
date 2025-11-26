@@ -1,25 +1,6 @@
-
-
 # BeszelAgentManager 1.1.0
-## Vibe Code
-
-### TODO:
-https://github.com/users/MiranoVerhoef/projects/1/views/1
 
 BeszelAgentManager is a Windows GUI helper that installs and manages the Beszel agent.
-
-### Main – Connection
-![Beszel Agent Manager – Connection](Images/BeszelAgentManagerMain-Connection.png)
-
-### Tray Icon
-![Beszel Agent Manager – Tray](Images/BeszelAgentManagerTray.png)
-
-### Main – Advanced
-![Beszel Agent Manager – Advanced](Images/BeszelAgentManagerMain-Advanced.png)
-
-### Main – Logging
-![Beszel Agent Manager – Logging](Images/BeszelAgentManagerMain-Logging.png)
-
 
 - Installs agent to: `C:\\Program Files\\Beszel-Agent\\beszel-agent.exe`
 - Creates/updates an NSSM-based Windows service:
@@ -91,7 +72,12 @@ The resulting EXE will have:
 If you prefer not to use the spec file, you can also run:
 
 ```powershell
-python -m PyInstaller --onefile --noconsole --add-data "BeszelAgentManager_icon.ico;." --add-data "BeszelAgentManager_icon_512.png;." --icon=BeszelAgentManager_icon.ico -n BeszelAgentManager beszel_agent_manager\main.py
+pyinstaller --onefile --noconsole ^
+  --icon=BeszelAgentManager_icon.ico ^
+  --version-file=file_version_info.txt ^
+  --add-data "BeszelAgentManager_icon.ico;." ^
+  --add-data "BeszelAgentManager_icon_512.png;." ^
+  -n BeszelAgentManager beszel_agent_manager\main.py
 ```
 
 The EXE will be created at `dist\BeszelAgentManager.exe`.
