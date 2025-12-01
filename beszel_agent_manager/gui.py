@@ -271,6 +271,7 @@ class BeszelAgentManagerApp(tk.Tk):
 
         self.var_debug_logging = tk.BooleanVar(value=c.debug_logging)
         self.var_autostart = tk.BooleanVar(value=autostart.is_autostart_enabled())
+        # default: tray-only on boot
         self.var_start_visible = tk.BooleanVar(value=False)
 
         self.env_definitions = [
@@ -455,33 +456,37 @@ class BeszelAgentManagerApp(tk.Tk):
         conn.columnconfigure(2, weight=0)
         notebook.add(conn, text="Connection")
 
-        self._make_lockable_entry(
+        self._make_locked_entry_with_dialog(
             conn,
             row=0,
             label="Key",
             var=self.var_key,
             tooltip="Public key from Beszel hub (KEY).",
+            is_int=False,
         )
-        self._make_lockable_entry(
+        self._make_locked_entry_with_dialog(
             conn,
             row=1,
             label="Token",
             var=self.var_token,
             tooltip="Optional token (TOKEN).",
+            is_int=False,
         )
-        self._make_lockable_entry(
+        self._make_locked_entry_with_dialog(
             conn,
             row=2,
             label="Hub URL",
             var=self.var_hub_url,
             tooltip="Monitoring / hub URL (HUB_URL).",
+            is_int=False,
         )
-        self._make_lockable_entry(
+        self._make_locked_entry_with_dialog(
             conn,
             row=3,
             label="Listen (port)",
             var=self.var_listen,
             tooltip="Agent listen port (LISTEN), default 45876.",
+            is_int=True,
         )
 
         conn.columnconfigure(0, weight=0)
@@ -619,6 +624,7 @@ class BeszelAgentManagerApp(tk.Tk):
         # ---------------- Logging tab ----------------
         log_tab = ttk.Frame(notebook, padding=10, style="Card.TFrame")
         log_tab.columnconfigure(0, weight=1)
+        log_tab.rowconfigure(3, weight=1)
         notebook.add(log_tab, text="Logging")
 
         chk_debug = ttk.Checkbutton(
@@ -641,10 +647,34 @@ class BeszelAgentManagerApp(tk.Tk):
         )
         lbl_path.grid(row=2, column=0, sticky="w")
 
-        btn_open_log = ttk.Button(
-            log_tab, text="Open log folder", command=self._open_log_folder
+        # Embedded log viewer
+        log_frame = ttk.Frame(log_tab, style="Card.TFrame", padding=(4, 4, 4, 4))
+        log_frame.grid(row=3, column=0, sticky="nsew", pady=(8, 0))
+        log_frame.columnconfigure(0, weight=1)
+        log_frame.rowconfigure(0, weight=1)
+
+        self.log_text = tk.Text(
+            log_frame,
+            wrap="none",
+            font=("Consolas", 9),
+            state="disabled",
+            bg="#ffffff",
         )
-        btn_open_log.grid(row=3, column=0, sticky="w", pady=(4, 0))
+        log_scroll = ttk.Scrollbar(
+            log_frame, orient="vertical", command=self.log_text.yview
+        )
+        self.log_text.configure(yscrollcommand=log_scroll.set)
+
+        self.log_text.grid(row=0, column=0, sticky="nsew")
+        log_scroll.grid(row=0, column=1, sticky="ns")
+
+        btn_refresh_log = ttk.Button(
+            log_tab, text="Refresh log", command=self._refresh_log_view
+        )
+        btn_refresh_log.grid(row=4, column=0, sticky="w", pady=(6, 0))
+
+        # initial load
+        self._refresh_log_view()
 
         # ---------------- Bottom section ----------------
         outer.rowconfigure(2, weight=0)
@@ -798,9 +828,26 @@ class BeszelAgentManagerApp(tk.Tk):
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-    # ------------------------------------------------------------------ Entry helpers
+    # ------------------------------------------------------------------ Locked entry + dialog helper
 
-    def _make_lockable_entry(self, parent, row: int, label: str, var, tooltip: str):
+    def _make_locked_entry_with_dialog(
+        self,
+        parent,
+        row: int,
+        label: str,
+        var,
+        tooltip: str,
+        is_int: bool = False,
+    ):
+        """
+        Creates a row with:
+         - Label
+         - Read-only entry (shows current value)
+         - 'Change' button that opens a small dialog to edit the value.
+
+        The main entry itself never becomes editable, which avoids all the ttk
+        state quirks you've been seeing. Editing happens in the dialog only.
+        """
         lbl = ttk.Label(parent, text=label + ":", style="Card.TLabel")
         lbl.grid(row=row, column=0, sticky="w", pady=2)
 
@@ -810,25 +857,69 @@ class BeszelAgentManagerApp(tk.Tk):
         btn = ttk.Button(parent, text="Change")
         btn.grid(row=row, column=2, sticky="w", padx=(4, 0), pady=2)
 
-        def toggle():
-            state = entry.cget("state")
-            if state == "readonly":
-                entry.configure(state="normal")
-                btn.configure(text="Lock")
-                entry.focus_set()
-                try:
-                    entry.icursor("end")
-                except Exception:
-                    pass
-            else:
-                entry.configure(state="readonly")
-                btn.configure(text="Change")
+        def open_dialog():
+            top = tk.Toplevel(self)
+            top.title(f"Change {label}")
+            top.transient(self)
+            top.grab_set()
+            top.resizable(False, False)
 
-        btn.configure(command=toggle)
+            frm = ttk.Frame(top, padding=10)
+            frm.grid(row=0, column=0, sticky="nsew")
+            frm.columnconfigure(1, weight=1)
+
+            ttk.Label(frm, text=f"{label}:", style="Card.TLabel").grid(
+                row=0, column=0, sticky="w"
+            )
+
+            current_value = str(var.get())
+            tmp_var = tk.StringVar(value=current_value)
+
+            ent = ttk.Entry(frm, textvariable=tmp_var)
+            ent.grid(row=0, column=1, sticky="ew", padx=(6, 0))
+            ent.focus_set()
+            ent.icursor("end")
+
+            btn_frame = ttk.Frame(frm)
+            btn_frame.grid(row=1, column=0, columnspan=2, sticky="e", pady=(10, 0))
+
+            def on_save():
+                val = tmp_var.get()
+                if is_int:
+                    try:
+                        iv = int(val)
+                    except ValueError:
+                        messagebox.showerror(
+                            PROJECT_NAME,
+                            f"{label} must be a number.",
+                            parent=top,
+                        )
+                        return
+                    var.set(iv)
+                else:
+                    var.set(val)
+                top.destroy()
+
+            def on_cancel():
+                top.destroy()
+
+            btn_ok = ttk.Button(btn_frame, text="Save", command=on_save)
+            btn_ok.grid(row=0, column=0, padx=(0, 6))
+
+            btn_cancel = ttk.Button(btn_frame, text="Cancel", command=on_cancel)
+            btn_cancel.grid(row=0, column=1)
+
+            # centre dialog over main window
+            self.update_idletasks()
+            x = self.winfo_rootx() + (self.winfo_width() // 2) - (top.winfo_reqwidth() // 2)
+            y = self.winfo_rooty() + (self.winfo_height() // 2) - (top.winfo_reqheight() // 2)
+            top.geometry(f"+{x}+{y}")
+
+        btn.configure(command=open_dialog)
 
         add_tooltip(lbl, tooltip)
         add_tooltip(entry, tooltip)
-        add_tooltip(btn, "Unlock / lock editing for this field.")
+        add_tooltip(btn, "Open a dialog to change this value safely.")
         return entry, btn
 
     # ------------------------------------------------------------------ Env table helpers
@@ -936,6 +1027,24 @@ class BeszelAgentManagerApp(tk.Tk):
         if name in self.active_env_names:
             self.active_env_names.remove(name)
         self._rebuild_env_rows()
+
+    # ------------------------------------------------------------------ Log viewer
+
+    def _refresh_log_view(self):
+        """Load LOG_PATH into the embedded text box."""
+        try:
+            if LOG_PATH.exists():
+                content = LOG_PATH.read_text(encoding="utf-8", errors="replace")
+            else:
+                content = "(Log file does not exist yet.)"
+        except Exception as exc:
+            content = f"Failed to read log file:\n{exc}"
+
+        self.log_text.configure(state="normal")
+        self.log_text.delete("1.0", tk.END)
+        self.log_text.insert(tk.END, content)
+        self.log_text.configure(state="disabled")
+        self.log_text.see(tk.END)
 
     # ------------------------------------------------------------------ Other helpers
 
@@ -1083,6 +1192,7 @@ class BeszelAgentManagerApp(tk.Tk):
                 self.progress.grid_remove()
                 self._task_running = False
                 self._update_status()
+                self._refresh_log_view()
                 if error:
                     messagebox.showerror(
                         PROJECT_NAME, f"Operation failed:\n{error}"
@@ -1277,6 +1387,7 @@ class BeszelAgentManagerApp(tk.Tk):
                 self.progress.grid_remove()
                 self._task_running = False
                 self._update_status()
+                self._refresh_log_view()
                 if error:
                     messagebox.showerror(
                         PROJECT_NAME, f"Uninstall failed:\n{error}"
@@ -1304,6 +1415,7 @@ class BeszelAgentManagerApp(tk.Tk):
                 start_service()
             finally:
                 self.after(0, self._update_status)
+                self.after(0, self._refresh_log_view)
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -1316,6 +1428,7 @@ class BeszelAgentManagerApp(tk.Tk):
                 stop_service()
             finally:
                 self.after(0, self._update_status)
+                self.after(0, self._refresh_log_view)
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -1328,10 +1441,11 @@ class BeszelAgentManagerApp(tk.Tk):
                 restart_service()
             finally:
                 self.after(0, self._update_status)
+                self.after(0, self._refresh_log_view)
 
         threading.Thread(target=worker, daemon=True).start()
 
-    # ------------------------------------------------------------------ Status / about / hub ping
+    # ------------------------------------------------------------------ Status / hub / links
 
     def _on_version_clicked(self, _event=None):
         url = (
