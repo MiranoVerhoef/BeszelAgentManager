@@ -1,52 +1,40 @@
 from __future__ import annotations
 
+import json
 import os
+import re
 import shutil
 import subprocess
-import zipfile
-import json
 import urllib.request
-import re
+import zipfile
 from pathlib import Path
 from typing import Optional, Tuple
 
-from .constants import (
-    AGENT_DIR,
-    DATA_DIR,
-    PROJECT_NAME,
-    APP_VERSION,
-)
-from .util import log
-from .windows_service import (
-    create_or_update_service,
-    get_service_status,
-)
-
-# Always import delete_update_task (it exists in your scheduler)
+from .config import AgentConfig
+from .constants import AGENT_DIR, DATA_DIR, PROJECT_NAME
 from .scheduler import delete_update_task
+from .util import log
+from .windows_service import create_or_update_service, get_service_status
 
-# Try to import ensure_update_task, but gracefully handle older scheduler.py
+# Try to import ensure_update_task (newer scheduler). Fall back silently if missing.
 try:
     from .scheduler import ensure_update_task  # type: ignore[attr-defined]
 except ImportError:  # pragma: no cover
-    def ensure_update_task(*args, **kwargs):
-        """
-        Fallback stub if this version of scheduler.py does not provide
-        ensure_update_task. Auto-update scheduling will simply be disabled,
-        but the manager will not crash.
-        """
+    def ensure_update_task(*_args, **_kwargs):
         log(
-            "Warning: ensure_update_task not found in beszel_agent_manager.scheduler; "
+            "Warning: ensure_update_task not found in scheduler; "
             "auto-update scheduling is disabled in this build."
         )
-
-
-from .config import AgentConfig
 
 
 AGENT_EXE_NAME = "beszel-agent.exe"
 AGENT_ZIP_PATTERN = "beszel-agent_windows_amd64.zip"
 GITHUB_REPO = "henrygd/beszel"
+
+if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW"):
+    CREATE_NO_WINDOW = subprocess.CREATE_NO_WINDOW
+else:
+    CREATE_NO_WINDOW = 0
 
 
 # ---------------------------------------------------------------------------
@@ -65,16 +53,13 @@ def _normalize_version(ver: str | None) -> str | None:
 
     ver = ver.strip()
 
-    # Strip leading 'v' if present (v0.17.0 -> 0.17.0)
     if ver.lower().startswith("v"):
         ver = ver[1:].strip()
 
-    # Look for first x.y.z pattern
     m = re.search(r"\d+\.\d+\.\d+", ver)
     if m:
         return m.group(0)
 
-    # Fallback: return whatever we have, stripped
     return ver or None
 
 
@@ -153,12 +138,26 @@ def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -
     Also logs the version + optional changelog ("What's changed") to manager.log.
     """
     agent_dir = _ensure_agent_dir()
+    exe_path = _agent_exe_path()
+    zip_path = agent_dir / "beszel-agent.zip"
+
+    # Try to remove an existing exe to avoid PermissionError while extracting
+    if exe_path.exists():
+        try:
+            os.chmod(exe_path, 0o666)
+            exe_path.unlink()
+        except PermissionError as exc:
+            raise RuntimeError(
+                f"Existing agent executable is in use: {exe_path}\n"
+                "Please stop the Beszel agent service and try again."
+            ) from exc
+        except Exception as exc:
+            log(f"Warning: could not remove existing agent exe before update: {exc}")
 
     url = (
         f"https://github.com/{GITHUB_REPO}/releases/download/"
         f"v{version}/{AGENT_ZIP_PATTERN}"
     )
-    zip_path = agent_dir / "beszel-agent.zip"
 
     log(f"Downloading agent from {url}")
     try:
@@ -171,6 +170,11 @@ def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -
     try:
         with zipfile.ZipFile(zip_path, "r") as zf:
             zf.extractall(agent_dir)
+    except PermissionError as exc:
+        raise RuntimeError(
+            f"Failed to extract agent zip because {exe_path} is in use.\n"
+            "Please stop the Beszel agent service and try again."
+        ) from exc
     except Exception as exc:
         raise RuntimeError(f"Failed to extract agent zip: {exc}") from exc
     finally:
@@ -180,14 +184,12 @@ def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -
         except Exception as exc:
             log(f"Failed to remove agent zip: {exc}")
 
-    exe_path = _agent_exe_path()
     if not exe_path.exists():
         raise RuntimeError(f"Agent binary not found after extract: {exe_path}")
 
     log_msg = f"Installed/updated Beszel agent to version {version}."
     if changelog:
         log_msg += "\nWhat's changed (from GitHub release):\n"
-        # Avoid huge logs – keep a reasonable number of lines.
         lines = [ln.rstrip() for ln in changelog.splitlines()]
         while lines and not lines[0]:
             lines.pop(0)
@@ -204,9 +206,6 @@ def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -
 
 
 def _build_env_from_config(cfg: AgentConfig) -> dict:
-    """
-    Build environment variables dict for the agent process from AgentConfig.
-    """
     env = os.environ.copy()
 
     def set_if(value: str | None, key: str):
@@ -239,7 +238,7 @@ def _build_env_from_config(cfg: AgentConfig) -> dict:
     set_if(cfg.system_name, "SYSTEM_NAME")
     set_if(cfg.skip_gpu, "SKIP_GPU")
 
-    # Newer env vars (v0.17.0+); may not exist on older configs
+    # v0.17.0+ envs
     disk_usage_cache = getattr(cfg, "disk_usage_cache", None)
     skip_systemd = getattr(cfg, "skip_systemd", None)
     set_if(disk_usage_cache, "DISK_USAGE_CACHE")
@@ -266,6 +265,7 @@ def _run_agent_once(cfg: AgentConfig, args: list[str]) -> subprocess.CompletedPr
         stderr=subprocess.PIPE,
         text=True,
         timeout=60,
+        creationflags=CREATE_NO_WINDOW,
     )
 
 
@@ -279,22 +279,18 @@ def install_or_update_agent_and_service(cfg: AgentConfig) -> None:
     """
     version, changelog = _fetch_latest_agent_release()
     if not version:
-        # Fallback path – still works, but no changelog
         version = _parse_download_version()
         changelog = None
 
     log(f"Starting agent install/update to version {version}")
     _download_and_extract_agent(version, changelog=changelog)
 
-    # Service + scheduled task
-    exe_path = _agent_exe_path()
     env = _build_env_from_config(cfg)
     log("Configuring Windows service for Beszel agent")
-    create_or_update_service(
-        exe_path=str(exe_path),
-        listen_port=cfg.listen,
-        env=env,
-    )
+
+    # IMPORTANT: keep this signature in sync with windows_service.create_or_update_service
+    # windows_service.create_or_update_service currently expects a single 'env' argument.
+    create_or_update_service(env)
 
     if cfg.auto_update_enabled:
         log(
@@ -316,11 +312,9 @@ def apply_configuration_only(cfg: AgentConfig) -> None:
 
     env = _build_env_from_config(cfg)
     log("Updating Windows service configuration for Beszel agent")
-    create_or_update_service(
-        exe_path=str(exe_path),
-        listen_port=cfg.listen,
-        env=env,
-    )
+
+    # IMPORTANT: keep this signature in sync with windows_service.create_or_update_service
+    create_or_update_service(env)
 
     if cfg.auto_update_enabled:
         log(
@@ -335,9 +329,6 @@ def apply_configuration_only(cfg: AgentConfig) -> None:
 def update_agent_only() -> None:
     """
     Update only the agent binary in AGENT_DIR, without touching service/scheduler.
-
-    This is used by the GUI "Update agent" and by any code paths that want
-    a pure binary update.
     """
     version, changelog = _fetch_latest_agent_release()
     if not version:
@@ -367,6 +358,7 @@ def get_agent_version() -> str:
             stderr=subprocess.PIPE,
             text=True,
             timeout=10,
+            creationflags=CREATE_NO_WINDOW,
         )
         raw = (result.stdout or "").strip() or (result.stderr or "").strip()
         if not raw:
@@ -384,16 +376,10 @@ def get_agent_version() -> str:
 
 
 def check_hub_status(hub_url: str | None) -> str:
-    """
-    Simple status string used by the GUI – whether the hub URL looks configured.
-    (Detailed reachability/ping is done in the GUI itself.)
-    """
     if not hub_url:
         return "Not configured"
     return "Configured"
 
-
-# Convenience used by other modules (if any)
 
 def get_current_service_status() -> str:
     return get_service_status()

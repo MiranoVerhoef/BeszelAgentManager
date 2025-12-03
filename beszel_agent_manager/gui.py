@@ -57,6 +57,9 @@ from .defender import (
 )
 from .bootstrap import is_admin
 
+# Legacy directory from very early versions (cleanup on uninstall/self-delete)
+LEGACY_AGENT_DIR = Path(r"C:\Beszel-Agent")
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -1429,6 +1432,19 @@ class BeszelAgentManagerApp(tk.Tk):
                 except Exception as exc:
                     log(f"Failed to remove agent dir {AGENT_DIR}: {exc}")
 
+                # Also clean ProgramData and legacy C:\Beszel-Agent
+                try:
+                    if DATA_DIR.exists():
+                        rmtree(DATA_DIR)
+                except Exception as exc:
+                    log(f"Failed to remove data dir {DATA_DIR}: {exc}")
+
+                try:
+                    if LEGACY_AGENT_DIR.exists():
+                        rmtree(LEGACY_AGENT_DIR)
+                except Exception as exc:
+                    log(f"Failed to remove legacy agent dir {LEGACY_AGENT_DIR}: {exc}")
+
                 shortcut_mod.remove_start_menu_shortcut()
                 try:
                     if LOCK_PATH.exists():
@@ -1628,15 +1644,17 @@ class BeszelAgentManagerApp(tk.Tk):
             app_dir = exe_path.parent
             data_dir = DATA_DIR
             agent_dir = AGENT_DIR
+            legacy_agent_dir = LEGACY_AGENT_DIR
 
             if os.name == "nt":
                 cmd_str = (
                     "timeout /t 2 /nobreak >nul & "
                     f'taskkill /PID {os.getpid()} /F >nul 2>&1 & '
-                    f'del \"{exe_path}\" /Q >nul 2>&1 & '
-                    f'rmdir /S /Q \"{app_dir}\" >nul 2>&1 & '
-                    f'rmdir /S /Q \"{data_dir}\" >nul 2>&1 & '
-                    f'rmdir /S /Q \"{agent_dir}\" >nul 2>&1'
+                    f'del "{exe_path}" /Q >nul 2>&1 & '
+                    f'rmdir /S /Q "{app_dir}" >nul 2>&1 & '
+                    f'rmdir /S /Q "{data_dir}" >nul 2>&1 & '
+                    f'rmdir /S /Q "{agent_dir}" >nul 2>&1 & '
+                    f'rmdir /S /Q "{legacy_agent_dir}" >nul 2>&1'
                 )
                 cmd = ["cmd", "/c", cmd_str]
                 creationflags = 0
@@ -1645,7 +1663,8 @@ class BeszelAgentManagerApp(tk.Tk):
                 try:
                     subprocess.Popen(cmd, creationflags=creationflags)
                     log(
-                        f"Scheduled self-delete for {exe_path}, {app_dir}, {data_dir}, {agent_dir}"
+                        f"Scheduled self-delete for {exe_path}, {app_dir}, "
+                        f"{data_dir}, {agent_dir}, {legacy_agent_dir}"
                     )
                 except Exception as exc:
                     log(f"Failed to schedule self-delete: {exc}")
