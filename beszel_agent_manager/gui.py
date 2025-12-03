@@ -1,18 +1,19 @@
 from __future__ import annotations
+
+import os
+import sys
 import threading
 import traceback
 import tkinter as tk
 from tkinter import ttk, messagebox
-import os
-import subprocess
 from pathlib import Path
-import sys
+import subprocess
 import webbrowser
 
 try:
     import pystray  # type: ignore
     from PIL import Image, ImageDraw  # type: ignore
-except Exception:
+except Exception:  # pragma: no cover - optional dependency
     pystray = None  # type: ignore
 
 from .config import AgentConfig
@@ -44,7 +45,11 @@ from .windows_service import (
 )
 from .scheduler import delete_update_task
 from .util import log, set_debug_logging
-from . import autostart
+from .autostart import (
+    get_autostart_state,
+    set_autostart,
+    is_autostart_enabled,  # kept for compatibility even if unused
+)
 from . import shortcut as shortcut_mod
 from .defender import (
     ensure_defender_exclusion_for_manager,
@@ -53,17 +58,29 @@ from .defender import (
 from .bootstrap import is_admin
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
 def _resource_path(relative: str) -> str:
+    """
+    Return absolute path to a bundled resource when frozen with PyInstaller,
+    or the source path when running from source.
+    """
     if hasattr(sys, "_MEIPASS"):
         return str(Path(sys._MEIPASS) / relative)
     return str(Path(__file__).resolve().parent.parent / relative)
 
 
 class ToolTip:
-    def __init__(self, widget, text: str):
+    """
+    Simple tooltip helper for ttk widgets.
+    """
+
+    def __init__(self, widget, text: str) -> None:
         self.widget = widget
         self.text = text
-        self.tip = None
+        self.tip: tk.Toplevel | None = None
         widget.bind("<Enter>", self._show)
         widget.bind("<Leave>", self._hide)
 
@@ -72,9 +89,11 @@ class ToolTip:
             return
         x = self.widget.winfo_rootx() + 20
         y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+
         self.tip = tw = tk.Toplevel(self.widget)
         tw.wm_overrideredirect(True)
         tw.wm_geometry(f"+{x}+{y}")
+
         label = tk.Label(
             tw,
             text=self.text,
@@ -97,15 +116,22 @@ def add_tooltip(widget, text: str):
         ToolTip(widget, text)
 
 
+# ---------------------------------------------------------------------------
+# Main application
+# ---------------------------------------------------------------------------
+
 class BeszelAgentManagerApp(tk.Tk):
     def __init__(self, start_hidden: bool = False) -> None:
         super().__init__()
+
+        # Start fully hidden, decide visibility later
+        self.withdraw()
+
         self.title(f"{PROJECT_NAME} v{APP_VERSION}")
         self.geometry("1000x700")
         self.minsize(920, 600)
 
         self.configure(bg="#f3f3f3")
-
         try:
             self.iconbitmap(_resource_path("BeszelAgentManager_icon.ico"))
         except Exception:
@@ -127,23 +153,11 @@ class BeszelAgentManagerApp(tk.Tk):
 
         style.configure("TFrame", background=base_bg)
         style.configure("App.TFrame", background=base_bg)
-        style.configure(
-            "Card.TFrame",
-            background=surface_bg,
-            relief="flat",
-            borderwidth=0,
-        )
+        style.configure("Card.TFrame", background=surface_bg, relief="flat", borderwidth=0)
         style.configure("Header.TFrame", background=base_bg)
 
-        style.configure(
-            "TNotebook",
-            background=base_bg,
-            borderwidth=0,
-        )
-        style.configure(
-            "TNotebook.Tab",
-            padding=(12, 6, 12, 6),
-        )
+        style.configure("TNotebook", background=base_bg, borderwidth=0)
+        style.configure("TNotebook.Tab", padding=(12, 6, 12, 6))
 
         style.configure(
             "Group.TLabelframe",
@@ -158,51 +172,18 @@ class BeszelAgentManagerApp(tk.Tk):
             font=("Segoe UI", 10, "bold"),
         )
 
-        style.configure(
-            "TLabel",
-            background=base_bg,
-            foreground=text_primary,
-            font=("Segoe UI", 9),
-        )
-        style.configure(
-            "Card.TLabel",
-            background=surface_bg,
-            foreground=text_primary,
-            font=("Segoe UI", 9),
-        )
-        style.configure(
-            "Muted.TLabel",
-            background=base_bg,
-            foreground=text_muted,
-            font=("Segoe UI", 9),
-        )
-        style.configure(
-            "Link.TLabel",
-            background=base_bg,
-            foreground=accent,
-            font=("Segoe UI", 9, "underline"),
-        )
+        style.configure("TLabel", background=base_bg, foreground=text_primary, font=("Segoe UI", 9))
+        style.configure("Card.TLabel", background=surface_bg, foreground=text_primary, font=("Segoe UI", 9))
+        style.configure("Muted.TLabel", background=base_bg, foreground=text_muted, font=("Segoe UI", 9))
+        style.configure("Link.TLabel", background=base_bg, foreground=accent, font=("Segoe UI", 9, "underline"))
 
-        style.configure(
-            "TButton",
-            padding=(10, 4),
-            relief="flat",
-            borderwidth=1,
-        )
-        style.map(
-            "TButton",
-            relief=[("pressed", "sunken"), ("!pressed", "flat")],
-        )
-
-        style.configure(
-            "Accent.TButton",
-            padding=(12, 5),
-            foreground=text_primary,
-            borderwidth=1,
-        )
+        style.configure("TButton", padding=(10, 4), relief="flat", borderwidth=1)
+        style.map("TButton", relief=[("pressed", "sunken"), ("!pressed", "flat")])
+        style.configure("Accent.TButton", padding=(12, 5), foreground=text_primary, borderwidth=1)
 
         style.configure("TSeparator", background=border_color)
 
+        # State
         self.config_obj = AgentConfig.load()
         self._first_run = not getattr(self.config_obj, "first_run_done", False)
         if self._first_run:
@@ -215,23 +196,30 @@ class BeszelAgentManagerApp(tk.Tk):
         self._tray_icon = None
         self._hub_ping_started = False
 
+        # Build and load variables, then UI
         self._build_vars()
         self._build_ui(accent_color=accent)
         self._update_status()
         self._init_tray()
 
-        autostart.set_autostart(
+        # Apply current autostart state at runtime
+        set_autostart(
             self.var_autostart.get(),
             start_hidden=not self.var_start_visible.get(),
         )
 
-        if (
+        # Decide whether to show the main window.
+        # We started withdrawn; only deiconify when we actually want it visible.
+        hide = (
             start_hidden
             and self.var_autostart.get()
             and not self._first_run
             and not self.var_start_visible.get()
-        ):
-            self.withdraw()
+        )
+
+        if not hide:
+            # Normal run OR first run OR "show window on startup" enabled
+            self.deiconify()
 
         self._start_hub_ping_loop()
 
@@ -239,11 +227,14 @@ class BeszelAgentManagerApp(tk.Tk):
 
     def _build_vars(self):
         c = self.config_obj
+
+        # Core connection settings
         self.var_key = tk.StringVar(value=c.key)
         self.var_token = tk.StringVar(value=c.token)
         self.var_hub_url = tk.StringVar(value=c.hub_url)
         self.var_listen = tk.IntVar(value=c.listen or DEFAULT_LISTEN_PORT)
 
+        # Advanced env vars
         self.var_data_dir = tk.StringVar(value=c.data_dir)
         self.var_docker_host = tk.StringVar(value=c.docker_host)
         self.var_exclude_containers = tk.StringVar(value=c.exclude_containers)
@@ -266,36 +257,45 @@ class BeszelAgentManagerApp(tk.Tk):
         self.var_system_name = tk.StringVar(value=c.system_name)
         self.var_skip_gpu = tk.StringVar(value=c.skip_gpu)
 
+        # Auto update
         self.var_auto_update = tk.BooleanVar(value=c.auto_update_enabled)
         self.var_update_interval = tk.IntVar(value=c.update_interval_days or 1)
 
+        # Logging & startup
         self.var_debug_logging = tk.BooleanVar(value=c.debug_logging)
-        self.var_autostart = tk.BooleanVar(value=autostart.is_autostart_enabled())
-        # default: tray-only on boot
-        self.var_start_visible = tk.BooleanVar(value=False)
 
+        # Read back the actual Run-key so checkboxes reflect reality
+        enabled, start_hidden_flag = get_autostart_state()
+        self.var_autostart = tk.BooleanVar(value=enabled)
+
+        # "Show window when starting with Windows" is the inverse of "start hidden"
+        self.var_start_visible = tk.BooleanVar(
+            value=enabled and not start_hidden_flag
+        )
+
+        # Environment variables configuration
         self.env_definitions = [
-            ("DATA_DIR", self.var_data_dir, "Custom data dir (DATA_DIR)."),
-            ("DOCKER_HOST", self.var_docker_host, "Docker host override."),
+            ("DATA_DIR", self.var_data_dir, "Custom data directory used by the agent (DATA_DIR)."),
+            ("DOCKER_HOST", self.var_docker_host, "Docker host to connect to."),
             ("EXCLUDE_CONTAINERS", self.var_exclude_containers, "Containers to exclude."),
             ("EXCLUDE_SMART", self.var_exclude_smart, "Disks to exclude from SMART."),
-            ("EXTRA_FILESYSTEMS", self.var_extra_filesystems, "Extra paths/disks."),
+            ("EXTRA_FILESYSTEMS", self.var_extra_filesystems, "Extra filesystems/paths."),
             ("FILESYSTEM", self.var_filesystem, "Root filesystem override."),
-            ("INTEL_GPU_DEVICE", self.var_intel_gpu_device, "intel_gpu_top device."),
-            ("KEY_FILE", self.var_key_file, "File with KEY."),
-            ("TOKEN_FILE", self.var_token_file, "File with TOKEN."),
-            ("LHM", self.var_lhm, "Enable LibreHardwareMonitor."),
-            ("LOG_LEVEL", self.var_log_level, "Log level."),
-            ("MEM_CALC", self.var_mem_calc, "Memory calc mode."),
+            ("INTEL_GPU_DEVICE", self.var_intel_gpu_device, "Device path for intel_gpu_top."),
+            ("KEY_FILE", self.var_key_file, "File containing the KEY."),
+            ("TOKEN_FILE", self.var_token_file, "File containing the TOKEN."),
+            ("LHM", self.var_lhm, "Enable LibreHardwareMonitor integration."),
+            ("LOG_LEVEL", self.var_log_level, "Agent log level."),
+            ("MEM_CALC", self.var_mem_calc, "Memory calculation mode."),
             ("NETWORK", self.var_network, "Network mode."),
-            ("NICS", self.var_nics, "Interfaces to include."),
-            ("SENSORS", self.var_sensors, "Sensors list."),
+            ("NICS", self.var_nics, "Network interfaces to include."),
+            ("SENSORS", self.var_sensors, "Sensors to read."),
             ("PRIMARY_SENSOR", self.var_primary_sensor, "Primary temperature sensor."),
             ("SYS_SENSORS", self.var_sys_sensors, "System sensors path."),
-            ("SERVICE_PATTERNS", self.var_service_patterns, "Service patterns."),
-            ("SMART_DEVICES", self.var_smart_devices, "SMART devices."),
-            ("SYSTEM_NAME", self.var_system_name, "Override system name."),
-            ("SKIP_GPU", self.var_skip_gpu, "Skip GPU stats."),
+            ("SERVICE_PATTERNS", self.var_service_patterns, "Service patterns to monitor."),
+            ("SMART_DEVICES", self.var_smart_devices, "SMART devices list."),
+            ("SYSTEM_NAME", self.var_system_name, "Override host name."),
+            ("SKIP_GPU", self.var_skip_gpu, "Skip GPU stats collection."),
         ]
 
         self.active_env_names: list[str] = [
@@ -307,6 +307,7 @@ class BeszelAgentManagerApp(tk.Tk):
         self._env_entries: list[ttk.Entry] = []
         self._env_delete_buttons: list[ttk.Button] = []
 
+        # Autosave wiring
         autosave_vars = (
             self.var_key,
             self.var_token,
@@ -380,7 +381,7 @@ class BeszelAgentManagerApp(tk.Tk):
             self.config_obj = cfg
 
             try:
-                autostart.set_autostart(
+                set_autostart(
                     self.var_autostart.get(),
                     start_hidden=not self.var_start_visible.get(),
                 )
@@ -392,7 +393,7 @@ class BeszelAgentManagerApp(tk.Tk):
         except Exception as exc:
             log(f"Autosave failed: {exc}")
 
-    # ------------------------------------------------------------------ UI
+    # ------------------------------------------------------------------ UI construction
 
     def _build_ui(self, accent_color: str):
         self.columnconfigure(0, weight=1)
@@ -403,6 +404,7 @@ class BeszelAgentManagerApp(tk.Tk):
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(1, weight=1)
 
+        # Header
         header = ttk.Frame(outer, style="Header.TFrame", padding=(0, 0, 0, 10))
         header.grid(row=0, column=0, sticky="ew")
         header.columnconfigure(0, weight=1)
@@ -437,6 +439,7 @@ class BeszelAgentManagerApp(tk.Tk):
         title_lbl.grid(row=0, column=0, sticky="w")
         subtitle_lbl.grid(row=1, column=0, sticky="w", pady=(0, 2))
 
+        # Main card
         card = ttk.Frame(outer, style="Card.TFrame")
         card.grid(row=1, column=0, sticky="nsew")
         card.columnconfigure(0, weight=1)
@@ -450,7 +453,7 @@ class BeszelAgentManagerApp(tk.Tk):
         notebook = ttk.Notebook(inner)
         notebook.grid(row=0, column=0, sticky="nsew")
 
-        # ---------------- Connection tab ----------------
+        # ------------------------------------------------------------------ Connection tab
         conn = ttk.Frame(notebook, padding=10, style="Card.TFrame")
         conn.columnconfigure(1, weight=1)
         conn.columnconfigure(2, weight=0)
@@ -489,10 +492,6 @@ class BeszelAgentManagerApp(tk.Tk):
             is_int=True,
         )
 
-        conn.columnconfigure(0, weight=0)
-        conn.columnconfigure(1, weight=1)
-        conn.columnconfigure(2, weight=0)
-
         auto = ttk.LabelFrame(
             conn,
             text="Automatic updates",
@@ -502,15 +501,15 @@ class BeszelAgentManagerApp(tk.Tk):
         auto.grid(row=4, column=0, sticky="nsew", pady=(12, 0), padx=(0, 6))
         auto.columnconfigure(1, weight=1)
 
-        chk = ttk.Checkbutton(
+        chk_auto = ttk.Checkbutton(
             auto,
             text="Enable automatic updates",
             variable=self.var_auto_update,
         )
-        chk.grid(row=0, column=0, columnspan=2, sticky="w")
+        chk_auto.grid(row=0, column=0, columnspan=2, sticky="w")
         add_tooltip(
-            chk,
-            "Use a scheduled task to run 'beszel-agent update' every N days.",
+            chk_auto,
+            "Create a scheduled task that runs 'beszel-agent update' every N days.",
         )
 
         ttk.Label(auto, text="Interval (days):", style="Card.TLabel").grid(
@@ -528,15 +527,16 @@ class BeszelAgentManagerApp(tk.Tk):
             style="Group.TLabelframe",
         )
         startup.grid(row=4, column=1, sticky="nsew", pady=(12, 0), padx=(6, 0))
-        chk_auto = ttk.Checkbutton(
+
+        chk_start = ttk.Checkbutton(
             startup,
             text="Start BeszelAgentManager with Windows",
             variable=self.var_autostart,
         )
-        chk_auto.grid(row=0, column=0, sticky="w")
+        chk_start.grid(row=0, column=0, sticky="w")
         add_tooltip(
-            chk_auto,
-            "Create a Run-key entry so the GUI and tray icon start automatically after logon.",
+            chk_start,
+            "Create/remove the autostart (Run key) entry for this user.",
         )
 
         chk_show = ttk.Checkbutton(
@@ -547,11 +547,9 @@ class BeszelAgentManagerApp(tk.Tk):
         chk_show.grid(row=1, column=0, sticky="w", pady=(4, 0))
         add_tooltip(
             chk_show,
-            "When enabled, the main window opens on login.\n"
-            "When disabled (default), only the tray icon starts.",
+            "When disabled, the manager will start in the tray only on logon.\n"
+            "When enabled, the main window will open on logon.",
         )
-
-        conn.rowconfigure(6, weight=1)
 
         svc = ttk.LabelFrame(
             conn,
@@ -574,7 +572,7 @@ class BeszelAgentManagerApp(tk.Tk):
         btn_s_restart.grid(row=0, column=2, padx=(0, 6), pady=2, sticky="w")
         add_tooltip(btn_s_restart, "Restart the Beszel Windows service.")
 
-        # ---------------- Environment Tables tab ----------------
+        # ------------------------------------------------------------------ Environment Tables tab
         env_tab = ttk.Frame(notebook, padding=10, style="Card.TFrame")
         env_tab.columnconfigure(1, weight=1)
         env_tab.rowconfigure(2, weight=1)
@@ -589,8 +587,7 @@ class BeszelAgentManagerApp(tk.Tk):
         chk_env.grid(row=0, column=0, columnspan=3, sticky="w")
         add_tooltip(
             chk_env,
-            "Enable or disable editing of environment-based configuration.\n"
-            "Values are still stored even if disabled.",
+            "Enable or disable the advanced environment variable configuration.",
         )
 
         ttk.Label(env_tab, text="Add environment:", style="Card.TLabel").grid(
@@ -621,7 +618,7 @@ class BeszelAgentManagerApp(tk.Tk):
 
         self._rebuild_env_rows()
 
-        # ---------------- Logging tab ----------------
+        # ------------------------------------------------------------------ Logging tab
         log_tab = ttk.Frame(notebook, padding=10, style="Card.TFrame")
         log_tab.columnconfigure(0, weight=1)
         log_tab.rowconfigure(3, weight=1)
@@ -633,7 +630,7 @@ class BeszelAgentManagerApp(tk.Tk):
         chk_debug.grid(row=0, column=0, sticky="w")
         add_tooltip(
             chk_debug,
-            "When enabled, commands and their output are written to manager.log.",
+            "When enabled, detailed operations are written to manager.log.",
         )
 
         ttk.Separator(log_tab, orient="horizontal").grid(
@@ -647,7 +644,6 @@ class BeszelAgentManagerApp(tk.Tk):
         )
         lbl_path.grid(row=2, column=0, sticky="w")
 
-        # Embedded log viewer
         log_frame = ttk.Frame(log_tab, style="Card.TFrame", padding=(4, 4, 4, 4))
         log_frame.grid(row=3, column=0, sticky="nsew", pady=(8, 0))
         log_frame.columnconfigure(0, weight=1)
@@ -673,10 +669,9 @@ class BeszelAgentManagerApp(tk.Tk):
         )
         btn_refresh_log.grid(row=4, column=0, sticky="w", pady=(6, 0))
 
-        # initial load
         self._refresh_log_view()
 
-        # ---------------- Bottom section ----------------
+        # ------------------------------------------------------------------ Bottom section
         outer.rowconfigure(2, weight=0)
         outer.rowconfigure(3, weight=0)
 
@@ -689,7 +684,6 @@ class BeszelAgentManagerApp(tk.Tk):
         status_frame.grid(row=3, column=0, sticky="ew")
         status_frame.columnconfigure(0, weight=1)
 
-        # Version label (clickable -> release notes)
         self.label_app_version = ttk.Label(
             status_frame,
             text=f"{PROJECT_NAME} v{APP_VERSION}",
@@ -712,7 +706,6 @@ class BeszelAgentManagerApp(tk.Tk):
         )
         self.label_version.grid(row=2, column=0, sticky="w")
 
-        # Hub row: colored dot + clickable text
         hub_row = ttk.Frame(status_frame, style="App.TFrame")
         hub_row.grid(row=3, column=0, sticky="w")
 
@@ -754,7 +747,7 @@ class BeszelAgentManagerApp(tk.Tk):
         self.progress.grid(row=0, column=1, rowspan=5, sticky="e")
         self.progress.grid_remove()
 
-        # About links (hyperlinks) + action buttons
+        # Bottom buttons + hyperlinks
         link_about = ttk.Label(bottom, text="About", style="Link.TLabel")
         link_about.grid(row=0, column=0, padx=4, pady=4, sticky="w")
         link_about.bind(
@@ -763,12 +756,8 @@ class BeszelAgentManagerApp(tk.Tk):
                 "https://github.com/MiranoVerhoef/BeszelAgentManager"
             ),
         )
-        link_about.bind(
-            "<Enter>", lambda e: link_about.configure(cursor="hand2")
-        )
-        link_about.bind(
-            "<Leave>", lambda e: link_about.configure(cursor="")
-        )
+        link_about.bind("<Enter>", lambda e: link_about.configure(cursor="hand2"))
+        link_about.bind("<Leave>", lambda e: link_about.configure(cursor=""))
 
         link_about_beszel = ttk.Label(bottom, text="About Beszel", style="Link.TLabel")
         link_about_beszel.grid(row=0, column=1, padx=4, pady=4, sticky="w")
@@ -788,10 +777,6 @@ class BeszelAgentManagerApp(tk.Tk):
             command=self._on_install,
         )
         btn_install.grid(row=0, column=2, padx=4, pady=4, sticky="e")
-        add_tooltip(
-            btn_install,
-            "Download agent, create/update service and firewall, configure auto-update.",
-        )
 
         btn_update = ttk.Button(
             bottom,
@@ -799,10 +784,6 @@ class BeszelAgentManagerApp(tk.Tk):
             command=self._on_update_agent,
         )
         btn_update.grid(row=0, column=3, padx=4, pady=4, sticky="e")
-        add_tooltip(
-            btn_update,
-            "Stop service, re-download the agent binary and start the service again.",
-        )
 
         btn_apply = ttk.Button(
             bottom,
@@ -810,10 +791,6 @@ class BeszelAgentManagerApp(tk.Tk):
             command=self._on_apply,
         )
         btn_apply.grid(row=0, column=4, padx=4, pady=4, sticky="e")
-        add_tooltip(
-            btn_apply,
-            "Apply new configuration without re-downloading the agent.",
-        )
 
         btn_uninstall = ttk.Button(
             bottom,
@@ -821,14 +798,10 @@ class BeszelAgentManagerApp(tk.Tk):
             command=self._on_uninstall,
         )
         btn_uninstall.grid(row=0, column=5, padx=4, pady=4, sticky="e")
-        add_tooltip(
-            btn_uninstall,
-            "Remove service, firewall rule, scheduled task, agent files and optional manager app.",
-        )
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-    # ------------------------------------------------------------------ Locked entry + dialog helper
+    # ------------------------------------------------------------------ Locked entry + dialog
 
     def _make_locked_entry_with_dialog(
         self,
@@ -840,13 +813,8 @@ class BeszelAgentManagerApp(tk.Tk):
         is_int: bool = False,
     ):
         """
-        Creates a row with:
-         - Label
-         - Read-only entry (shows current value)
-         - 'Change' button that opens a small dialog to edit the value.
-
-        The main entry itself never becomes editable, which avoids all the ttk
-        state quirks you've been seeing. Editing happens in the dialog only.
+        Show the value in a read-only entry, but edit via a small dialog when
+        clicking the "Change" button. This avoids accidental edits.
         """
         lbl = ttk.Label(parent, text=label + ":", style="Card.TLabel")
         lbl.grid(row=row, column=0, sticky="w", pady=2)
@@ -909,7 +877,6 @@ class BeszelAgentManagerApp(tk.Tk):
             btn_cancel = ttk.Button(btn_frame, text="Cancel", command=on_cancel)
             btn_cancel.grid(row=0, column=1)
 
-            # centre dialog over main window
             self.update_idletasks()
             x = self.winfo_rootx() + (self.winfo_width() // 2) - (top.winfo_reqwidth() // 2)
             y = self.winfo_rooty() + (self.winfo_height() // 2) - (top.winfo_reqheight() // 2)
@@ -920,17 +887,8 @@ class BeszelAgentManagerApp(tk.Tk):
         add_tooltip(lbl, tooltip)
         add_tooltip(entry, tooltip)
         add_tooltip(btn, "Open a dialog to change this value safely.")
-        return entry, btn
 
-    # ------------------------------------------------------------------ Env table helpers
-
-    def _entry_row(self, parent, row, label, var, tooltip: str):
-        lbl = ttk.Label(parent, text=label + ":", style="Card.TLabel")
-        lbl.grid(row=row, column=0, sticky="w", pady=2)
-        ent = ttk.Entry(parent, textvariable=var)
-        ent.grid(row=row, column=1, sticky="ew", pady=2)
-        add_tooltip(lbl, tooltip)
-        add_tooltip(ent, tooltip)
+    # ------------------------------------------------------------------ Env helpers
 
     def _available_env_names(self) -> list[str]:
         return [
@@ -1031,7 +989,6 @@ class BeszelAgentManagerApp(tk.Tk):
     # ------------------------------------------------------------------ Log viewer
 
     def _refresh_log_view(self):
-        """Load LOG_PATH into the embedded text box."""
         try:
             if LOG_PATH.exists():
                 content = LOG_PATH.read_text(encoding="utf-8", errors="replace")
@@ -1046,19 +1003,7 @@ class BeszelAgentManagerApp(tk.Tk):
         self.log_text.configure(state="disabled")
         self.log_text.see(tk.END)
 
-    # ------------------------------------------------------------------ Other helpers
-
-    def _open_log_folder(self):
-        folder = LOG_PATH.parent
-        try:
-            os.startfile(str(folder))
-        except Exception:
-            try:
-                subprocess.Popen(["explorer", str(folder)])
-            except Exception as exc:
-                messagebox.showerror(
-                    PROJECT_NAME, f"Could not open log folder:\n{exc}"
-                )
+    # ------------------------------------------------------------------ Misc helpers
 
     def _open_url(self, url: str):
         try:
@@ -1066,7 +1011,7 @@ class BeszelAgentManagerApp(tk.Tk):
         except Exception as exc:
             messagebox.showerror(PROJECT_NAME, f"Failed to open URL:\n{exc}")
 
-    # ------------------------------------------------------------------ Config build
+    # ------------------------------------------------------------------ Config builder
 
     def _build_config(self) -> AgentConfig:
         c = self.config_obj
@@ -1105,7 +1050,7 @@ class BeszelAgentManagerApp(tk.Tk):
         )
         return cfg
 
-    # ------------------------------------------------------------------ Admin helper
+    # ------------------------------------------------------------------ Admin / relaunch helpers
 
     def _relaunch_as_admin(self) -> bool:
         if os.name != "nt":
@@ -1166,7 +1111,7 @@ class BeszelAgentManagerApp(tk.Tk):
 
         sys.exit(0)
 
-    # ------------------------------------------------------------------ Generic task runner
+    # ------------------------------------------------------------------ Task runner
 
     def _run_task(self, description: str, func):
         if self._task_running:
@@ -1214,7 +1159,7 @@ class BeszelAgentManagerApp(tk.Tk):
 
         cfg = self._build_config()
         set_debug_logging(cfg.debug_logging)
-        autostart.set_autostart(
+        set_autostart(
             self.var_autostart.get(), start_hidden=not self.var_start_visible.get()
         )
 
@@ -1303,7 +1248,7 @@ class BeszelAgentManagerApp(tk.Tk):
 
         cfg = self._build_config()
         set_debug_logging(cfg.debug_logging)
-        autostart.set_autostart(
+        set_autostart(
             self.var_autostart.get(), start_hidden=not self.var_start_visible.get()
         )
 
@@ -1348,7 +1293,7 @@ class BeszelAgentManagerApp(tk.Tk):
         def worker():
             error = None
             try:
-                autostart.set_autostart(
+                set_autostart(
                     False, start_hidden=not self.var_start_visible.get()
                 )
 
@@ -1404,7 +1349,7 @@ class BeszelAgentManagerApp(tk.Tk):
 
         threading.Thread(target=worker, daemon=True).start()
 
-    # ------------------------------------------------------------------ Service control buttons
+    # ------------------------------------------------------------------ Service control
 
     def _on_start_service(self):
         if not self._require_admin():
@@ -1445,7 +1390,7 @@ class BeszelAgentManagerApp(tk.Tk):
 
         threading.Thread(target=worker, daemon=True).start()
 
-    # ------------------------------------------------------------------ Status / hub / links
+    # ------------------------------------------------------------------ Status / hub
 
     def _on_version_clicked(self, _event=None):
         url = (
@@ -1468,7 +1413,7 @@ class BeszelAgentManagerApp(tk.Tk):
     def _on_hub_clicked(self, _event=None):
         self._open_hub_url()
 
-    def _set_hub_indicator(self, color: str, text: str, _ping_ms: int | None):
+    def _set_hub_indicator(self, color: str, text: str):
         try:
             self.hub_status_canvas.itemconfigure(
                 self._hub_indicator_circle, fill=color, outline=color
@@ -1489,7 +1434,7 @@ class BeszelAgentManagerApp(tk.Tk):
             url = (self.config_obj.hub_url or "").strip()
 
         if not url:
-            self._set_hub_indicator("#9ca3af", "Hub: Not configured", None)
+            self._set_hub_indicator("#9ca3af", "Hub: Not configured")
             self.after(15000, self._ping_hub_once)
             return
 
@@ -1520,7 +1465,7 @@ class BeszelAgentManagerApp(tk.Tk):
                 else:
                     color = "#ef4444"
                     text = "Hub: Unreachable"
-                self._set_hub_indicator(color, text, ping_ms)
+                self._set_hub_indicator(color, text)
                 try:
                     self.after(15000, self._ping_hub_once)
                 except Exception:
@@ -1543,8 +1488,7 @@ class BeszelAgentManagerApp(tk.Tk):
             self.var_hub_url.get().strip()
             or (self.config_obj.hub_url if self.config_obj else "")
         )
-        self._set_hub_indicator("#9ca3af", f"Hub: {hub}", None)
-
+        self._set_hub_indicator("#9ca3af", f"Hub: {hub}")
         self._update_tray_title(status)
         if status in ("START_PENDING", "STOP_PENDING"):
             self.after(1000, self._update_status)

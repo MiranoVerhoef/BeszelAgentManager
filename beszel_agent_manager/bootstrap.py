@@ -1,57 +1,140 @@
 from __future__ import annotations
+
 import os
-import sys
 import shutil
 import subprocess
+import sys
 from pathlib import Path
-
-try:
-    import ctypes  # type: ignore[attr-defined]
-except Exception:
-    ctypes = None  # type: ignore
+from typing import Optional
 
 from .constants import PROJECT_NAME, PROGRAM_FILES, DATA_DIR, LOCK_PATH
-from .util import log, run
-from . import shortcut as shortcut_mod
+from .util import log, ensure_data_dir
+
+# Flag file so we only run ACL changes once
+ACL_DONE_FLAG = DATA_DIR / "acl_done.flag"
 
 
-def _is_windows() -> bool:
-    return os.name == "nt"
-
-
-def _is_admin() -> bool:
-    if not _is_windows() or ctypes is None:
-        return False
-    try:
-        return ctypes.windll.shell32.IsUserAnAdmin() != 0  # type: ignore[attr-defined]
-    except Exception:
-        return False
-
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def is_admin() -> bool:
-    """Public helper so the GUI can check if the process is elevated."""
-    return _is_admin()
-
-
-def _message_box(text: str, title: str, flags: int) -> int:
-    if not _is_windows() or ctypes is None:
-        return 0
-    return ctypes.windll.user32.MessageBoxW(  # type: ignore[attr-defined]
-        None,
-        text,
-        title,
-        flags,
-    )
-
-
-def _run_as_admin(exe_path: Path) -> None:
     """
-    Relaunch the current executable with elevation (UAC).
-    Used only for the very first install into Program Files.
+    Return True if the current process has admin rights (on Windows).
+    On non-Windows platforms this always returns True.
     """
-    if not _is_windows() or ctypes is None:
-        return
+    if os.name != "nt":
+        return True
+
     try:
+        import ctypes  # type: ignore[attr-defined]
+
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())  # type: ignore[attr-defined]
+    except Exception as exc:
+        log(f"is_admin check failed: {exc}")
+        return False
+
+
+def _get_current_exe() -> Optional[Path]:
+    """
+    Return the current executable path if running under PyInstaller,
+    otherwise None (when running from source).
+    """
+    if not getattr(sys, "frozen", False):
+        return None
+    return Path(sys.executable).resolve()
+
+
+def _run_hidden(cmd, check: bool = False, capture_output: bool = False):
+    """
+    Run a console command in a *hidden* window on Windows.
+    On non-Windows it just runs normally.
+    """
+    kwargs = {
+        "shell": False,
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+    }
+
+    if capture_output:
+        kwargs["stdout"] = subprocess.PIPE
+        kwargs["stderr"] = subprocess.PIPE
+        kwargs["text"] = True
+
+    if os.name == "nt":
+        # Hide the console window
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+
+    try:
+        return subprocess.run(cmd, check=check, **kwargs)
+    except Exception as exc:
+        log(f"Error running command {cmd}: {exc}")
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Program Files self-install / ACL
+# ---------------------------------------------------------------------------
+
+def _adjust_acl(path: Path) -> None:
+    """
+    Grant 'Users' Modify rights on the given directory (and children) so the
+    non-admin GUI can read/write in Program Files / ProgramData later.
+    Only does anything on Windows, and runs icacls in a hidden console.
+    """
+    if os.name != "nt":
+        return
+
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:
+        log(f"Failed to create directory {path} before ACL adjustment: {exc}")
+        return
+
+    cmd = [
+        "icacls",
+        str(path),
+        "/grant",
+        "Users:(OI)(CI)M",
+        "/T",
+        "/C",
+    ]
+    proc = _run_hidden(cmd, check=True)
+    if proc is not None and proc.returncode == 0:
+        log(f"Adjusted ACL on {path} (Users: Modify).")
+    else:
+        log(f"Failed to adjust ACL on {path}.")
+
+
+def _copy_to_program_files(exe_path: Path) -> Path:
+    """
+    Copy the current executable into
+    C:\\Program Files\\<PROJECT_NAME>\\<PROJECT_NAME>.exe
+    and return the new path.
+    """
+    target_dir = Path(PROGRAM_FILES) / PROJECT_NAME
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    target_exe = target_dir / f"{PROJECT_NAME}.exe"
+    if exe_path.resolve() != target_exe.resolve():
+        shutil.copy2(exe_path, target_exe)
+        log(f"Copied manager executable to {target_exe}")
+    else:
+        log("Executable is already in Program Files; skipping copy.")
+
+    return target_exe
+
+
+def _run_elevated_again(exe_path: Path) -> None:
+    """
+    Relaunch this executable as administrator (UAC prompt).
+    """
+    if os.name != "nt":
+        return
+
+    try:
+        import ctypes  # type: ignore[attr-defined]
+
         rc = ctypes.windll.shell32.ShellExecuteW(  # type: ignore[attr-defined]
             None,
             "runas",
@@ -62,191 +145,224 @@ def _run_as_admin(exe_path: Path) -> None:
         )
         if rc <= 32:
             log(f"ShellExecuteW(runas) failed with code {rc}")
+        else:
+            log("Successfully requested elevation via ShellExecuteW(runas).")
     except Exception as exc:
-        log(f"Failed to relaunch as admin: {exc}")
+        log(f"Failed to relaunch as admin via ShellExecuteW: {exc}")
 
 
-def _is_pid_running(pid: int) -> bool:
+def _ask_move_and_elevate(exe_path: Path) -> None:
     """
-    Check if a PID is currently running on Windows using the native API.
-
-    This avoids parsing localized tasklist output and fixes the
-    "another instance" popup after reboot.
+    Show a small Windows message box asking if we may move to Program Files and
+    run elevated once. If user clicks Yes, we relaunch as admin and exit.
     """
-    if not _is_windows() or ctypes is None:
-        return False
-
-    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
-    SYNCHRONIZE = 0x00100000
-    access = PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE
-
-    try:
-        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
-        handle = kernel32.OpenProcess(access, False, pid)
-        if not handle:
-            return False
-
-        try:
-            exit_code = ctypes.c_ulong()
-            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
-                # If we cannot get the exit code, be conservative and assume running.
-                return True
-            STILL_ACTIVE = 259
-            return exit_code.value == STILL_ACTIVE
-        finally:
-            kernel32.CloseHandle(handle)
-    except Exception as exc:
-        log(f"Failed to check if PID {pid} is running: {exc}")
-        # If we really can't tell, treat as running to avoid accidental duplicate managers.
-        return True
-
-
-def _ensure_single_instance() -> None:
-    """Prevent multiple manager instances; optionally kill the old one.
-
-    Uses a simple lock file under DATA_DIR containing the previous PID.
-    If another PID is found and is still running, prompts the user to terminate it.
-    If the PID is stale (no such process), silently take over the lock.
-    """
-    if not _is_windows():
-        return
-
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    pid = os.getpid()
-    stale = False
-
-    if LOCK_PATH.exists():
-        try:
-            old_text = LOCK_PATH.read_text(encoding="utf-8").strip()
-            old_pid = int(old_text) if old_text else None
-        except Exception:
-            old_pid = None
-
-        if old_pid and old_pid != pid:
-            if not _is_pid_running(old_pid):
-                # Stale lock from previous session / reboot: just take over.
-                log(f"Stale instance lock detected for PID {old_pid}, replacing with {pid}.")
-                stale = True
-            else:
-                msg = (
-                    f"Another instance of {PROJECT_NAME} may already be running (PID {old_pid}).\n\n"
-                    "Do you want to terminate that instance and continue?"
-                )
-                # MB_YESNO | MB_ICONWARNING
-                res = _message_box(msg, PROJECT_NAME, 0x00000004 | 0x00000030)
-                if res == 6:  # IDYES
-                    try:
-                        run(["taskkill", "/PID", str(old_pid), "/F"], check=False)
-                        log(f"Requested termination of old instance PID {old_pid}")
-                    except Exception as exc:
-                        log(f"Failed to terminate old instance PID {old_pid}: {exc}")
-                else:
-                    sys.exit(0)
-
-    try:
-        LOCK_PATH.write_text(str(pid), encoding="utf-8")
-        if not stale:
-            log(f"Instance lock set to PID {pid}")
-    except Exception as exc:
-        log(f"Failed to write lock file {LOCK_PATH}: {exc}")
-
-
-def _grant_users_modify(path: Path, label: str) -> None:
-    """
-    Best-effort: grant Users modify permission on the given folder (and children).
-    This allows the non-admin user to write logs / config without UAC prompts.
-    """
-    try:
-        path.mkdir(parents=True, exist_ok=True)
-    except Exception as exc:
-        log(f"Failed to create {label} directory {path}: {exc}")
+    if os.name != "nt":
         return
 
     try:
-        run(
-            [
-                "icacls",
-                str(path),
-                "/grant",
-                "Users:(OI)(CI)M",
-                "/T",
-                "/C",
-            ],
-            check=False,
+        import ctypes  # type: ignore[attr-defined]
+
+        text = (
+            f"{PROJECT_NAME} needs to move itself to:\n"
+            f"  {PROGRAM_FILES}\\{PROJECT_NAME}\n\n"
+            "and run once with administrator rights to set permissions.\n\n"
+            "Click Yes to continue, or No to exit."
         )
-        log(f"Adjusted ACL on {label} {path} (Users: Modify).")
+
+        MB_ICONINFORMATION = 0x40
+        MB_YESNO = 0x04
+        IDYES = 6
+
+        res = ctypes.windll.user32.MessageBoxW(  # type: ignore[attr-defined]
+            0,
+            text,
+            PROJECT_NAME,
+            MB_ICONINFORMATION | MB_YESNO,
+        )
+        if res == IDYES:
+            _run_elevated_again(exe_path)
+        else:
+            log("User declined elevation / move to Program Files.")
     except Exception as exc:
-        log(f"Failed to set ACL on {label} {path}: {exc}")
+        log(f"Failed to show elevation/move message box: {exc}")
+
+    # Always exit current non-elevated instance after asking.
+    sys.exit(0)
 
 
 def ensure_elevated_and_location() -> None:
-    """Startup hook.
-
-    Behaviour:
-    - On first run when the manager is NOT in C:\\Program Files\\BeszelAgentManager,
-      relaunch once with UAC so it can copy itself there and fix permissions.
-    - In that elevated run, copy to Program Files, grant Users modify on both
-      Program Files\\BeszelAgentManager and ProgramData\\BeszelAgentManager, then
-      start the Program Files copy and exit.
-    - Once running from that Program Files location, DO NOT auto-elevate anymore,
-      so there is no UAC popup on normal startup / autostart.
-    - Always ensure a Start Menu shortcut and single-instance lock.
     """
-    if not _is_windows():
+    Windows-only bootstrap that ensures:
+      - The manager EXE lives under Program Files\\<PROJECT_NAME>
+      - One elevated run has set ACLs on Program Files and ProgramData
+      - ProgramData directory exists
+
+    On non-Windows or when running from source (python main.py), this is a no-op
+    except for making sure the data directory exists.
+    """
+    # Always ensure data dir exists
+    ensure_data_dir()
+
+    if os.name != "nt":
         return
 
-    if getattr(sys, "frozen", False):
-        exe_path = Path(sys.executable).resolve()
-    else:
-        exe_path = Path(sys.argv[0]).resolve()
+    exe_path = _get_current_exe()
+    if exe_path is None:
+        # Running from source
+        return
 
     target_dir = Path(PROGRAM_FILES) / PROJECT_NAME
-    target_exe = target_dir / exe_path.name
+    target_exe = target_dir / f"{PROJECT_NAME}.exe"
 
-    # First-install move into Program Files
-    if getattr(sys, "frozen", False) and exe_path != target_exe:
-        if not _is_admin():
-            msg = (
-                f"{PROJECT_NAME} can install itself to:\n\n"
-                f"{target_exe}\n\n"
-                "This requires administrator permissions once. After that, it will run "
-                "without UAC prompts.\n\n"
-                "Do you want to continue?"
-            )
-            res = _message_box(msg, PROJECT_NAME, 0x00000004 | 0x00000020)  # YESNO | QUESTION
-            if res == 6:  # IDYES
-                _run_as_admin(exe_path)
-            else:
-                log("User declined elevation for initial install.")
-            sys.exit(0)
-        else:
+    # If we're not in Program Files at all, we must first ask to elevate.
+    if exe_path.resolve() != target_exe.resolve():
+        if not is_admin():
+            _ask_move_and_elevate(exe_path)
+            return  # _ask_move_and_elevate exits
+
+        # Elevated and not yet in Program Files -> perform the move
+        new_exe = _copy_to_program_files(exe_path)
+
+        if not ACL_DONE_FLAG.exists():
+            _adjust_acl(target_dir)
+            _adjust_acl(DATA_DIR.parent)
+            _adjust_acl(DATA_DIR)
             try:
-                target_dir.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(str(exe_path), str(target_exe))
-                log(f"Copied manager executable to {target_exe}")
+                ACL_DONE_FLAG.parent.mkdir(parents=True, exist_ok=True)
+                ACL_DONE_FLAG.write_text("ok", encoding="utf-8")
             except Exception as exc:
-                _message_box(
-                    f"Failed to copy to {target_exe}:\n{exc}",
-                    PROJECT_NAME,
-                    0x00000010,  # MB_ICONERROR
-                )
-            else:
-                _grant_users_modify(target_dir, "Program Files folder")
-                _grant_users_modify(DATA_DIR, "ProgramData folder")
+                log(f"Failed to write ACL flag: {exc}")
 
-                try:
-                    creationflags = 0
-                    if hasattr(subprocess, "CREATE_NO_WINDOW"):
-                        creationflags = subprocess.CREATE_NO_WINDOW
-                    subprocess.Popen([str(target_exe)], creationflags=creationflags)
-                    log(
-                        f"Started Program Files instance {target_exe} and exiting elevated instance."
-                    )
-                except Exception as exc:
-                    log(f"Failed to start Program Files instance {target_exe}: {exc}")
-                finally:
-                    sys.exit(0)
+        # Start non-elevated Program Files instance and exit.
+        try:
+            subprocess.Popen([str(new_exe)], shell=False)
+            log(f"Started Program Files instance {new_exe} and exiting elevated instance.")
+        except Exception as exc:
+            log(f"Failed to start Program Files instance: {exc}")
+        sys.exit(0)
 
-    # Normal runs from Program Files or elsewhere
-    shortcut_mod.ensure_start_menu_shortcut()
-    _ensure_single_instance()
+    # We *are* already in Program Files.
+    # If we are elevated, take the chance to adjust ACLs (once).
+    if is_admin() and not ACL_DONE_FLAG.exists():
+        _adjust_acl(target_dir)
+        _adjust_acl(DATA_DIR.parent)
+        _adjust_acl(DATA_DIR)
+        try:
+            ACL_DONE_FLAG.parent.mkdir(parents=True, exist_ok=True)
+            ACL_DONE_FLAG.write_text("ok", encoding="utf-8")
+        except Exception as exc:
+            log(f"Failed to write ACL flag: {exc}")
+
+
+# ---------------------------------------------------------------------------
+# Single-instance enforcement
+# ---------------------------------------------------------------------------
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+
+    if os.name == "nt":
+        try:
+            proc = _run_hidden(
+                ["tasklist", "/FI", f"PID eq {pid}"],
+                check=False,
+                capture_output=True,
+            )
+            if not proc:
+                return False
+            text = proc.stdout or ""
+            return str(pid) in text
+        except Exception as exc:
+            log(f"Failed to check PID {pid} via tasklist: {exc}")
+            return False
+    else:
+        try:
+            # On POSIX, sending signal 0 just checks for existence.
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+
+def _ask_kill_existing(pid: int) -> bool:
+    """
+    Ask the user whether to kill the existing instance with the given PID.
+
+    Returns True if we should attempt to kill it, False if we should exit.
+    """
+    if os.name != "nt":
+        # On non-Windows, just kill without asking.
+        return True
+
+    try:
+        import ctypes  # type: ignore[attr-defined]
+
+        text = (
+            f"Another instance of {PROJECT_NAME} is already running (PID {pid}).\n\n"
+            "Do you want to close the existing instance and start a new one?"
+        )
+
+        MB_ICONQUESTION = 0x20
+        MB_YESNO = 0x04
+        IDYES = 6
+
+        res = ctypes.windll.user32.MessageBoxW(  # type: ignore[attr-defined]
+            0,
+            text,
+            PROJECT_NAME,
+            MB_ICONQUESTION | MB_YESNO,
+        )
+        return res == IDYES
+    except Exception as exc:
+        log(f"Failed to show single-instance message box: {exc}")
+        return False
+
+
+def ensure_single_instance() -> None:
+    """
+    Enforce single-instance behavior using a PID lock file at LOCK_PATH.
+
+    If a live PID is found in the lock file, the user is asked whether to kill
+    that instance. If they decline, this process exits. Stale locks are
+    replaced silently.
+    """
+    try:
+        LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:
+        log(f"Failed to create lock directory {LOCK_PATH.parent}: {exc}")
+
+    existing_pid: Optional[int] = None
+
+    if LOCK_PATH.exists():
+        try:
+            content = LOCK_PATH.read_text(encoding="utf-8").strip()
+            if content:
+                existing_pid = int(content)
+        except Exception as exc:
+            log(f"Failed to read existing lock file {LOCK_PATH}: {exc}")
+
+    if existing_pid is not None and _pid_alive(existing_pid):
+        # Another instance is alive
+        if _ask_kill_existing(existing_pid):
+            try:
+                if os.name == "nt":
+                    _run_hidden(["taskkill", "/PID", str(existing_pid), "/F"])
+                else:
+                    os.kill(existing_pid, 9)
+                log(f"Killed existing {PROJECT_NAME} instance PID {existing_pid}.")
+            except Exception as exc:
+                log(f"Failed to kill existing PID {existing_pid}: {exc}")
+        else:
+            log(f"Existing instance PID {existing_pid} kept; exiting new instance.")
+            sys.exit(0)
+    elif existing_pid is not None:
+        # Lock existed but process is gone – stale lock
+        log(f"Stale instance lock detected for PID {existing_pid}, replacing with {os.getpid()}.")
+
+    # Write our own PID
+    try:
+        LOCK_PATH.write_text(str(os.getpid()), encoding="utf-8")
+        log(f"Instance lock set to PID {os.getpid()}")
+    except Exception as exc:
+        log(f"Failed to write instance lock file {LOCK_PATH}: {exc}")

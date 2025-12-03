@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['beszel_agent_manager\\main.py'],
+    ['main.py'],
     pathex=[],
     binaries=[],
     datas=[('BeszelAgentManager_icon.ico', '.'), ('BeszelAgentManager_icon_512.png', '.')],
