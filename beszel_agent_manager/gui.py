@@ -9,6 +9,8 @@ from tkinter import ttk, messagebox
 from pathlib import Path
 import subprocess
 import webbrowser
+import json
+import re
 
 try:
     import pystray  # type: ignore
@@ -32,7 +34,6 @@ from .agent_manager import (
     apply_configuration_only,
     get_agent_version,
     update_agent_only,
-    _parse_download_version,
     check_hub_status,
 )
 from .windows_service import (
@@ -48,7 +49,6 @@ from .util import log, set_debug_logging
 from .autostart import (
     get_autostart_state,
     set_autostart,
-    is_autostart_enabled,  # kept for compatibility even if unused
 )
 from . import shortcut as shortcut_mod
 from .defender import (
@@ -116,6 +116,57 @@ def add_tooltip(widget, text: str):
         ToolTip(widget, text)
 
 
+def _normalize_version(ver: str | None) -> str | None:
+    """
+    Same semantics as agent_manager._normalize_version, but local to the GUI:
+    extract a clean semantic version like 0.17.0 from strings such as:
+    - 'v0.17.0'
+    - '0.17.0 (windows/amd64)'
+    """
+    if not ver:
+        return None
+    ver = ver.strip()
+    if ver.lower().startswith("v"):
+        ver = ver[1:].strip()
+    m = re.search(r"\d+\.\d+\.\d+", ver)
+    if m:
+        return m.group(0)
+    return ver or None
+
+
+def _fetch_latest_agent_release() -> tuple[str | None, str | None]:
+    """
+    GUI-side helper: query GitHub for latest Beszel release so we can show
+    installed vs latest + "what's changed" in a popup.
+
+    version: normalized version like '0.17.0'
+    body:    release body text
+    """
+    try:
+        import urllib.request
+
+        url = "https://api.github.com/repos/henrygd/beszel/releases/latest"
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": PROJECT_NAME,
+                "Accept": "application/vnd.github+json",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            data = json.loads(resp.read().decode("utf-8", "replace"))
+
+        tag = str(data.get("tag_name") or "").strip()
+        version = _normalize_version(tag)
+        if not version:
+            return None, None
+        body = data.get("body") or ""
+        return version, body
+    except Exception as exc:
+        log(f"GUI: failed to fetch latest Beszel release from GitHub: {exc}")
+        return None, None
+
+
 # ---------------------------------------------------------------------------
 # Main application
 # ---------------------------------------------------------------------------
@@ -124,7 +175,7 @@ class BeszelAgentManagerApp(tk.Tk):
     def __init__(self, start_hidden: bool = False) -> None:
         super().__init__()
 
-        # Start fully hidden, decide visibility later
+        # Start hidden; we'll decide whether to show after config is loaded
         self.withdraw()
 
         self.title(f"{PROJECT_NAME} v{APP_VERSION}")
@@ -202,14 +253,13 @@ class BeszelAgentManagerApp(tk.Tk):
         self._update_status()
         self._init_tray()
 
-        # Apply current autostart state at runtime
+        # Apply current autostart state
         set_autostart(
             self.var_autostart.get(),
             start_hidden=not self.var_start_visible.get(),
         )
 
-        # Decide whether to show the main window.
-        # We started withdrawn; only deiconify when we actually want it visible.
+        # Decide visibility
         hide = (
             start_hidden
             and self.var_autostart.get()
@@ -218,7 +268,6 @@ class BeszelAgentManagerApp(tk.Tk):
         )
 
         if not hide:
-            # Normal run OR first run OR "show window on startup" enabled
             self.deiconify()
 
         self._start_hub_ping_loop()
@@ -257,6 +306,14 @@ class BeszelAgentManagerApp(tk.Tk):
         self.var_system_name = tk.StringVar(value=c.system_name)
         self.var_skip_gpu = tk.StringVar(value=c.skip_gpu)
 
+        # New env vars (v0.17.0)
+        self.var_disk_usage_cache = tk.StringVar(
+            value=getattr(c, "disk_usage_cache", "")
+        )
+        self.var_skip_systemd = tk.StringVar(
+            value=getattr(c, "skip_systemd", "")
+        )
+
         # Auto update
         self.var_auto_update = tk.BooleanVar(value=c.auto_update_enabled)
         self.var_update_interval = tk.IntVar(value=c.update_interval_days or 1)
@@ -264,16 +321,14 @@ class BeszelAgentManagerApp(tk.Tk):
         # Logging & startup
         self.var_debug_logging = tk.BooleanVar(value=c.debug_logging)
 
-        # Read back the actual Run-key so checkboxes reflect reality
+        # Read back actual Run-key
         enabled, start_hidden_flag = get_autostart_state()
         self.var_autostart = tk.BooleanVar(value=enabled)
-
-        # "Show window when starting with Windows" is the inverse of "start hidden"
         self.var_start_visible = tk.BooleanVar(
             value=enabled and not start_hidden_flag
         )
 
-        # Environment variables configuration
+        # Env table definitions
         self.env_definitions = [
             ("DATA_DIR", self.var_data_dir, "Custom data directory used by the agent (DATA_DIR)."),
             ("DOCKER_HOST", self.var_docker_host, "Docker host to connect to."),
@@ -296,6 +351,8 @@ class BeszelAgentManagerApp(tk.Tk):
             ("SMART_DEVICES", self.var_smart_devices, "SMART devices list."),
             ("SYSTEM_NAME", self.var_system_name, "Override host name."),
             ("SKIP_GPU", self.var_skip_gpu, "Skip GPU stats collection."),
+            ("DISK_USAGE_CACHE", self.var_disk_usage_cache, "Directory used for disk usage cache."),
+            ("SKIP_SYSTEMD", self.var_skip_systemd, "Skip systemd integration (set to '1' to disable)."),
         ]
 
         self.active_env_names: list[str] = [
@@ -307,7 +364,6 @@ class BeszelAgentManagerApp(tk.Tk):
         self._env_entries: list[ttk.Entry] = []
         self._env_delete_buttons: list[ttk.Button] = []
 
-        # Autosave wiring
         autosave_vars = (
             self.var_key,
             self.var_token,
@@ -334,6 +390,8 @@ class BeszelAgentManagerApp(tk.Tk):
             self.var_smart_devices,
             self.var_system_name,
             self.var_skip_gpu,
+            self.var_disk_usage_cache,
+            self.var_skip_systemd,
             self.var_auto_update,
             self.var_update_interval,
             self.var_debug_logging,
@@ -368,6 +426,8 @@ class BeszelAgentManagerApp(tk.Tk):
                 self.var_smart_devices,
                 self.var_system_name,
                 self.var_skip_gpu,
+                self.var_disk_usage_cache,
+                self.var_skip_systemd,
             )
         )
 
@@ -812,10 +872,6 @@ class BeszelAgentManagerApp(tk.Tk):
         tooltip: str,
         is_int: bool = False,
     ):
-        """
-        Show the value in a read-only entry, but edit via a small dialog when
-        clicking the "Change" button. This avoids accidental edits.
-        """
         lbl = ttk.Label(parent, text=label + ":", style="Card.TLabel")
         lbl.grid(row=row, column=0, sticky="w", pady=2)
 
@@ -1048,6 +1104,15 @@ class BeszelAgentManagerApp(tk.Tk):
             start_hidden=not self.var_start_visible.get(),
             first_run_done=c.first_run_done,
         )
+
+        # Attach extra env dynamically for older configs
+        extra_disk_usage_cache = self.var_disk_usage_cache.get().strip()
+        extra_skip_systemd = self.var_skip_systemd.get().strip()
+        if extra_disk_usage_cache:
+            setattr(cfg, "disk_usage_cache", extra_disk_usage_cache)
+        if extra_skip_systemd:
+            setattr(cfg, "skip_systemd", extra_skip_systemd)
+
         return cfg
 
     # ------------------------------------------------------------------ Admin / relaunch helpers
@@ -1160,7 +1225,8 @@ class BeszelAgentManagerApp(tk.Tk):
         cfg = self._build_config()
         set_debug_logging(cfg.debug_logging)
         set_autostart(
-            self.var_autostart.get(), start_hidden=not self.var_start_visible.get()
+            self.var_autostart.get(),
+            start_hidden=not self.var_start_visible.get(),
         )
 
         add_defender = False
@@ -1221,13 +1287,59 @@ class BeszelAgentManagerApp(tk.Tk):
             return
 
         current = get_agent_version()
-        target = _parse_download_version()
-        if current not in ("Not installed", "Unknown") and target and current == target:
-            if not messagebox.askyesno(
-                PROJECT_NAME,
-                f"Agent is already at version {current}.\nForce re-download and restart?",
-            ):
+        latest_version, changelog = _fetch_latest_agent_release()
+
+        # Build "What's changed" snippet from GitHub release body
+        changelog_snippet = ""
+        if changelog:
+            lines = [ln.rstrip() for ln in changelog.splitlines()]
+            while lines and not lines[0]:
+                lines.pop(0)
+            while lines and not lines[-1]:
+                lines.pop()
+            max_lines = 12
+            if len(lines) > max_lines:
+                lines = lines[:max_lines] + [
+                    "...",
+                    "(truncated; see GitHub release for full notes)",
+                ]
+            changelog_snippet = "\n\nWhat's changed:\n" + "\n".join(lines)
+
+        # If we know the latest version from GitHub AND the agent reports a version,
+        # and they are equal, we just inform the user and do nothing.
+        if latest_version and current not in ("Not installed", "Unknown"):
+            if current == latest_version:
+                info = (
+                    f"Agent is already at the latest version {current} (GitHub).\n"
+                )
+                if changelog_snippet:
+                    info += changelog_snippet
+                messagebox.showinfo(PROJECT_NAME, info)
                 return
+
+        # For all other cases (older version or GitHub lookup failed), fall back to prompt
+        msg = None
+        if latest_version and current not in ("Not installed", "Unknown"):
+            # current != latest_version here
+            msg = (
+                f"A new Beszel agent version is available.\n\n"
+                f"Installed: {current}\n"
+                f"Latest on GitHub: {latest_version}."
+                f"{changelog_snippet}\n\n"
+                "Do you want to update now?"
+            )
+        elif current not in ("Not installed", "Unknown"):
+            # Installed, but we couldn't determine latest from GitHub
+            msg = (
+                f"Agent is currently at version {current}.\n\n"
+                "Could not determine the latest version from GitHub.\n"
+                "Do you still want to re-download and restart?"
+            )
+
+        if msg is not None:
+            if not messagebox.askyesno(PROJECT_NAME, msg):
+                return
+        # If current is "Not installed"/"Unknown", or GitHub failed, we just run the update task directly.
 
         def task():
             try:
