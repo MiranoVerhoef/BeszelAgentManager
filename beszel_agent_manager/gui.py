@@ -28,6 +28,8 @@ from .constants import (
     LOCK_PATH,
     PROGRAM_FILES,
     DATA_DIR,
+    AGENT_LOG_DIR,
+    AGENT_LOG_CURRENT_PATH,
 )
 from .agent_manager import (
     install_or_update_agent_and_service,
@@ -40,11 +42,13 @@ from .windows_service import (
     get_service_status,
     delete_service,
     remove_firewall_rule,
+    ensure_firewall_rule,
     start_service,
     stop_service,
     restart_service,
 )
-from .scheduler import delete_update_task
+from .scheduler import delete_update_task, delete_agent_log_rotate_task
+from .agent_logs import list_agent_log_files, rotate_agent_logs_and_rename
 from .util import log, set_debug_logging
 from .autostart import (
     get_autostart_state,
@@ -284,7 +288,8 @@ class BeszelAgentManagerApp(tk.Tk):
         self.var_key = tk.StringVar(value=c.key)
         self.var_token = tk.StringVar(value=c.token)
         self.var_hub_url = tk.StringVar(value=c.hub_url)
-        self.var_listen = tk.IntVar(value=c.listen or DEFAULT_LISTEN_PORT)
+        # LISTEN is optional; when blank the agent uses its default (45876)
+        self.var_listen = tk.StringVar(value=str(c.listen) if c.listen else "")
 
         # Advanced env vars
         self.var_data_dir = tk.StringVar(value=c.data_dir)
@@ -366,6 +371,12 @@ class BeszelAgentManagerApp(tk.Tk):
 
         self._env_entries: list[ttk.Entry] = []
         self._env_delete_buttons: list[ttk.Button] = []
+        self._env_edit_buttons: list[ttk.Button] = []
+        self._env_editing: set[str] = set()
+
+        # Agent log viewer state
+        self.var_agent_log_choice = tk.StringVar(value="")
+        self._agent_log_paths: list[Path] = []
 
         autosave_vars = (
             self.var_key,
@@ -403,6 +414,9 @@ class BeszelAgentManagerApp(tk.Tk):
         )
         for v in autosave_vars:
             v.trace_add("write", self._on_var_changed)
+
+        # Agent log view state
+        self.var_agent_log_file = tk.StringVar(value="")
 
     def _any_env_nonempty(self) -> bool:
         return any(
@@ -520,6 +534,7 @@ class BeszelAgentManagerApp(tk.Tk):
         conn = ttk.Frame(notebook, padding=10, style="Card.TFrame")
         conn.columnconfigure(1, weight=1)
         conn.columnconfigure(2, weight=0)
+        conn.columnconfigure(3, weight=0)
         notebook.add(conn, text="Connection")
 
         self._make_locked_entry_with_dialog(
@@ -551,9 +566,31 @@ class BeszelAgentManagerApp(tk.Tk):
             row=3,
             label="Listen (port)",
             var=self.var_listen,
-            tooltip="Agent listen port (LISTEN), default 45876.",
+            tooltip="Optional agent listen port (LISTEN). Leave blank to use the agent default (45876).",
             is_int=True,
+            allow_empty=True,
         )
+
+        # Dynamic LISTEN firewall toggle
+        self.btn_listen_toggle = ttk.Button(
+            conn,
+            text="Enable",
+            command=self._on_toggle_listen_firewall,
+            width=9,
+        )
+        self.btn_listen_toggle.grid(row=3, column=3, sticky="w", padx=(4, 0), pady=2)
+        add_tooltip(
+            self.btn_listen_toggle,
+            "Enable: set a port (if empty), apply settings, and add a Windows Firewall allow rule.\n"
+            "Disable: clear LISTEN, apply settings, and remove the firewall rule.",
+        )
+
+        # Keep button text in sync with the LISTEN field
+        try:
+            self.var_listen.trace_add("write", lambda *_: self._update_listen_toggle_button())
+        except Exception:
+            pass
+        self._update_listen_toggle_button()
 
         auto = ttk.LabelFrame(
             conn,
@@ -734,6 +771,78 @@ class BeszelAgentManagerApp(tk.Tk):
 
         self._refresh_log_view()
 
+        # ------------------------------------------------------------------ Agent Logging tab
+        agent_log_tab = ttk.Frame(notebook, padding=10, style="Card.TFrame")
+        agent_log_tab.columnconfigure(0, weight=1)
+        agent_log_tab.rowconfigure(4, weight=1)
+        notebook.add(agent_log_tab, text="Agent Logging")
+
+        ttk.Label(
+            agent_log_tab,
+            text=f"Agent log folder: {AGENT_LOG_DIR}",
+            style="Card.TLabel",
+        ).grid(row=0, column=0, sticky="w")
+
+        controls = ttk.Frame(agent_log_tab, style="Card.TFrame")
+        controls.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+        controls.columnconfigure(1, weight=1)
+
+        ttk.Label(controls, text="File:", style="Card.TLabel").grid(row=0, column=0, sticky="w")
+
+        self.var_agent_log_file = tk.StringVar()
+        self.agent_log_combo = ttk.Combobox(
+            controls,
+            textvariable=self.var_agent_log_file,
+            state="readonly",
+        )
+        self.agent_log_combo.grid(row=0, column=1, sticky="ew", padx=(6, 6))
+        self.agent_log_combo.bind("<<ComboboxSelected>>", lambda _e: self._refresh_agent_log_view())
+
+        btn_refresh_agent_logs = ttk.Button(
+            controls, text="Refresh", command=self._refresh_agent_log_files_and_view
+        )
+        btn_refresh_agent_logs.grid(row=0, column=2, sticky="e")
+
+        btn_rotate_agent_logs = ttk.Button(
+            controls, text="Rotate now", command=self._on_rotate_agent_logs
+        )
+        btn_rotate_agent_logs.grid(row=0, column=3, sticky="e", padx=(6, 0))
+        add_tooltip(
+            btn_rotate_agent_logs,
+            "Triggers on-demand rotation and moves the rotated file to YYYY-MM-DD.txt (requires Admin).",
+        )
+
+        ttk.Separator(agent_log_tab, orient="horizontal").grid(row=2, column=0, sticky="ew", pady=8)
+
+        ttk.Label(
+            agent_log_tab,
+            text=f"Current capture file: {AGENT_LOG_CURRENT_PATH}",
+            style="Card.TLabel",
+        ).grid(row=3, column=0, sticky="w")
+
+        agent_log_frame = ttk.Frame(agent_log_tab, style="Card.TFrame", padding=(4, 4, 4, 4))
+        agent_log_frame.grid(row=4, column=0, sticky="nsew", pady=(8, 0))
+        agent_log_frame.columnconfigure(0, weight=1)
+        agent_log_frame.rowconfigure(0, weight=1)
+
+        self.agent_log_text = tk.Text(
+            agent_log_frame,
+            wrap="none",
+            font=("Consolas", 9),
+            state="disabled",
+            bg="#ffffff",
+        )
+        agent_log_scroll = ttk.Scrollbar(
+            agent_log_frame, orient="vertical", command=self.agent_log_text.yview
+        )
+        self.agent_log_text.configure(yscrollcommand=agent_log_scroll.set)
+
+        self.agent_log_text.grid(row=0, column=0, sticky="nsew")
+        agent_log_scroll.grid(row=0, column=1, sticky="ns")
+
+        self._agent_log_files_map: dict[str, Path] = {}
+        self._refresh_agent_log_files_and_view(select_latest=True)
+
         # ------------------------------------------------------------------ Bottom section
         outer.rowconfigure(2, weight=0)
         outer.rowconfigure(3, weight=0)
@@ -874,6 +983,7 @@ class BeszelAgentManagerApp(tk.Tk):
         var,
         tooltip: str,
         is_int: bool = False,
+        allow_empty: bool = False,
     ):
         lbl = ttk.Label(parent, text=label + ":", style="Card.TLabel")
         lbl.grid(row=row, column=0, sticky="w", pady=2)
@@ -881,71 +991,52 @@ class BeszelAgentManagerApp(tk.Tk):
         entry = ttk.Entry(parent, textvariable=var, state="readonly")
         entry.grid(row=row, column=1, sticky="ew", pady=2)
 
+        # Locked by default; "Change" simply unlocks the field inline.
         btn = ttk.Button(parent, text="Change")
         btn.grid(row=row, column=2, sticky="w", padx=(4, 0), pady=2)
 
-        def open_dialog():
-            top = tk.Toplevel(self)
-            top.title(f"Change {label}")
-            top.transient(self)
-            top.grab_set()
-            top.resizable(False, False)
+        def toggle_inline_edit():
+            # Unlock -> normal, Lock -> readonly
+            if str(entry.cget("state")) == "readonly":
+                entry.configure(state="normal")
+                btn.configure(text="Lock")
+                entry.focus_set()
+                try:
+                    entry.icursor("end")
+                except Exception:
+                    pass
+                return
 
-            frm = ttk.Frame(top, padding=10)
-            frm.grid(row=0, column=0, sticky="nsew")
-            frm.columnconfigure(1, weight=1)
+            # Locking: validate integers if requested.
+            val = str(var.get()).strip()
+            if is_int:
+                if allow_empty and not val:
+                    entry.configure(state="readonly")
+                    btn.configure(text="Change")
+                    return
+                try:
+                    iv = int(val)
+                    if not (1 <= iv <= 65535) and label.lower().startswith("listen"):
+                        raise ValueError
+                    # Normalize to int-like string (keeps things consistent)
+                    var.set(str(iv))
+                except Exception:
+                    messagebox.showerror(
+                        PROJECT_NAME,
+                        f"{label} must be a number" + (" (or left blank)." if allow_empty else "."),
+                        parent=self,
+                    )
+                    entry.focus_set()
+                    return
 
-            ttk.Label(frm, text=f"{label}:", style="Card.TLabel").grid(
-                row=0, column=0, sticky="w"
-            )
+            entry.configure(state="readonly")
+            btn.configure(text="Change")
 
-            current_value = str(var.get())
-            tmp_var = tk.StringVar(value=current_value)
-
-            ent = ttk.Entry(frm, textvariable=tmp_var)
-            ent.grid(row=0, column=1, sticky="ew", padx=(6, 0))
-            ent.focus_set()
-            ent.icursor("end")
-
-            btn_frame = ttk.Frame(frm)
-            btn_frame.grid(row=1, column=0, columnspan=2, sticky="e", pady=(10, 0))
-
-            def on_save():
-                val = tmp_var.get()
-                if is_int:
-                    try:
-                        iv = int(val)
-                    except ValueError:
-                        messagebox.showerror(
-                            PROJECT_NAME,
-                            f"{label} must be a number.",
-                            parent=top,
-                        )
-                        return
-                    var.set(iv)
-                else:
-                    var.set(val)
-                top.destroy()
-
-            def on_cancel():
-                top.destroy()
-
-            btn_ok = ttk.Button(btn_frame, text="Save", command=on_save)
-            btn_ok.grid(row=0, column=0, padx=(0, 6))
-
-            btn_cancel = ttk.Button(btn_frame, text="Cancel", command=on_cancel)
-            btn_cancel.grid(row=0, column=1)
-
-            self.update_idletasks()
-            x = self.winfo_rootx() + (self.winfo_width() // 2) - (top.winfo_reqwidth() // 2)
-            y = self.winfo_rooty() + (self.winfo_height() // 2) - (top.winfo_reqheight() // 2)
-            top.geometry(f"+{x}+{y}")
-
-        btn.configure(command=open_dialog)
+        btn.configure(command=toggle_inline_edit)
 
         add_tooltip(lbl, tooltip)
         add_tooltip(entry, tooltip)
-        add_tooltip(btn, "Open a dialog to change this value safely.")
+        add_tooltip(btn, "Unlock to edit, then click again to lock.")
 
     # ------------------------------------------------------------------ Env helpers
 
@@ -961,7 +1052,9 @@ class BeszelAgentManagerApp(tk.Tk):
             child.destroy()
         self._env_entries.clear()
         self._env_delete_buttons.clear()
+        self._env_edit_buttons.clear()
 
+        enabled = self.var_env_enabled.get()
         row = 0
         for name in self.active_env_names:
             for n, var, tip in self.env_definitions:
@@ -974,9 +1067,36 @@ class BeszelAgentManagerApp(tk.Tk):
                     lbl.grid(row=row, column=0, sticky="w", pady=1)
                     add_tooltip(lbl, tip)
 
-                    ent = ttk.Entry(self.env_rows_frame, textvariable=var)
+                    # Locked by default; unlock per-row using the Edit button.
+                    state = "disabled" if not enabled else ("normal" if name in self._env_editing else "readonly")
+                    ent = ttk.Entry(self.env_rows_frame, textvariable=var, state=state)
                     ent.grid(row=row, column=1, sticky="ew", pady=1)
                     add_tooltip(ent, tip)
+
+                    def _toggle_edit(nm=name, entry=ent):
+                        if nm not in self._env_editing:
+                            # Enter edit mode (requires admin because we auto-apply on save)
+                            if not self._require_admin():
+                                return
+                            self._env_editing.add(nm)
+                            entry.configure(state="normal")
+                            entry.focus_set()
+                            entry.icursor("end")
+                        else:
+                            # Save + lock + apply
+                            self._env_editing.discard(nm)
+                            entry.configure(state="readonly")
+                            self._on_apply()
+                        self._rebuild_env_rows()
+
+                    btn_edit = ttk.Button(
+                        self.env_rows_frame,
+                        text="Save" if name in self._env_editing else "Edit",
+                        command=_toggle_edit,
+                        width=6,
+                    )
+                    btn_edit.grid(row=row, column=2, sticky="w", padx=(4, 0))
+                    add_tooltip(btn_edit, "Unlock to edit; Save will apply settings (admin required).")
 
                     btn_del = ttk.Button(
                         self.env_rows_frame,
@@ -984,9 +1104,10 @@ class BeszelAgentManagerApp(tk.Tk):
                         command=lambda nm=name: self._on_env_delete(nm),
                         width=8,
                     )
-                    btn_del.grid(row=row, column=2, sticky="w", padx=(4, 0))
+                    btn_del.grid(row=row, column=3, sticky="w", padx=(4, 0))
 
                     self._env_entries.append(ent)
+                    self._env_edit_buttons.append(btn_edit)
                     self._env_delete_buttons.append(btn_del)
                     row += 1
                     break
@@ -1013,10 +1134,14 @@ class BeszelAgentManagerApp(tk.Tk):
 
     def _update_env_enabled_state(self):
         enabled = self.var_env_enabled.get()
-        entry_state = "normal" if enabled else "disabled"
 
-        for ent in self._env_entries:
-            ent.configure(state=entry_state)
+        # Respect per-row locking: when enabled, rows are readonly unless the user
+        # explicitly clicked Edit for that row.
+        for name, ent in zip(self.active_env_names, self._env_entries):
+            if not enabled:
+                ent.configure(state="disabled")
+            else:
+                ent.configure(state="normal" if name in self._env_editing else "readonly")
         for btn in self._env_delete_buttons:
             btn.configure(state="normal" if enabled else "disabled")
 
@@ -1062,6 +1187,76 @@ class BeszelAgentManagerApp(tk.Tk):
         self.log_text.configure(state="disabled")
         self.log_text.see(tk.END)
 
+    # ------------------------------------------------------------------ Agent log viewer
+
+    def _refresh_agent_log_files_and_view(self, select_latest: bool = False):
+        """Refresh the dropdown list of agent log files and update the view."""
+        try:
+            files = list_agent_log_files()
+        except Exception as exc:
+            files = []
+            log(f"Failed to list agent log files: {exc}")
+
+        values: list[str] = []
+        mapping: dict[str, Path] = {}
+        for p in files:
+            if p == AGENT_LOG_CURRENT_PATH:
+                label = f"Current ({p.name})"
+            else:
+                label = p.name
+            values.append(label)
+            mapping[label] = p
+
+        self._agent_log_files_map = mapping
+        self.agent_log_combo["values"] = values
+
+        if not values:
+            self.var_agent_log_file.set("")
+            self._set_agent_log_text("(No agent logs found yet.)")
+            return
+
+        current = self.var_agent_log_file.get()
+        if select_latest or current not in mapping:
+            preferred = "Current (beszel-agent.log)" if "Current (beszel-agent.log)" in mapping else values[0]
+            self.var_agent_log_file.set(preferred)
+
+        self._refresh_agent_log_view()
+
+    def _set_agent_log_text(self, content: str) -> None:
+        self.agent_log_text.configure(state="normal")
+        self.agent_log_text.delete("1.0", tk.END)
+        self.agent_log_text.insert(tk.END, content)
+        self.agent_log_text.configure(state="disabled")
+        self.agent_log_text.see(tk.END)
+
+    def _refresh_agent_log_view(self):
+        sel = self.var_agent_log_file.get().strip()
+        p = self._agent_log_files_map.get(sel)
+        if not p:
+            self._set_agent_log_text("(Select a log file.)")
+            return
+
+        try:
+            if p.exists():
+                content = p.read_text(encoding="utf-8", errors="replace")
+            else:
+                content = "(Selected log file does not exist.)"
+        except Exception as exc:
+            content = f"Failed to read agent log file:\n{exc}"
+
+        self._set_agent_log_text(content)
+
+    def _on_rotate_agent_logs(self):
+        if not self._require_admin():
+            return
+
+        def task():
+            rotate_agent_logs_and_rename()
+            # Refresh UI after rotation
+            self._refresh_agent_log_files_and_view(select_latest=False)
+
+        self._run_task("Rotating agent logs...", task)
+
     # ------------------------------------------------------------------ Misc helpers
 
     def _open_url(self, url: str):
@@ -1074,11 +1269,27 @@ class BeszelAgentManagerApp(tk.Tk):
 
     def _build_config(self) -> AgentConfig:
         c = self.config_obj
+
+        # LISTEN is optional. If blank, the agent will use its own default.
+        listen_raw = self.var_listen.get().strip()
+        listen: int | None = None
+        if listen_raw:
+            try:
+                listen = int(listen_raw)
+                if not (1 <= listen <= 65535):
+                    raise ValueError
+            except Exception:
+                messagebox.showerror(
+                    PROJECT_NAME,
+                    "Listen (port) must be a number between 1 and 65535, or left blank.",
+                )
+                listen = None
+
         cfg = AgentConfig(
             key=self.var_key.get().strip(),
             token=self.var_token.get().strip(),
             hub_url=self.var_hub_url.get().strip(),
-            listen=int(self.var_listen.get() or DEFAULT_LISTEN_PORT),
+            listen=listen,
             data_dir=self.var_data_dir.get().strip(),
             docker_host=self.var_docker_host.get().strip(),
             exclude_containers=self.var_exclude_containers.get().strip(),
@@ -1375,6 +1586,83 @@ class BeszelAgentManagerApp(tk.Tk):
 
         self._run_task("Applying configuration to service...", task)
 
+    def _update_listen_toggle_button(self) -> None:
+        """Update the Enable/Disable button based on whether LISTEN is set."""
+        try:
+            raw = self.var_listen.get().strip()
+        except Exception:
+            raw = ""
+        if getattr(self, "btn_listen_toggle", None) is None:
+            return
+        self.btn_listen_toggle.configure(text=("Disable" if raw else "Enable"))
+
+    def _on_toggle_listen_firewall(self):
+        """Enable or disable LISTEN + Firewall rule depending on current state."""
+        raw = self.var_listen.get().strip()
+
+        # ------------------------------------------------------------------ Disable
+        if raw:
+            if not self._require_admin():
+                return
+
+            try:
+                port = int(raw)
+            except Exception:
+                port = DEFAULT_LISTEN_PORT
+
+            if not messagebox.askyesno(
+                PROJECT_NAME,
+                f"This will clear LISTEN, apply settings, and remove the Windows Firewall rule (port {port}).\n\nContinue?",
+            ):
+                return
+
+            # Clear LISTEN and apply configuration
+            self.var_listen.set("")
+            cfg = self._build_config()
+            set_debug_logging(cfg.debug_logging)
+            set_autostart(
+                self.var_autostart.get(), start_hidden=not self.var_start_visible.get()
+            )
+
+            def task_disable():
+                apply_configuration_only(cfg)
+                # Rule name is fixed; removing it is safest.
+                remove_firewall_rule()
+                cfg.save()
+                self.config_obj = cfg
+
+            self._run_task("Disabling listen port + firewall rule...", task_disable)
+            return
+
+        # ------------------------------------------------------------------ Enable
+        if not self._require_admin():
+            return
+
+        # If LISTEN is empty, pick the agent default.
+        if not raw:
+            self.var_listen.set(str(DEFAULT_LISTEN_PORT))
+
+        cfg = self._build_config()
+        if cfg.listen is None:
+            cfg.listen = DEFAULT_LISTEN_PORT
+
+        set_debug_logging(cfg.debug_logging)
+        set_autostart(
+            self.var_autostart.get(), start_hidden=not self.var_start_visible.get()
+        )
+
+        def task_enable():
+            apply_configuration_only(cfg)
+            ensure_firewall_rule(int(cfg.listen))
+            cfg.save()
+            self.config_obj = cfg
+
+        self._run_task("Enabling listen port + firewall rule...", task_enable)
+
+    # Backward-compat (older code paths may still call this)
+    def _on_enable_listen_firewall(self):
+        self._on_toggle_listen_firewall()
+
     def _on_uninstall(self):
         if self._task_running:
             messagebox.showinfo(
@@ -1418,6 +1706,7 @@ class BeszelAgentManagerApp(tk.Tk):
                     log(f"Stop service during uninstall failed (may not exist): {exc}")
 
                 delete_update_task()
+                delete_agent_log_rotate_task()
                 delete_service()
                 remove_firewall_rule()
 
@@ -1572,16 +1861,48 @@ class BeszelAgentManagerApp(tk.Tk):
         def worker():
             import time
             import urllib.request
+            import ssl
+            import subprocess
 
             ping_ms = None
             reachable = False
             try:
                 start = time.perf_counter()
                 req = urllib.request.Request(url, method="HEAD")
-                with urllib.request.urlopen(req, timeout=5):
+                ctx = ssl.create_default_context()
+                with urllib.request.urlopen(req, timeout=5, context=ctx):
                     pass
                 ping_ms = int((time.perf_counter() - start) * 1000)
                 reachable = True
+            except ssl.SSLCertVerificationError as exc:
+                # PyInstaller/Python sometimes can't locate the system CA store on Windows.
+                # Fall back to PowerShell which uses Windows certificate store.
+                try:
+                    start = time.perf_counter()
+                    safe_url = url.replace("'", "''")
+                    ps = (
+                        "Invoke-WebRequest -UseBasicParsing -Method Head "
+                        f"-Uri '{safe_url}' -TimeoutSec 5 | Out-Null"
+                    )
+                    creationflags = 0
+                    if hasattr(subprocess, "CREATE_NO_WINDOW"):
+                        creationflags = subprocess.CREATE_NO_WINDOW
+                    cp = subprocess.run(
+                        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", ps],
+                        capture_output=True,
+                        text=True,
+                        timeout=10,
+                        creationflags=creationflags,
+                    )
+                    if cp.returncode == 0:
+                        ping_ms = int((time.perf_counter() - start) * 1000)
+                        reachable = True
+                    else:
+                        log(f"Hub ping failed (PowerShell): {(cp.stderr or cp.stdout or '').strip()}")
+                        reachable = False
+                except Exception as exc2:
+                    log(f"Hub ping failed (PowerShell exception): {exc2}")
+                    reachable = False
             except Exception as exc:
                 log(f"Hub ping failed: {exc}")
                 reachable = False

@@ -6,25 +6,18 @@ import re
 import shutil
 import subprocess
 import urllib.request
+import ssl
 import zipfile
 from pathlib import Path
 from typing import Optional, Tuple
 
 from .config import AgentConfig
 from .constants import AGENT_DIR, DATA_DIR, PROJECT_NAME
-from .scheduler import delete_update_task
+from .scheduler import delete_update_task, ensure_agent_log_rotate_task
 from .util import log
 from .windows_service import create_or_update_service, get_service_status
 
-# Try to import ensure_update_task (newer scheduler). Fall back silently if missing.
-try:
-    from .scheduler import ensure_update_task  # type: ignore[attr-defined]
-except ImportError:  # pragma: no cover
-    def ensure_update_task(*_args, **_kwargs):
-        log(
-            "Warning: ensure_update_task not found in scheduler; "
-            "auto-update scheduling is disabled in this build."
-        )
+from .scheduler import ensure_update_task
 
 
 AGENT_EXE_NAME = "beszel-agent.exe"
@@ -35,6 +28,35 @@ if os.name == "nt" and hasattr(subprocess, "CREATE_NO_WINDOW"):
     CREATE_NO_WINDOW = subprocess.CREATE_NO_WINDOW
 else:
     CREATE_NO_WINDOW = 0
+
+
+def _powershell_exe() -> str:
+    return os.path.join(
+        os.environ.get("SystemRoot", r"C:\\Windows"),
+        "System32",
+        "WindowsPowerShell",
+        "v1.0",
+        "powershell.exe",
+    )
+
+
+def _ps_escape_single(s: str) -> str:
+    return s.replace("'", "''")
+
+
+def _ps_run(command: str, timeout: int = 60) -> subprocess.CompletedProcess:
+    """Run PowerShell without showing a window."""
+    ps = _powershell_exe()
+    cmd = [ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command]
+    kwargs = {
+        "capture_output": True,
+        "text": True,
+        "shell": False,
+        "timeout": timeout,
+    }
+    if CREATE_NO_WINDOW:
+        kwargs["creationflags"] = CREATE_NO_WINDOW
+    return subprocess.run(cmd, **kwargs)
 
 
 # ---------------------------------------------------------------------------
@@ -77,15 +99,14 @@ def _fetch_latest_agent_release() -> Tuple[Optional[str], Optional[str]]:
     Returns (None, None) on error.
     """
     url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+    headers = {
+        "User-Agent": PROJECT_NAME,
+        "Accept": "application/vnd.github+json",
+    }
     try:
-        req = urllib.request.Request(
-            url,
-            headers={
-                "User-Agent": PROJECT_NAME,
-                "Accept": "application/vnd.github+json",
-            },
-        )
-        with urllib.request.urlopen(req, timeout=8) as resp:
+        req = urllib.request.Request(url, headers=headers)
+        ctx = ssl.create_default_context()
+        with urllib.request.urlopen(req, timeout=8, context=ctx) as resp:
             data = json.loads(resp.read().decode("utf-8", "replace"))
 
         tag = str(data.get("tag_name") or "").strip()
@@ -97,8 +118,32 @@ def _fetch_latest_agent_release() -> Tuple[Optional[str], Optional[str]]:
         body = data.get("body") or ""
         log(f"Latest Beszel agent release from GitHub: tag={tag}, version={version}")
         return version, body
+    except ssl.SSLCertVerificationError as exc:
+        log(f"Failed to fetch latest Beszel release from GitHub (SSL verify): {exc}")
     except Exception as exc:
         log(f"Failed to fetch latest Beszel release from GitHub: {exc}")
+
+    # PowerShell fallback (uses Windows trust store)
+    try:
+        parts = [f"'{_ps_escape_single(k)}'='{_ps_escape_single(v)}'" for k, v in headers.items()]
+        hdr = "@{" + ";".join(parts) + "}"
+        u = _ps_escape_single(url)
+        ps_cmd = f"$h={hdr}; (Invoke-WebRequest -UseBasicParsing -Headers $h -Uri '{u}').Content"
+        cp = _ps_run(ps_cmd, timeout=20)
+        if cp.returncode != 0:
+            raise RuntimeError(cp.stderr.strip())
+        data = json.loads((cp.stdout or "").encode("utf-8", "ignore").decode("utf-8", "replace"))
+
+        tag = str(data.get("tag_name") or "").strip()
+        version = _normalize_version(tag)
+        if not version:
+            log("GitHub latest release (PowerShell): could not normalize tag_name")
+            return None, None
+        body = data.get("body") or ""
+        log(f"Latest Beszel agent release from GitHub (PowerShell): tag={tag}, version={version}")
+        return version, body
+    except Exception as exc:
+        log(f"PowerShell fallback for GitHub latest release failed: {exc}")
         return None, None
 
 
@@ -139,9 +184,25 @@ def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -
     """
     agent_dir = _ensure_agent_dir()
     exe_path = _agent_exe_path()
-    zip_path = agent_dir / "beszel-agent.zip"
 
-    # Try to remove an existing exe to avoid PermissionError while extracting
+    # Download and extract into ProgramData, then MOVE the final exe into Program Files.
+    # This prevents leaving duplicate extracted copies behind and avoids partial writes.
+    tmp_dir = DATA_DIR / "tmp_agent"
+    zip_path = tmp_dir / "beszel-agent.zip"
+    extract_dir = tmp_dir / "extract"
+
+    try:
+        if extract_dir.exists():
+            shutil.rmtree(extract_dir, ignore_errors=True)
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        extract_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:
+        log(f"Warning: could not create temp extract dir {tmp_dir}: {exc}. Falling back to agent dir.")
+        tmp_dir = agent_dir
+        zip_path = agent_dir / "beszel-agent.zip"
+        extract_dir = agent_dir
+
+    # Remove existing exe to avoid permission problems
     if exe_path.exists():
         try:
             os.chmod(exe_path, 0o666)
@@ -161,15 +222,32 @@ def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -
 
     log(f"Downloading agent from {url}")
     try:
-        with urllib.request.urlopen(url, timeout=30) as resp, zip_path.open("wb") as f:
+        req = urllib.request.Request(url, headers={"User-Agent": PROJECT_NAME})
+        ctx = ssl.create_default_context()
+        with urllib.request.urlopen(req, timeout=30, context=ctx) as resp, zip_path.open("wb") as f:
             shutil.copyfileobj(resp, f)
+    except ssl.SSLCertVerificationError as exc:
+        log(f"Download failed due to SSL verify error: {exc}. Retrying via PowerShell...")
+        u = _ps_escape_single(url)
+        outp = _ps_escape_single(str(zip_path))
+        ps_cmd = f"Invoke-WebRequest -UseBasicParsing -Uri '{u}' -OutFile '{outp}'"
+        cp = _ps_run(ps_cmd, timeout=60)
+        if cp.returncode != 0:
+            raise RuntimeError(f"Download failed: {cp.stderr.strip()}") from exc
     except Exception as exc:
-        raise RuntimeError(f"Download failed: {exc}") from exc
+        # Try PowerShell once as a last resort
+        log(f"Download failed: {exc}. Retrying via PowerShell...")
+        u = _ps_escape_single(url)
+        outp = _ps_escape_single(str(zip_path))
+        ps_cmd = f"Invoke-WebRequest -UseBasicParsing -Uri '{u}' -OutFile '{outp}'"
+        cp = _ps_run(ps_cmd, timeout=60)
+        if cp.returncode != 0:
+            raise RuntimeError(f"Download failed: {cp.stderr.strip()}") from exc
 
-    log(f"Extracting agent zip to {agent_dir}")
+    log("Extracting agent zip")
     try:
         with zipfile.ZipFile(zip_path, "r") as zf:
-            zf.extractall(agent_dir)
+            zf.extractall(extract_dir)
     except PermissionError as exc:
         raise RuntimeError(
             f"Failed to extract agent zip because {exe_path} is in use.\n"
@@ -184,8 +262,38 @@ def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -
         except Exception as exc:
             log(f"Failed to remove agent zip: {exc}")
 
+    # Find the exe inside the extracted tree and MOVE it into place
+    extracted_exe: Optional[Path] = None
+    try:
+        for p in extract_dir.rglob(AGENT_EXE_NAME):
+            extracted_exe = p
+            break
+    except Exception:
+        extracted_exe = None
+
+    if not extracted_exe or not extracted_exe.exists():
+        raise RuntimeError(f"Agent binary not found after extract: expected {AGENT_EXE_NAME}")
+
+    try:
+        if extracted_exe.resolve() != exe_path.resolve():
+            exe_path.parent.mkdir(parents=True, exist_ok=True)
+            if exe_path.exists():
+                try:
+                    os.chmod(exe_path, 0o666)
+                    exe_path.unlink()
+                except Exception:
+                    pass
+            shutil.move(str(extracted_exe), str(exe_path))
+    finally:
+        # Clean up temp extraction folder if we used ProgramData tmp
+        try:
+            if tmp_dir != agent_dir and tmp_dir.exists():
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+        except Exception:
+            pass
+
     if not exe_path.exists():
-        raise RuntimeError(f"Agent binary not found after extract: {exe_path}")
+        raise RuntimeError(f"Agent binary not found after move: {exe_path}")
 
     log_msg = f"Installed/updated Beszel agent to version {version}."
     if changelog:
@@ -244,7 +352,8 @@ def _build_env_from_config(cfg: AgentConfig) -> dict:
     set_if(disk_usage_cache, "DISK_USAGE_CACHE")
     set_if(skip_systemd, "SKIP_SYSTEMD")
 
-    if cfg.listen:
+    # LISTEN is optional; if omitted, the agent uses its own default.
+    if cfg.listen is not None:
         env["LISTEN"] = str(cfg.listen)
 
     return env
@@ -292,6 +401,9 @@ def install_or_update_agent_and_service(cfg: AgentConfig) -> None:
     # windows_service.create_or_update_service currently expects a single 'env' argument.
     create_or_update_service(env)
 
+    # Ensure daily agent log rotation task exists
+    ensure_agent_log_rotate_task()
+
     if cfg.auto_update_enabled:
         log(
             f"Ensuring scheduled update task (interval {cfg.update_interval_days} days)"
@@ -315,6 +427,9 @@ def apply_configuration_only(cfg: AgentConfig) -> None:
 
     # IMPORTANT: keep this signature in sync with windows_service.create_or_update_service
     create_or_update_service(env)
+
+    # Ensure daily agent log rotation task exists
+    ensure_agent_log_rotate_task()
 
     if cfg.auto_update_enabled:
         log(

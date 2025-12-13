@@ -3,12 +3,13 @@ import os
 from pathlib import Path
 
 PROJECT_NAME = "BeszelAgentManager"
-APP_VERSION = "2.0.1"
+APP_VERSION = "2.1.6"
 
 AGENT_SERVICE_NAME = PROJECT_NAME
 AGENT_DISPLAY_NAME = PROJECT_NAME
 
 PROGRAM_FILES = os.environ.get("ProgramFiles", r"C:\Program Files")
+MANAGER_EXE_PATH = Path(PROGRAM_FILES) / PROJECT_NAME / f"{PROJECT_NAME}.exe"
 AGENT_DIR = Path(PROGRAM_FILES) / "Beszel-Agent"
 AGENT_EXE_NAME = "beszel-agent.exe"
 AGENT_EXE_PATH = AGENT_DIR / AGENT_EXE_NAME
@@ -17,6 +18,11 @@ PROGRAM_DATA = Path(os.environ.get("ProgramData", r"C:\ProgramData"))
 DATA_DIR = PROGRAM_DATA / PROJECT_NAME
 CONFIG_PATH = DATA_DIR / "config.json"
 LOG_PATH = DATA_DIR / "manager.log"
+
+# Agent log capture (stdout/stderr redirected by NSSM)
+AGENT_LOG_DIR = DATA_DIR / "agent_logs"
+AGENT_LOG_CURRENT_PATH = AGENT_LOG_DIR / "beszel-agent.log"
+AGENT_LOG_ROTATE_TASK_NAME = PROJECT_NAME + "AgentLogRotate"
 UPDATE_SCRIPT_PATH = DATA_DIR / "update-beszel-agent.ps1"
 
 AUTO_UPDATE_TASK_NAME = PROJECT_NAME + "Update"

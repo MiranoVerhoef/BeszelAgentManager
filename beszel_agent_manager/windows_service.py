@@ -16,6 +16,8 @@ from .constants import (
     NSSM_DOWNLOAD_URL,
     NSSM_DIR,
     NSSM_EXE_PATH,
+    AGENT_LOG_DIR,
+    AGENT_LOG_CURRENT_PATH,
 )
 from .util import run, log
 
@@ -74,6 +76,24 @@ def _find_nssm() -> str:
     return _download_nssm()
 
 
+def _configure_agent_logging(nssm: str) -> None:
+    """Configure NSSM stdout/stderr redirection for the agent service."""
+    try:
+        AGENT_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception as exc:
+        log(f"Failed to create agent log dir {AGENT_LOG_DIR}: {exc}")
+        return
+
+    # Redirect both stdout and stderr to a single file.
+    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppStdout', str(AGENT_LOG_CURRENT_PATH)], check=False)
+    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppStderr', str(AGENT_LOG_CURRENT_PATH)], check=False)
+
+    # Enable on-demand rotation (nssm rotate) and timestamp prefixing.
+    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppRotation', '1'], check=False)
+    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppRotateOnline', '1'], check=False)
+    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppTimestampLog', '1'], check=False)
+
+
 def create_or_update_service(env_vars: Dict[str, str]) -> None:
     if not AGENT_EXE_PATH.exists():
         raise ServiceError(f'Agent executable not found: {AGENT_EXE_PATH}')
@@ -82,6 +102,7 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
     run([nssm, 'install', AGENT_SERVICE_NAME, str(AGENT_EXE_PATH)], check=False)
     run([nssm, 'set', AGENT_SERVICE_NAME, 'DisplayName', AGENT_DISPLAY_NAME], check=False)
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppDirectory', str(AGENT_DIR)], check=False)
+    _configure_agent_logging(nssm)
     env_pairs = [f"{k}={v}" for k, v in env_vars.items() if v]
     if not env_pairs:
         env_pairs = [""]
@@ -91,6 +112,17 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
     run([nssm, 'stop', AGENT_SERVICE_NAME], check=False)
     run([nssm, 'start', AGENT_SERVICE_NAME], check=False)
     log('Service started/restarted via NSSM.')
+
+
+def rotate_service_logs() -> None:
+    """Trigger on-demand rotation of the agent service stdout/stderr logs."""
+    try:
+        nssm = _find_nssm()
+    except Exception as exc:
+        log(f"Unable to find NSSM for log rotation: {exc}")
+        return
+    run([nssm, 'rotate', AGENT_SERVICE_NAME], check=False)
+    log('Requested NSSM log rotation for agent service.')
 
 
 def get_service_status() -> str:

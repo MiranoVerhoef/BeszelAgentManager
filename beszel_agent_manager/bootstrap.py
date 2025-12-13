@@ -125,6 +125,26 @@ def _copy_to_program_files(exe_path: Path) -> Path:
     return target_exe
 
 
+def _schedule_delete_file(path: Path) -> None:
+    """Best-effort delete of a file after this process exits.
+
+    We can't truly "move" a running executable. Instead we copy it to Program Files,
+    then schedule deletion of the original file once the process exits.
+    """
+    if os.name != "nt":
+        return
+    try:
+        # Use cmd.exe so we can wait a moment and delete quietly.
+        cmd = (
+            f'cmd.exe /C timeout /T 2 /NOBREAK >NUL & '
+            f'del /F /Q "{path}" >NUL 2>&1'
+        )
+        _run_hidden(cmd, check=False)
+        log(f"Scheduled deletion of original executable: {path}")
+    except Exception as exc:
+        log(f"Failed to schedule deletion of original executable {path}: {exc}")
+
+
 def _run_elevated_again(exe_path: Path) -> None:
     """
     Relaunch this executable as administrator (UAC prompt).
@@ -237,6 +257,8 @@ def ensure_elevated_and_location() -> None:
         try:
             subprocess.Popen([str(new_exe)], shell=False)
             log(f"Started Program Files instance {new_exe} and exiting elevated instance.")
+            # Delete the original executable (best-effort) so behavior is closer to a true move.
+            _schedule_delete_file(exe_path)
         except Exception as exc:
             log(f"Failed to start Program Files instance: {exc}")
         sys.exit(0)
