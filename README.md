@@ -1,4 +1,4 @@
-# BeszelAgentManager 2.0.0
+# BeszelAgentManager 2.1.6
 
 BeszelAgentManager is a Windows GUI helper that installs and manages the Beszel agent.
 
