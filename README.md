@@ -1,4 +1,4 @@
-# BeszelAgentManager (v2.3.0)
+# BeszelAgentManager
 
 BeszelAgentManager is a Windows app that makes it easy to **install, configure, update, and manage the Beszel agent**.
 
