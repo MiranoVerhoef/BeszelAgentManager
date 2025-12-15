@@ -1,36 +1,96 @@
-# BeszelAgentManager 2.2.0
+# BeszelAgentManager
 
-BeszelAgentManager is a Windows GUI helper that installs and manages the Beszel agent.
+BeszelAgentManager is a simple Windows app that helps you install, configure, and manage the Beszel agent on a Windows machine — without having to do everything manually.
 
-- Installs agent to: `C:\\Program Files\\Beszel-Agent\\beszel-agent.exe`
-- Creates/updates an NSSM-based Windows service:
-  - Service name: `BeszelAgentManager`
-  - Display name: `BeszelAgentManager`
-- Automatically downloads NSSM if it is not present
-- Configures `KEY`, `TOKEN`, `HUB_URL`, `LISTEN` and advanced environment variables
-- Opens Windows Firewall for the listen port
-- Optional automatic updates via Scheduled Tasks
-- Logging tab with debug logging option
-- Option to start BeszelAgentManager with Windows (tray always available)
-- Tray menu with:
-  - Open BeszelAgentManager
-  - **Open hub URL** (uses the configured HUB URL)
-  - Start/Stop/Restart service
-  - Update agent now
-  - Exit
-- Service control buttons on the main Connection tab
-- Shows the detected agent version in the status bar
-- Shows the BeszelAgentManager version (`1.1.0`) in the GUI and in the EXE metadata
-- Separate "Install agent" and "Update agent" actions
-- On startup, automatically requests administrator rights and can move itself to
-  `C:\\Program Files\\BeszelAgentManager` for a clean installation location
-- Creates a Start Menu shortcut under the Windows app list, and removes it on uninstall
-- Requests a Windows Defender exclusion for `C:\\Program Files\\BeszelAgentManager`
-- Enforces a single running instance of the manager with an option to kill the old instance
-- Uninstall button to remove service, firewall rule, task, agent files and the Start Menu shortcut
-- "About" button for the manager (credit: Verhoef)
-- "About Beszel" button with links to the upstream project and website
-- Status bar now also shows best-effort **Hub** connectivity status (`Reachable` / `Unreachable` / `Not configured`)
+What it does
+
+Installs the Beszel agent to:
+C:\Program Files\Beszel-Agent\beszel-agent.exe
+
+Runs the agent as a Windows Service so it starts and stays running:
+
+Service name: BeszelAgentManager
+
+Shown in Services as: Beszel Agent
+
+Lets you configure the agent connection:
+
+KEY
+
+TOKEN
+
+HUB_URL
+
+Optional LISTEN port
+
+Optional extra Beszel environment settings (advanced options)
+
+Firewall support for the listen port
+You can enable/disable the listen port, and the app can add/remove the required Windows Firewall rule.
+
+Update & version management
+
+Update agent / Update manager: checks GitHub and updates if a newer version exists
+
+Manage version menus: pick a specific version to install (upgrade or rollback), or force reinstall
+
+Scheduled tasks (optional)
+
+Can set up automatic update tasks (if enabled in the UI)
+
+Logs (built in)
+
+Manager logs are stored here:
+C:\ProgramData\BeszelAgentManager\manager.log
+
+Agent logs are viewable in the app and stored here:
+C:\ProgramData\BeszelAgentManager\agent_logs\
+
+Current log: beszel-agent.log
+
+Daily logs: YYYY-MM-DD.txt
+
+Easy controls in the app
+
+Install agent: downloads the agent and sets everything up
+
+Update agent: updates only the agent if there’s a newer version
+
+Manage Agent Version…: choose a specific agent version or force reinstall
+
+Update manager: updates the BeszelAgentManager app itself
+
+Manage Manager Version…: choose a specific manager version or force reinstall
+
+Apply settings: reapplies settings without reinstalling
+
+Uninstall agent: removes the service, firewall rule, tasks, and installed files
+
+Tray icon (runs in the background)
+
+When enabled, BeszelAgentManager can live in your system tray so you can quickly:
+
+Open BeszelAgentManager
+
+Open your configured Hub URL
+
+Start / Stop / Restart the service
+
+Trigger an update check
+
+Exit
+
+Status indicators
+
+The status bar shows:
+
+Your installed agent version (when detected)
+
+Hub reachability status (Reachable / Unreachable / Not configured) based on your HUB_URL
+
+Notes
+
+Because it installs services, firewall rules, and scheduled tasks, BeszelAgentManager will request Administrator permissions when needed.
 
 Credit: Verhoef
 
