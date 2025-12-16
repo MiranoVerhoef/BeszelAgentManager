@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='BeszelAgentManager2.0.1',
+    name='BeszelAgentManager2.3.0',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -37,3 +37,4 @@ exe = EXE(
     entitlements_file=None,
     icon=['BeszelAgentManager_icon.ico'],
 )
+
