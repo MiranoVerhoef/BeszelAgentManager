@@ -3,10 +3,10 @@ import os
 from pathlib import Path
 
 PROJECT_NAME = "BeszelAgentManager"
-APP_VERSION = "2.1.6"
+APP_VERSION = "2.3.3"
 
 AGENT_SERVICE_NAME = PROJECT_NAME
-AGENT_DISPLAY_NAME = PROJECT_NAME
+AGENT_DISPLAY_NAME = "Beszel Agent"
 
 PROGRAM_FILES = os.environ.get("ProgramFiles", r"C:\Program Files")
 MANAGER_EXE_PATH = Path(PROGRAM_FILES) / PROJECT_NAME / f"{PROJECT_NAME}.exe"
@@ -38,5 +38,21 @@ NSSM_EXE_PATH = NSSM_DIR / "nssm.exe"
 
 DEFAULT_LISTEN_PORT = 45876
 FIREWALL_RULE_NAME = "Beszel Agent"
+
+# ---------------------------------------------------------------------------
+# Manager self-updater
+# ---------------------------------------------------------------------------
+
+# GitHub repo for the manager itself
+MANAGER_REPO = "MiranoVerhoef/BeszelAgentManager"
+
+# Name of the .exe asset on GitHub releases and in Program Files
+MANAGER_ASSET_NAME = f"{PROJECT_NAME}.exe"
+
+# Where staged updates are stored
+MANAGER_UPDATES_DIR = DATA_DIR / "updates"
+
+# Temporary PowerShell script used to perform the in-place replacement
+MANAGER_UPDATE_SCRIPT = DATA_DIR / "update-manager.ps1"
 
 LOCK_PATH = DATA_DIR / "instance.lock"

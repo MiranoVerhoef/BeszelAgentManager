@@ -93,10 +93,28 @@ def rotate_agent_logs_and_rename(timeout_seconds: int = 12) -> None:
         time.sleep(0.5)
 
     if newest is None:
+        # NSSM only finalizes rotation after the next line is written by the managed app.
+        # If the agent is currently silent, users perceive rotation as "not working".
+        # Fallback: manually snapshot the current capture file to a daily .txt and truncate it.
         log(
             "Agent log rotation requested, but no rotated file appeared yet. "
-            "This can happen if the agent hasn't produced output since rotation was requested."
+            "Falling back to manual rotate (copy current -> YYYY-MM-DD.txt and truncate current)."
         )
+        try:
+            if AGENT_LOG_CURRENT_PATH.exists() and AGENT_LOG_CURRENT_PATH.stat().st_size > 0:
+                day = datetime.date.today()
+                target = _unique_daily_path(day)
+                content = AGENT_LOG_CURRENT_PATH.read_text(encoding="utf-8", errors="replace")
+                target.write_text(content, encoding="utf-8")
+                # Truncate current capture file so new logs start fresh.
+                AGENT_LOG_CURRENT_PATH.write_text("", encoding="utf-8")
+                log(f"Manual agent log rotate -> {target} (truncated {AGENT_LOG_CURRENT_PATH.name})")
+            else:
+                # Ensure the current file exists.
+                AGENT_LOG_CURRENT_PATH.touch(exist_ok=True)
+                log("Manual rotate: current agent log file is empty; nothing to rotate.")
+        except Exception as exc:
+            log(f"Manual agent log rotate failed: {exc}")
         return
 
     day = _date_from_rotated_name(newest)

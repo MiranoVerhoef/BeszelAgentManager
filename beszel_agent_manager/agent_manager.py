@@ -85,6 +85,14 @@ def _normalize_version(ver: str | None) -> str | None:
     return ver or None
 
 
+def _version_tuple(v: str) -> tuple[int, int, int]:
+    parts = (str(v).split(".") + ["0", "0", "0"])[:3]
+    try:
+        return int(parts[0]), int(parts[1]), int(parts[2])
+    except Exception:
+        return 0, 0, 0
+
+
 # ---------------------------------------------------------------------------
 # GitHub helpers
 # ---------------------------------------------------------------------------
@@ -145,6 +153,83 @@ def _fetch_latest_agent_release() -> Tuple[Optional[str], Optional[str]]:
     except Exception as exc:
         log(f"PowerShell fallback for GitHub latest release failed: {exc}")
         return None, None
+
+
+def fetch_agent_stable_releases(limit: int = 50) -> list[dict]:
+    """Fetch stable (non-draft, non-prerelease) Beszel releases from GitHub.
+
+    Returns a list of dicts containing:
+      - version
+      - tag
+      - body
+      - download_url (windows/amd64 zip)
+      - published_at
+    """
+    url = f"https://api.github.com/repos/{GITHUB_REPO}/releases?per_page={limit}"
+    headers = {
+        "User-Agent": PROJECT_NAME,
+        "Accept": "application/vnd.github+json",
+    }
+
+    def _extract_release_list(data) -> list[dict]:
+        out: list[dict] = []
+        for r in data if isinstance(data, list) else []:
+            if r.get("draft") or r.get("prerelease"):
+                continue
+            tag = str(r.get("tag_name") or "").strip()
+            version = _normalize_version(tag)
+            if not version:
+                continue
+            asset_url = None
+            for a in (r.get("assets") or []):
+                name = str(a.get("name") or "").lower()
+                if name == "beszel-agent_windows_amd64.zip":
+                    asset_url = a.get("browser_download_url")
+                    break
+            if not asset_url:
+                continue
+            out.append(
+                {
+                    "version": version,
+                    "tag": tag,
+                    "body": str(r.get("body") or ""),
+                    "download_url": asset_url,
+                    "published_at": r.get("published_at"),
+                }
+            )
+        out.sort(key=lambda x: _version_tuple(x["version"]), reverse=True)
+        return out
+
+    # Try urllib first
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        ctx = ssl.create_default_context()
+        with urllib.request.urlopen(req, timeout=12, context=ctx) as resp:
+            data = json.loads(resp.read().decode("utf-8", "replace"))
+        releases = _extract_release_list(data)
+        log(f"Fetched {len(releases)} stable Beszel releases from GitHub")
+        return releases
+    except ssl.SSLCertVerificationError as exc:
+        log(f"Failed to fetch Beszel releases from GitHub (SSL verify): {exc}")
+    except Exception as exc:
+        log(f"Failed to fetch Beszel releases from GitHub: {exc}")
+
+    # PowerShell fallback
+    try:
+        parts = [f"'{_ps_escape_single(k)}'='{_ps_escape_single(v)}'" for k, v in headers.items()]
+        hdr = "@{" + ";".join(parts) + "}"
+        u = _ps_escape_single(url)
+        ps_cmd = f"$h={hdr}; (Invoke-WebRequest -UseBasicParsing -Headers $h -Uri '{u}').Content"
+        cp = _ps_run(ps_cmd, timeout=25)
+        if cp.returncode != 0:
+            raise RuntimeError((cp.stderr or cp.stdout or "").strip())
+        data = json.loads((cp.stdout or "").encode("utf-8", "ignore").decode("utf-8", "replace"))
+        releases = _extract_release_list(data)
+        log(f"Fetched {len(releases)} stable Beszel releases from GitHub (PowerShell)")
+        return releases
+    except Exception as exc:
+        log(f"PowerShell fallback for Beszel releases failed: {exc}")
+        return []
 
 
 def _parse_download_version() -> str:
@@ -313,8 +398,18 @@ def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -
     log(log_msg)
 
 
-def _build_env_from_config(cfg: AgentConfig) -> dict:
-    env = os.environ.copy()
+def _build_env_from_config(cfg: AgentConfig, *, include_process_env: bool = False) -> dict:
+    """Build environment variables for the Beszel agent.
+
+    When configuring the Windows service (NSSM), we must *not* pass a full copy of the
+    manager process environment (PyInstaller adds many _PYI_/TCL/TK vars, etc.).
+    In that case we only set the Beszel agent env vars.
+
+    For one-off runs (querying agent version/help), we can include the current
+    process environment.
+    """
+
+    env = os.environ.copy() if include_process_env else {}
 
     def set_if(value: str | None, key: str):
         if value:
@@ -365,7 +460,7 @@ def _run_agent_once(cfg: AgentConfig, args: list[str]) -> subprocess.CompletedPr
         raise RuntimeError("Agent binary does not exist, cannot run agent.")
 
     cmd = [str(exe_path)] + args
-    env = _build_env_from_config(cfg)
+    env = _build_env_from_config(cfg, include_process_env=True)
     log(f"Running agent: {' '.join(cmd)}")
     return subprocess.run(
         cmd,
@@ -394,7 +489,8 @@ def install_or_update_agent_and_service(cfg: AgentConfig) -> None:
     log(f"Starting agent install/update to version {version}")
     _download_and_extract_agent(version, changelog=changelog)
 
-    env = _build_env_from_config(cfg)
+    # Only set Beszel agent env vars (do NOT include manager process env)
+    env = _build_env_from_config(cfg, include_process_env=False)
     log("Configuring Windows service for Beszel agent")
 
     # IMPORTANT: keep this signature in sync with windows_service.create_or_update_service
@@ -422,7 +518,8 @@ def apply_configuration_only(cfg: AgentConfig) -> None:
     if not exe_path.exists():
         raise RuntimeError("Agent is not installed yet.")
 
-    env = _build_env_from_config(cfg)
+    # Only set Beszel agent env vars (do NOT include manager process env)
+    env = _build_env_from_config(cfg, include_process_env=False)
     log("Updating Windows service configuration for Beszel agent")
 
     # IMPORTANT: keep this signature in sync with windows_service.create_or_update_service
@@ -441,14 +538,15 @@ def apply_configuration_only(cfg: AgentConfig) -> None:
         delete_update_task()
 
 
-def update_agent_only() -> None:
+def update_agent_only(version: str | None = None, changelog: str | None = None) -> None:
     """
     Update only the agent binary in AGENT_DIR, without touching service/scheduler.
     """
-    version, changelog = _fetch_latest_agent_release()
     if not version:
-        version = _parse_download_version()
-        changelog = None
+        version, changelog = _fetch_latest_agent_release()
+        if not version:
+            version = _parse_download_version()
+            changelog = None
 
     log(f"Updating agent binary to version {version}")
     _download_and_extract_agent(version, changelog=changelog)

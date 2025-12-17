@@ -37,6 +37,7 @@ from .agent_manager import (
     get_agent_version,
     update_agent_only,
     check_hub_status,
+    fetch_agent_stable_releases,
 )
 from .windows_service import (
     get_service_status,
@@ -49,6 +50,12 @@ from .windows_service import (
 )
 from .scheduler import delete_update_task, delete_agent_log_rotate_task
 from .agent_logs import list_agent_log_files, rotate_agent_logs_and_rename
+from .manager_updater import (
+    fetch_latest_release,
+    fetch_stable_releases,
+    is_update_available,
+    start_update,
+)
 from .util import log, set_debug_logging
 from .autostart import (
     get_autostart_state,
@@ -849,12 +856,16 @@ class BeszelAgentManagerApp(tk.Tk):
 
         bottom = ttk.Frame(outer, style="App.TFrame")
         bottom.grid(row=2, column=0, sticky="ew", pady=(10, 4))
-        for i in range(6):
-            bottom.columnconfigure(i, weight=1 if i == 0 else 0)
+        # Column 0 acts as a flexible spacer so the action buttons align nicely.
+        bottom.columnconfigure(0, weight=1)
+        for i in range(1, 12):
+            bottom.columnconfigure(i, weight=0)
 
         status_frame = ttk.Frame(outer, style="App.TFrame")
         status_frame.grid(row=3, column=0, sticky="ew")
         status_frame.columnconfigure(0, weight=1)
+        status_frame.columnconfigure(1, weight=0)
+        status_frame.columnconfigure(2, weight=0)
 
         self.label_app_version = ttk.Label(
             status_frame,
@@ -919,56 +930,50 @@ class BeszelAgentManagerApp(tk.Tk):
         self.progress.grid(row=0, column=1, rowspan=5, sticky="e")
         self.progress.grid_remove()
 
-        # Bottom buttons + hyperlinks
-        link_about = ttk.Label(bottom, text="About", style="Link.TLabel")
-        link_about.grid(row=0, column=0, padx=4, pady=4, sticky="w")
+        # Bottom-right hyperlinks (in the status bar)
+        link_about = ttk.Label(status_frame, text="About", style="Link.TLabel")
+        link_about.grid(row=0, column=1, padx=(4, 6), sticky="e")
         link_about.bind(
             "<Button-1>",
-            lambda e: self._open_url(
-                "https://github.com/MiranoVerhoef/BeszelAgentManager"
-            ),
+            lambda e: self._open_url("https://github.com/MiranoVerhoef/BeszelAgentManager"),
         )
         link_about.bind("<Enter>", lambda e: link_about.configure(cursor="hand2"))
         link_about.bind("<Leave>", lambda e: link_about.configure(cursor=""))
 
-        link_about_beszel = ttk.Label(bottom, text="About Beszel", style="Link.TLabel")
-        link_about_beszel.grid(row=0, column=1, padx=4, pady=4, sticky="w")
-        link_about_beszel.bind(
-            "<Button-1>", lambda e: self._open_url("https://beszel.dev")
-        )
-        link_about_beszel.bind(
-            "<Enter>", lambda e: link_about_beszel.configure(cursor="hand2")
-        )
-        link_about_beszel.bind(
-            "<Leave>", lambda e: link_about_beszel.configure(cursor="")
-        )
+        link_about_beszel = ttk.Label(status_frame, text="About Beszel", style="Link.TLabel")
+        link_about_beszel.grid(row=0, column=2, padx=(0, 4), sticky="e")
+        link_about_beszel.bind("<Button-1>", lambda e: self._open_url("https://beszel.dev"))
+        link_about_beszel.bind("<Enter>", lambda e: link_about_beszel.configure(cursor="hand2"))
+        link_about_beszel.bind("<Leave>", lambda e: link_about_beszel.configure(cursor=""))
 
-        btn_install = ttk.Button(
-            bottom,
-            text="Install agent",
-            command=self._on_install,
-        )
-        btn_install.grid(row=0, column=2, padx=4, pady=4, sticky="e")
+        # Bottom action buttons (uniform width)
+        BTN_W = 24
 
-        btn_update = ttk.Button(
-            bottom,
-            text="Update agent",
-            command=self._on_update_agent,
-        )
-        btn_update.grid(row=0, column=3, padx=4, pady=4, sticky="e")
+        btn_install = ttk.Button(bottom, text="Install agent", width=BTN_W, command=self._on_install)
+        btn_install.grid(row=0, column=1, padx=4, pady=4, sticky="e")
 
-        btn_apply = ttk.Button(
-            bottom,
-            text="Apply settings",
-            command=self._on_apply,
-        )
+        # Agent: quick update button (row 0) + manage version button (row 1)
+        btn_update_agent = ttk.Button(bottom, text="Update agent", width=BTN_W, command=self._on_update_agent)
+        btn_update_agent.grid(row=0, column=2, padx=4, pady=4, sticky="e")
+        add_tooltip(btn_update_agent, "Check GitHub and update the Beszel agent if a newer version is available.")
+
+        btn_manage_agent = ttk.Button(bottom, text="Manage Agent Version...", width=BTN_W, command=self._on_manage_agent_version)
+        btn_manage_agent.grid(row=1, column=2, padx=4, pady=(0, 4), sticky="e")
+        add_tooltip(btn_manage_agent, "Pick a version to install/rollback, or force reinstall the latest agent.")
+
+        # Manager: quick update button (row 0) + manage version button (row 1)
+        btn_update_manager = ttk.Button(bottom, text="Update manager", width=BTN_W, command=self._on_update_manager)
+        btn_update_manager.grid(row=0, column=3, padx=4, pady=4, sticky="e")
+        add_tooltip(btn_update_manager, "Check GitHub and update BeszelAgentManager if a newer version is available.")
+
+        btn_manage_manager = ttk.Button(bottom, text="Manage Manager Version...", width=BTN_W, command=self._on_manage_manager_version)
+        btn_manage_manager.grid(row=1, column=3, padx=4, pady=(0, 4), sticky="e")
+        add_tooltip(btn_manage_manager, "Pick a version to install/rollback, or force reinstall the latest manager.")
+
+        btn_apply = ttk.Button(bottom, text="Apply settings", width=BTN_W, command=self._on_apply)
         btn_apply.grid(row=0, column=4, padx=4, pady=4, sticky="e")
 
-        btn_uninstall = ttk.Button(
-            bottom,
-            text="Uninstall agent",
-            command=self._on_uninstall,
-        )
+        btn_uninstall = ttk.Button(bottom, text="Uninstall agent", width=BTN_W, command=self._on_uninstall)
         btn_uninstall.grid(row=0, column=5, padx=4, pady=4, sticky="e")
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -1567,6 +1572,481 @@ class BeszelAgentManagerApp(tk.Tk):
                 log(f"Failed to start service after update: {exc}")
 
         self._run_task("Updating agent binary...", task)
+
+    def _on_force_update_agent(self):
+        """Force re-download and reinstall of the latest Beszel agent."""
+        if not self._require_admin():
+            return
+
+        current = get_agent_version()
+        latest_version, changelog = _fetch_latest_agent_release()
+
+        # Build "What's changed" snippet from GitHub release body
+        changelog_snippet = ""
+        if changelog:
+            lines = [ln.rstrip() for ln in changelog.splitlines()]
+            while lines and not lines[0]:
+                lines.pop(0)
+            while lines and not lines[-1]:
+                lines.pop()
+            max_lines = 12
+            if len(lines) > max_lines:
+                lines = lines[:max_lines] + ["...", "(truncated; see GitHub release for full notes)"]
+            changelog_snippet = "\n\nWhat's changed:\n" + "\n".join(lines)
+
+        latest_display = latest_version or "(unknown)"
+        msg = (
+            "This will re-download and reinstall the Beszel agent, even if you already have the latest version.\n\n"
+            f"Installed: {current}\n"
+            f"Latest on GitHub: {latest_display}"
+            f"{changelog_snippet}\n\n"
+            "Do you want to continue?"
+        )
+        if not messagebox.askyesno(PROJECT_NAME, msg):
+            return
+
+        def task():
+            try:
+                stop_service()
+            except Exception as exc:
+                log(f"Failed to stop service before force update: {exc}")
+            update_agent_only()
+            try:
+                start_service()
+            except Exception as exc:
+                log(f"Failed to start service after force update: {exc}")
+
+        self._run_task("Force updating agent binary...", task)
+
+    # ------------------------------------------------------------------ Version pickers
+
+    def _on_agent_versions(self):
+        """Open a dialog to install/rollback the Beszel agent to a selected stable version."""
+        if not self._require_admin():
+            return
+
+        self._open_version_dialog(
+            kind="agent",
+            title="Manage Agent Version",
+            current_version=get_agent_version(),
+            fetch_releases=fetch_agent_stable_releases,
+            on_install=self._install_selected_agent_release,
+        )
+
+    def _on_manage_agent_version(self):
+        """Single entry point for managing the agent version (install/rollback/force reinstall)."""
+        self._on_agent_versions()
+
+    def _on_manager_versions(self):
+        """Open a dialog to install/rollback the manager to a selected stable version."""
+        if self._task_running:
+            messagebox.showinfo(PROJECT_NAME, "Another operation is already in progress.")
+            return
+
+        self._open_version_dialog(
+            kind="manager",
+            title="Manage Manager Version",
+            current_version=APP_VERSION,
+            fetch_releases=fetch_stable_releases,
+            on_install=self._install_selected_manager_release,
+        )
+
+    def _on_manage_manager_version(self):
+        """Single entry point for managing the manager version (install/rollback/force reinstall)."""
+        self._on_manager_versions()
+
+    def _open_version_dialog(
+        self,
+        kind: str,
+        title: str,
+        current_version: str,
+        fetch_releases,
+        on_install,
+    ) -> None:
+        """Generic version selector dialog."""
+
+        win = tk.Toplevel(self)
+        win.title(title)
+        win.geometry("620x420")
+        win.transient(self)
+        win.grab_set()
+
+        frm = ttk.Frame(win, padding=12)
+        frm.pack(fill="both", expand=True)
+        frm.columnconfigure(1, weight=1)
+        frm.rowconfigure(3, weight=1)
+
+        ttk.Label(frm, text=f"Installed: {current_version}").grid(row=0, column=0, columnspan=2, sticky="w")
+
+        ttk.Label(frm, text="Select version:").grid(row=1, column=0, sticky="w", pady=(10, 4))
+        var_sel = tk.StringVar()
+        cbo = ttk.Combobox(frm, textvariable=var_sel, state="readonly")
+        cbo.grid(row=1, column=1, sticky="ew", pady=(10, 4))
+
+        ttk.Separator(frm, orient="horizontal").grid(row=2, column=0, columnspan=2, sticky="ew", pady=8)
+
+        txt = tk.Text(frm, wrap="word", height=12, state="disabled", font=("Consolas", 9))
+        txt.grid(row=3, column=0, columnspan=2, sticky="nsew")
+
+        progress = ttk.Progressbar(frm, mode="indeterminate")
+        progress.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        progress.grid_remove()
+
+        btns = ttk.Frame(frm)
+        btns.grid(row=5, column=0, columnspan=2, sticky="e", pady=(10, 0))
+
+        mapping: dict[str, dict] = {}
+
+        def set_text(content: str) -> None:
+            txt.configure(state="normal")
+            txt.delete("1.0", tk.END)
+            txt.insert(tk.END, content)
+            txt.configure(state="disabled")
+
+        def on_pick(_evt=None):
+            rel = mapping.get(var_sel.get())
+            if not rel:
+                set_text("")
+                return
+            body = str(rel.get("body") or "")
+            if not body:
+                body = "(No release notes.)"
+            # Keep dialog responsive: show a short snippet
+            lines = [ln.rstrip() for ln in body.splitlines()]
+            while lines and not lines[0]:
+                lines.pop(0)
+            while lines and not lines[-1]:
+                lines.pop()
+            if len(lines) > 40:
+                lines = lines[:40] + ["...", "(truncated)"]
+            set_text("\n".join(lines))
+
+        def load_releases():
+            progress.grid()
+            progress.start(10)
+
+            state = {"releases": [], "error": None}
+
+            def worker():
+                try:
+                    state["releases"] = fetch_releases() or []
+                except Exception as exc:
+                    state["error"] = exc
+
+                def done():
+                    progress.stop()
+                    progress.grid_remove()
+
+                    if state["error"]:
+                        messagebox.showerror(PROJECT_NAME, f"Failed to fetch versions:\n{state['error']}")
+                        return
+
+                    rels = state["releases"]
+                    mapping.clear()
+                    values: list[str] = []
+                    for r in rels:
+                        v = str(r.get("version") or "")
+                        tag = str(r.get("tag") or "")
+                        if not v:
+                            continue
+                        label = f"{v} ({tag})" if tag and tag != v else v
+                        values.append(label)
+                        mapping[label] = r
+
+                    cbo["values"] = values
+                    if not values:
+                        var_sel.set("")
+                        set_text("(No versions found.)")
+                        return
+
+                    # Prefer installed version if present in list, else first (newest)
+                    pick = None
+                    for label, r in mapping.items():
+                        if str(r.get("version") or "") == current_version:
+                            pick = label
+                            break
+                    var_sel.set(pick or values[0])
+                    on_pick()
+
+                self.after(0, done)
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        def do_install(force: bool):
+            rel = mapping.get(var_sel.get())
+            if not rel:
+                messagebox.showinfo(PROJECT_NAME, "Please select a version first.")
+                return
+
+            v = str(rel.get("version") or "")
+            if not v:
+                messagebox.showerror(PROJECT_NAME, "Selected release has no version.")
+                return
+
+            if (not force) and (v == current_version):
+                messagebox.showinfo(PROJECT_NAME, f"You are already on {current_version}.")
+                return
+
+            def _vt(s: str) -> tuple[int, int, int]:
+                m = re.search(r"(\d+)\.(\d+)\.(\d+)", s or "")
+                if not m:
+                    return (0, 0, 0)
+                return (int(m.group(1)), int(m.group(2)), int(m.group(3)))
+
+            warn = "" if _vt(v) >= _vt(current_version) else "\n\nWARNING: This is a downgrade/rollback."
+            if not messagebox.askyesno(PROJECT_NAME, f"Install {kind} version {v}?{warn}"):
+                return
+
+            on_install(rel, force)
+
+        ttk.Button(btns, text="Refresh", command=load_releases).grid(row=0, column=0, padx=(0, 8))
+        ttk.Button(btns, text="Install", command=lambda: do_install(False)).grid(row=0, column=1, padx=(0, 8))
+        ttk.Button(btns, text="Force reinstall", command=lambda: do_install(True)).grid(row=0, column=2, padx=(0, 8))
+        ttk.Button(btns, text="Close", command=win.destroy).grid(row=0, column=3)
+
+        cbo.bind("<<ComboboxSelected>>", on_pick)
+        load_releases()
+
+    def _install_selected_agent_release(self, release: dict, force: bool) -> None:
+        """Install a specific agent release (version picker dialog)."""
+        version = str(release.get("version") or "").strip()
+        changelog = str(release.get("body") or "")
+
+        def task():
+            try:
+                stop_service()
+            except Exception as exc:
+                log(f"Failed to stop service before agent version install: {exc}")
+            update_agent_only(version=version, changelog=changelog)
+            try:
+                start_service()
+            except Exception as exc:
+                log(f"Failed to start service after agent version install: {exc}")
+
+        self._run_task(f"Installing agent {version}...", task)
+
+    def _install_selected_manager_release(self, release: dict, force: bool) -> None:
+        """Install a specific manager release (version picker dialog)."""
+
+        # Start update (download + replace) and exit app so the exe can be replaced.
+        def worker_update():
+            try:
+                start_update(release, args=[], current_pid=os.getpid(), force=force)
+            except SystemExit:
+                os._exit(0)
+            except Exception as exc:
+                log(f"Manager version install failed: {exc}\n{traceback.format_exc()}")
+                self.after(0, lambda: messagebox.showerror(PROJECT_NAME, f"Manager update failed:\n{exc}"))
+                return
+            os._exit(0)
+
+        self.label_status.config(text="Updating manager (selected version)...")
+        self.progress.grid()
+        self.progress.start(10)
+        threading.Thread(target=worker_update, daemon=True).start()
+
+    def _on_update_manager(self):
+        """Check GitHub for a newer manager release and perform an in-place update."""
+        if self._task_running:
+            messagebox.showinfo(PROJECT_NAME, "Another operation is already in progress.")
+            return
+
+        # ------------------------------------------------------------------ Step 1: check latest release
+        self._task_running = True
+        self.label_status.config(text="Checking for manager updates...")
+        self.progress.grid()
+        self.progress.start(10)
+
+        state = {"error": None, "release": None}
+
+        def worker_check():
+            try:
+                state["release"] = fetch_latest_release()
+            except Exception as exc:
+                state["error"] = exc
+                log(f"Manager update check failed: {exc}\n{traceback.format_exc()}")
+
+            def done_check():
+                self.progress.stop()
+                self.progress.grid_remove()
+                self._task_running = False
+                self._update_status()
+                self._refresh_log_view()
+
+                if state["error"]:
+                    messagebox.showerror(PROJECT_NAME, f"Failed to check for updates:\n{state['error']}")
+                    return
+
+                rel = state["release"]
+                if not rel:
+                    messagebox.showinfo(PROJECT_NAME, "No manager release information found on GitHub.")
+                    return
+
+                latest = rel.get("version") or "?"
+                tag = rel.get("tag") or "?"
+                dl = rel.get("download_url") or "?"
+                log(f"Manager update check: current={APP_VERSION} latest={latest} tag={tag} url={dl}")
+                if not is_update_available(APP_VERSION, latest):
+                    log("Manager update check result: already up-to-date")
+                    messagebox.showinfo(PROJECT_NAME, f"You are already on the latest version ({APP_VERSION}).")
+                    return
+
+                log("Manager update check result: update available")
+
+                # Build short release notes snippet
+                body = str(rel.get("body") or "")
+                snippet = ""
+                if body:
+                    lines = [ln.rstrip() for ln in body.splitlines()]
+                    while lines and not lines[0]:
+                        lines.pop(0)
+                    while lines and not lines[-1]:
+                        lines.pop()
+                    max_lines = 12
+                    if len(lines) > max_lines:
+                        lines = lines[:max_lines] + ["...", "(truncated)"]
+                    snippet = "\n\nWhat's changed:\n" + "\n".join(lines)
+
+                msg = (
+                    f"A new BeszelAgentManager version is available.\n\n"
+                    f"Installed: {APP_VERSION}\n"
+                    f"Latest on GitHub: {latest}"
+                    f"{snippet}\n\n"
+                    "Do you want to update now?"
+                )
+                if not messagebox.askyesno(PROJECT_NAME, msg):
+                    return
+
+                # ------------------------------------------------------------------ Step 2: start update (download + replace)
+                def worker_update():
+                    try:
+                        start_update(rel, args=[], current_pid=os.getpid(), force=False)
+                    except SystemExit:
+                        # start_update calls sys.exit(0); in a thread this only exits the thread.
+                        os._exit(0)
+                    except Exception as exc:
+                        log(f"Manager update failed: {exc}\n{traceback.format_exc()}")
+
+                        def done_fail():
+                            self.progress.stop()
+                            self.progress.grid_remove()
+                            self._task_running = False
+                            self._update_status()
+                            self._refresh_log_view()
+                            messagebox.showerror(PROJECT_NAME, f"Manager update failed:\n{exc}")
+
+                        self.after(0, done_fail)
+                        return
+
+                    # If it ever returns, force exit to allow replacement.
+                    os._exit(0)
+
+                self._task_running = True
+                self.label_status.config(text="Updating manager (downloading + replacing)...")
+                self.progress.grid()
+                self.progress.start(10)
+                threading.Thread(target=worker_update, daemon=True).start()
+
+            self.after(0, done_check)
+
+        threading.Thread(target=worker_check, daemon=True).start()
+
+    def _on_force_update_manager(self):
+        """Force re-download and reinstall of the latest manager release."""
+        if self._task_running:
+            messagebox.showinfo(PROJECT_NAME, "Another operation is already in progress.")
+            return
+
+        self._task_running = True
+        self.label_status.config(text="Checking latest manager release...")
+        self.progress.grid()
+        self.progress.start(10)
+
+        state = {"error": None, "release": None}
+
+        def worker_check():
+            try:
+                state["release"] = fetch_latest_release()
+            except Exception as exc:
+                state["error"] = exc
+                log(f"Manager force update check failed: {exc}\n{traceback.format_exc()}")
+
+            def done_check():
+                self.progress.stop()
+                self.progress.grid_remove()
+                self._task_running = False
+                self._update_status()
+                self._refresh_log_view()
+
+                if state["error"]:
+                    messagebox.showerror(PROJECT_NAME, f"Failed to check for updates:\n{state['error']}")
+                    return
+
+                rel = state["release"]
+                if not rel:
+                    messagebox.showinfo(PROJECT_NAME, "No manager release information found on GitHub.")
+                    return
+
+                latest = rel.get("version") or "?"
+                tag = rel.get("tag") or "?"
+                dl = rel.get("download_url") or "?"
+                log(f"Manager FORCE update: current={APP_VERSION} latest={latest} tag={tag} url={dl}")
+
+                # Build short release notes snippet
+                body = str(rel.get("body") or "")
+                snippet = ""
+                if body:
+                    lines = [ln.rstrip() for ln in body.splitlines()]
+                    while lines and not lines[0]:
+                        lines.pop(0)
+                    while lines and not lines[-1]:
+                        lines.pop()
+                    max_lines = 12
+                    if len(lines) > max_lines:
+                        lines = lines[:max_lines] + ["...", "(truncated)"]
+                    snippet = "\n\nWhat's changed:\n" + "\n".join(lines)
+
+                msg = (
+                    "This will redownload and reinstall the latest BeszelAgentManager release.\n\n"
+                    f"Installed: {APP_VERSION}\n"
+                    f"Latest on GitHub: {latest}\n"
+                    f"Tag: {tag}"
+                    f"{snippet}\n\n"
+                    "Continue?"
+                )
+                if not messagebox.askyesno(PROJECT_NAME, msg):
+                    return
+
+                def worker_update():
+                    try:
+                        start_update(rel, args=[], current_pid=os.getpid(), force=True)
+                    except SystemExit:
+                        os._exit(0)
+                    except Exception as exc:
+                        log(f"Manager force update failed: {exc}\n{traceback.format_exc()}")
+
+                        def done_fail():
+                            self.progress.stop()
+                            self.progress.grid_remove()
+                            self._task_running = False
+                            self._update_status()
+                            self._refresh_log_view()
+                            messagebox.showerror(PROJECT_NAME, f"Manager force update failed:\n{exc}")
+
+                        self.after(0, done_fail)
+                        return
+
+                    os._exit(0)
+
+                self._task_running = True
+                self.label_status.config(text="Forcing manager update (downloading + replacing)...")
+                self.progress.grid()
+                self.progress.start(10)
+                threading.Thread(target=worker_update, daemon=True).start()
+
+            self.after(0, done_check)
+
+        threading.Thread(target=worker_check, daemon=True).start()
 
     def _on_apply(self):
         if not self._require_admin():

@@ -3,6 +3,8 @@ import os
 import shutil
 import io
 import zipfile
+import time
+import re
 from typing import Dict
 
 import requests
@@ -109,9 +111,9 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppEnvironmentExtra', *env_pairs], check=False)
     run([nssm, 'set', AGENT_SERVICE_NAME, 'Start', 'SERVICE_AUTO_START'], check=False)
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppRestartDelay', '5000'], check=False)
-    run([nssm, 'stop', AGENT_SERVICE_NAME], check=False)
-    run([nssm, 'start', AGENT_SERVICE_NAME], check=False)
-    log('Service started/restarted via NSSM.')
+
+    # Restart via SCM so we can detect/handle STOP_PENDING hangs.
+    restart_service(timeout_seconds=30)
 
 
 def rotate_service_logs() -> None:
@@ -142,24 +144,112 @@ def get_service_status() -> str:
     return 'UNKNOWN'
 
 
+def _query_service_state_and_pid() -> tuple[str, int]:
+    """Return (STATE, PID) using `sc queryex`.
+
+    STATE is typically RUNNING / STOPPED / STOP_PENDING / START_PENDING.
+    PID is 0 if not available.
+    """
+    try:
+        cp = run(['sc', 'queryex', AGENT_SERVICE_NAME], check=False)
+    except FileNotFoundError:
+        return ('NOT FOUND', 0)
+
+    txt = (cp.stdout or '') + (cp.stderr or '')
+    if 'does not exist' in txt:
+        return ('NOT FOUND', 0)
+
+    state = 'UNKNOWN'
+    pid = 0
+    for line in txt.splitlines():
+        s = line.strip()
+        if s.startswith('STATE'):
+            parts = s.split()
+            if parts:
+                state = parts[-1]
+        elif s.startswith('PID'):
+            m = re.search(r"PID\s*:\s*(\d+)", s)
+            if m:
+                try:
+                    pid = int(m.group(1))
+                except Exception:
+                    pid = 0
+    return (state, pid)
+
+
+def _wait_for_state(target_state: str, timeout_seconds: int = 30) -> bool:
+    deadline = time.time() + max(1, int(timeout_seconds))
+    while time.time() < deadline:
+        state, _ = _query_service_state_and_pid()
+        if state == target_state:
+            return True
+        time.sleep(1)
+    return False
+
+
+def _force_kill_service_process() -> None:
+    """Force-kill the service process (usually nssm.exe) if it is stuck."""
+    state, pid = _query_service_state_and_pid()
+    if pid and pid > 0:
+        log(f"Service is stuck in {state}; forcing kill of service PID {pid}.")
+        run(['taskkill', '/PID', str(pid), '/T', '/F'], check=False)
+        return
+
+    # Fallback: kill agent binary if PID not reported
+    log(f"Service is stuck in {state}; PID not available. Attempting to kill beszel-agent.exe.")
+    run(['taskkill', '/IM', 'beszel-agent.exe', '/T', '/F'], check=False)
+
+
 def start_service() -> None:
     run(['sc', 'start', AGENT_SERVICE_NAME], check=False)
     log('Service start requested.')
 
 
-def stop_service() -> None:
+def stop_service(timeout_seconds: int = 30) -> None:
+    """Stop service; if it doesn't stop within timeout, force-kill it."""
     run(['sc', 'stop', AGENT_SERVICE_NAME], check=False)
     log('Service stop requested.')
 
+    # If it stops quickly, great.
+    if _wait_for_state('STOPPED', timeout_seconds=timeout_seconds):
+        return
 
-def restart_service() -> None:
-    stop_service()
+    # Stuck: kill and wait a bit.
+    _force_kill_service_process()
+    if _wait_for_state('STOPPED', timeout_seconds=10):
+        log('Service force-stopped successfully.')
+    else:
+        log('Service still not STOPPED after force kill.')
+
+
+def restart_service(timeout_seconds: int = 30) -> None:
+    """Restart service; force-kills it if stop/start gets stuck."""
+    stop_service(timeout_seconds=timeout_seconds)
     start_service()
+
+    # Wait for running; if stuck starting, kill and retry once.
+    if _wait_for_state('RUNNING', timeout_seconds=timeout_seconds):
+        log('Service restarted successfully.')
+        return
+
+    log('Service did not reach RUNNING in time; forcing kill and retrying start.')
+    _force_kill_service_process()
+    time.sleep(2)
+    start_service()
+    if _wait_for_state('RUNNING', timeout_seconds=timeout_seconds):
+        log('Service restarted successfully after force kill.')
+    else:
+        state, _ = _query_service_state_and_pid()
+        log(f'Service still not RUNNING after retry (state={state}).')
 
 
 def delete_service() -> None:
     nssm = _find_nssm()
-    run([nssm, 'stop', AGENT_SERVICE_NAME], check=False)
+    # Ensure it is stopped (force kill if needed) before removal.
+    try:
+        stop_service(timeout_seconds=30)
+    except Exception:
+        pass
     run([nssm, 'remove', AGENT_SERVICE_NAME, 'confirm'], check=False)
     log('Service removed via NSSM.')
 
