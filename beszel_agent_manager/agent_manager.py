@@ -12,10 +12,10 @@ from pathlib import Path
 from typing import Optional, Tuple
 
 from .config import AgentConfig
-from .constants import AGENT_DIR, DATA_DIR, PROJECT_NAME
+from .constants import AGENT_DIR, DATA_DIR, PROJECT_NAME, AGENT_STAGED_EXE_PATH
 from .scheduler import delete_update_task, ensure_agent_log_rotate_task
 from .util import log
-from .windows_service import create_or_update_service, get_service_status
+from .windows_service import create_or_update_service, get_service_status, stop_service
 
 from .scheduler import ensure_update_task
 
@@ -261,6 +261,56 @@ def _agent_exe_path() -> Path:
     return _ensure_agent_dir() / AGENT_EXE_NAME
 
 
+def _try_apply_staged_agent_update() -> bool:
+    """If a staged agent exe exists (beszel-agent.new.exe), attempt to replace the live binary.
+
+    Returns True if the staged binary was applied.
+    """
+    try:
+        exe_path = _agent_exe_path()
+        staged = AGENT_STAGED_EXE_PATH
+        if not staged.exists():
+            return False
+
+        # Best effort: stop service to release lock
+        try:
+            stop_service(timeout_seconds=30)
+        except Exception:
+            pass
+
+        try:
+            if exe_path.exists():
+                try:
+                    os.chmod(exe_path, 0o666)
+                    exe_path.unlink()
+                except Exception:
+                    pass
+            shutil.move(str(staged), str(exe_path))
+            log(f"Applied staged agent update: {staged} -> {exe_path}")
+            return True
+        except Exception as exc:
+            log(f"Staged agent update exists but could not be applied yet: {exc}")
+            return False
+    except Exception:
+        return False
+
+
+def _schedule_agent_replace_on_reboot(src: Path, dst: Path) -> None:
+    """Best-effort: schedule a file replace on reboot using MoveFileEx."""
+    if os.name != "nt":
+        return
+    try:
+        import ctypes  # type: ignore
+
+        MOVEFILE_REPLACE_EXISTING = 0x1
+        MOVEFILE_DELAY_UNTIL_REBOOT = 0x4
+        flags = MOVEFILE_REPLACE_EXISTING | MOVEFILE_DELAY_UNTIL_REBOOT
+        ctypes.windll.kernel32.MoveFileExW(str(src), str(dst), flags)  # type: ignore[attr-defined]
+        log(f"Scheduled agent replace on reboot: {src} -> {dst}")
+    except Exception:
+        pass
+
+
 def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -> None:
     """
     Download the agent zip for the given version and extract the exe.
@@ -287,16 +337,20 @@ def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -
         zip_path = agent_dir / "beszel-agent.zip"
         extract_dir = agent_dir
 
+    # Best-effort: stop service to release file lock before replacing.
+    try:
+        stop_service(timeout_seconds=30)
+    except Exception:
+        pass
+
     # Remove existing exe to avoid permission problems
     if exe_path.exists():
         try:
             os.chmod(exe_path, 0o666)
             exe_path.unlink()
         except PermissionError as exc:
-            raise RuntimeError(
-                f"Existing agent executable is in use: {exe_path}\n"
-                "Please stop the Beszel agent service and try again."
-            ) from exc
+            # Can't replace now; we'll stage and try apply later.
+            log(f"Agent executable is in use; will stage update instead: {exc}")
         except Exception as exc:
             log(f"Warning: could not remove existing agent exe before update: {exc}")
 
@@ -362,13 +416,29 @@ def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -
     try:
         if extracted_exe.resolve() != exe_path.resolve():
             exe_path.parent.mkdir(parents=True, exist_ok=True)
-            if exe_path.exists():
+
+            try:
+                if exe_path.exists():
+                    try:
+                        os.chmod(exe_path, 0o666)
+                        exe_path.unlink()
+                    except Exception:
+                        pass
+                shutil.move(str(extracted_exe), str(exe_path))
+            except Exception as exc:
+                # Couldn't replace live binary (likely locked). Stage update and optionally schedule on reboot.
+                staged = AGENT_STAGED_EXE_PATH
                 try:
-                    os.chmod(exe_path, 0o666)
-                    exe_path.unlink()
+                    if staged.exists():
+                        staged.unlink()
                 except Exception:
                     pass
-            shutil.move(str(extracted_exe), str(exe_path))
+                shutil.move(str(extracted_exe), str(staged))
+                _schedule_agent_replace_on_reboot(staged, exe_path)
+                log(
+                    f"Agent binary replacement is blocked ({exc}). Staged update at {staged}. "
+                    "It will be applied automatically when possible (or after reboot)."
+                )
     finally:
         # Clean up temp extraction folder if we used ProgramData tmp
         try:
@@ -377,7 +447,7 @@ def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -
         except Exception:
             pass
 
-    if not exe_path.exists():
+    if not exe_path.exists() and not AGENT_STAGED_EXE_PATH.exists():
         raise RuntimeError(f"Agent binary not found after move: {exe_path}")
 
     log_msg = f"Installed/updated Beszel agent to version {version}."
@@ -398,18 +468,8 @@ def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -
     log(log_msg)
 
 
-def _build_env_from_config(cfg: AgentConfig, *, include_process_env: bool = False) -> dict:
-    """Build environment variables for the Beszel agent.
-
-    When configuring the Windows service (NSSM), we must *not* pass a full copy of the
-    manager process environment (PyInstaller adds many _PYI_/TCL/TK vars, etc.).
-    In that case we only set the Beszel agent env vars.
-
-    For one-off runs (querying agent version/help), we can include the current
-    process environment.
-    """
-
-    env = os.environ.copy() if include_process_env else {}
+def _build_env_from_config(cfg: AgentConfig) -> dict:
+    env = os.environ.copy()
 
     def set_if(value: str | None, key: str):
         if value:
@@ -460,7 +520,7 @@ def _run_agent_once(cfg: AgentConfig, args: list[str]) -> subprocess.CompletedPr
         raise RuntimeError("Agent binary does not exist, cannot run agent.")
 
     cmd = [str(exe_path)] + args
-    env = _build_env_from_config(cfg, include_process_env=True)
+    env = _build_env_from_config(cfg)
     log(f"Running agent: {' '.join(cmd)}")
     return subprocess.run(
         cmd,
@@ -489,8 +549,7 @@ def install_or_update_agent_and_service(cfg: AgentConfig) -> None:
     log(f"Starting agent install/update to version {version}")
     _download_and_extract_agent(version, changelog=changelog)
 
-    # Only set Beszel agent env vars (do NOT include manager process env)
-    env = _build_env_from_config(cfg, include_process_env=False)
+    env = _build_env_from_config(cfg)
     log("Configuring Windows service for Beszel agent")
 
     # IMPORTANT: keep this signature in sync with windows_service.create_or_update_service
@@ -518,8 +577,7 @@ def apply_configuration_only(cfg: AgentConfig) -> None:
     if not exe_path.exists():
         raise RuntimeError("Agent is not installed yet.")
 
-    # Only set Beszel agent env vars (do NOT include manager process env)
-    env = _build_env_from_config(cfg, include_process_env=False)
+    env = _build_env_from_config(cfg)
     log("Updating Windows service configuration for Beszel agent")
 
     # IMPORTANT: keep this signature in sync with windows_service.create_or_update_service

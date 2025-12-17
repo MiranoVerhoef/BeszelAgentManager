@@ -47,16 +47,19 @@ from .windows_service import (
     start_service,
     stop_service,
     restart_service,
+    get_service_diagnostics,
 )
 from .scheduler import delete_update_task, delete_agent_log_rotate_task
 from .agent_logs import list_agent_log_files, rotate_agent_logs_and_rename
+from .manager_logs import list_manager_log_files, rotate_if_needed as rotate_manager_logs_if_needed
+from .support_bundle import create_support_bundle
 from .manager_updater import (
     fetch_latest_release,
     fetch_stable_releases,
     is_update_available,
     start_update,
 )
-from .util import log, set_debug_logging
+from .util import log, set_debug_logging, run
 from .autostart import (
     get_autostart_state,
     set_autostart,
@@ -267,6 +270,9 @@ class BeszelAgentManagerApp(tk.Tk):
         self._update_status()
         self._init_tray()
 
+        # Automatic daily manager log rotation (checks periodically; also rotates on next start)
+        self._start_manager_log_rotation_loop()
+
         # Apply current autostart state
         set_autostart(
             self.var_autostart.get(),
@@ -285,6 +291,40 @@ class BeszelAgentManagerApp(tk.Tk):
             self.deiconify()
 
         self._start_hub_ping_loop()
+
+    def _current_relaunch_args(self) -> list[str]:
+        """Args to relaunch the manager in the same visible/hidden state."""
+        try:
+            hidden = not bool(self.winfo_viewable())
+        except Exception:
+            hidden = False
+        return ["--hidden"] if hidden else []
+
+    def _start_manager_log_rotation_loop(self) -> None:
+        """Periodically rotate manager.log into daily snapshots."""
+
+        def tick():
+            try:
+                archive = rotate_manager_logs_if_needed(force=False)
+                if archive:
+                    log(f"Automatic manager log rotate -> {archive}")
+                    # refresh dropdown if user is on logging tab
+                    try:
+                        self._refresh_manager_log_files_and_view(select_latest=True)
+                    except Exception:
+                        pass
+            except Exception as exc:
+                log(f"Automatic manager log rotate failed: {exc}")
+            # Every 5 minutes
+            try:
+                self.after(5 * 60 * 1000, tick)
+            except Exception:
+                pass
+
+        try:
+            self.after(1000, tick)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------ Vars / autosave
 
@@ -535,6 +575,8 @@ class BeszelAgentManagerApp(tk.Tk):
         inner.rowconfigure(0, weight=1)
 
         notebook = ttk.Notebook(inner)
+        # Keep a reference so we can determine the active tab for auto-refresh.
+        self.notebook = notebook
         notebook.grid(row=0, column=0, sticky="nsew")
 
         # ------------------------------------------------------------------ Connection tab
@@ -728,11 +770,18 @@ class BeszelAgentManagerApp(tk.Tk):
         # ------------------------------------------------------------------ Logging tab
         log_tab = ttk.Frame(notebook, padding=10, style="Card.TFrame")
         log_tab.columnconfigure(0, weight=1)
-        log_tab.rowconfigure(3, weight=1)
+        log_tab.columnconfigure(1, weight=0)
+        # Keep the controls row visible; only the log text area should expand.
+        log_tab.rowconfigure(4, weight=1)
         notebook.add(log_tab, text="Logging")
 
+        # Top actions row: debug toggle (left) + support bundle (right)
+        top_actions = ttk.Frame(log_tab, style="Card.TFrame")
+        top_actions.grid(row=0, column=0, columnspan=2, sticky="ew")
+        top_actions.columnconfigure(0, weight=1)
+
         chk_debug = ttk.Checkbutton(
-            log_tab, text="Enable debug logging", variable=self.var_debug_logging
+            top_actions, text="Enable debug logging", variable=self.var_debug_logging
         )
         chk_debug.grid(row=0, column=0, sticky="w")
         add_tooltip(
@@ -740,19 +789,55 @@ class BeszelAgentManagerApp(tk.Tk):
             "When enabled, detailed operations are written to manager.log.",
         )
 
+        ttk.Button(
+            top_actions,
+            text="Export Support Bundle",
+            command=self._on_export_support_bundle,
+        ).grid(row=0, column=1, sticky="e")
+
         ttk.Separator(log_tab, orient="horizontal").grid(
-            row=1, column=0, sticky="ew", pady=8
+            row=1, column=0, columnspan=2, sticky="ew", pady=8
         )
 
-        lbl_path = ttk.Label(
+        ttk.Label(
             log_tab,
-            text=f"Log file: {LOG_PATH}",
+            text=f"Manager log folder: {DATA_DIR}",
             style="Card.TLabel",
+        ).grid(row=2, column=0, columnspan=2, sticky="w")
+
+        # Manager log controls (dropdown + rotate/refresh + support bundle)
+        mgr_controls = ttk.Frame(log_tab, style="Card.TFrame")
+        mgr_controls.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        # Make sure controls remain visible even on narrower windows.
+        mgr_controls.columnconfigure(1, weight=1)
+
+        ttk.Label(mgr_controls, text="File:", style="Card.TLabel").grid(row=0, column=0, sticky="w")
+        self.var_manager_log_file = tk.StringVar()
+        self.manager_log_combo = ttk.Combobox(
+            mgr_controls,
+            textvariable=self.var_manager_log_file,
+            state="readonly",
         )
-        lbl_path.grid(row=2, column=0, sticky="w")
+        self.manager_log_combo.grid(row=0, column=1, sticky="ew", padx=(6, 6))
+        self.manager_log_combo.bind("<<ComboboxSelected>>", lambda _e: self._refresh_log_view())
+
+        # Row 0: file + refresh/rotate
+        ttk.Button(mgr_controls, text="Refresh", command=self._refresh_manager_log_files_and_view).grid(
+            row=0, column=2, sticky="e"
+        )
+        ttk.Button(mgr_controls, text="Rotate now", command=self._on_rotate_manager_logs).grid(
+            row=0, column=3, sticky="e", padx=(6, 0)
+        )
+
+        # Row 1: secondary actions (kept visible on smaller widths)
+        mgr_controls.rowconfigure(1, weight=0)
+        ttk.Button(mgr_controls, text="Open folder", command=lambda: self._open_path(str(DATA_DIR))).grid(
+            row=1, column=2, sticky="e", pady=(6, 0)
+        )
+        # (Export Support Bundle button is placed on the top row next to debug checkbox.)
 
         log_frame = ttk.Frame(log_tab, style="Card.TFrame", padding=(4, 4, 4, 4))
-        log_frame.grid(row=3, column=0, sticky="nsew", pady=(8, 0))
+        log_frame.grid(row=4, column=0, columnspan=2, sticky="nsew", pady=(8, 0))
         log_frame.columnconfigure(0, weight=1)
         log_frame.rowconfigure(0, weight=1)
 
@@ -771,12 +856,7 @@ class BeszelAgentManagerApp(tk.Tk):
         self.log_text.grid(row=0, column=0, sticky="nsew")
         log_scroll.grid(row=0, column=1, sticky="ns")
 
-        btn_refresh_log = ttk.Button(
-            log_tab, text="Refresh log", command=self._refresh_log_view
-        )
-        btn_refresh_log.grid(row=4, column=0, sticky="w", pady=(6, 0))
-
-        self._refresh_log_view()
+        self._refresh_manager_log_files_and_view(select_latest=True)
 
         # ------------------------------------------------------------------ Agent Logging tab
         agent_log_tab = ttk.Frame(notebook, padding=10, style="Card.TFrame")
@@ -978,6 +1058,56 @@ class BeszelAgentManagerApp(tk.Tk):
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
+        # Auto-refresh log viewers every 10 seconds (only refresh the active tab).
+        self._auto_log_refresh_ticks = 0
+        self.after(10_000, self._auto_refresh_logs)
+
+
+    def _auto_refresh_logs(self):
+        """Auto-refresh log viewers every 10 seconds.
+
+        To avoid heavy I/O, we refresh only the currently visible tab, and refresh the
+        file dropdown lists roughly every minute.
+        """
+        try:
+            self._auto_log_refresh_ticks = getattr(self, "_auto_log_refresh_ticks", 0) + 1
+
+            nb = getattr(self, "notebook", None)
+            if nb is not None:
+                try:
+                    tab_id = nb.select()
+                    tab_text = nb.tab(tab_id, "text")
+                except Exception:
+                    tab_text = ""
+            else:
+                tab_text = ""
+
+            refresh_lists = (self._auto_log_refresh_ticks % 6 == 0)  # ~every 60 seconds
+
+            # Refresh both manager and agent viewers so whichever tab the user switches to
+            # has up-to-date content. Only the active tab will be visible, but this avoids
+            # "stale" logs when toggling between tabs.
+
+            # Manager logs
+            if refresh_lists:
+                self._refresh_manager_log_files_and_view(select_latest=False)
+            else:
+                self._refresh_log_view()
+
+            # Agent logs
+            if refresh_lists:
+                self._refresh_agent_log_files_and_view(select_latest=False)
+            else:
+                self._refresh_agent_log_view()
+        except Exception:
+            # Never let the UI crash because of auto-refresh.
+            pass
+        finally:
+            try:
+                self.after(10_000, self._auto_refresh_logs)
+            except Exception:
+                pass
+
     # ------------------------------------------------------------------ Locked entry + dialog
 
     def _make_locked_entry_with_dialog(
@@ -1178,19 +1308,98 @@ class BeszelAgentManagerApp(tk.Tk):
     # ------------------------------------------------------------------ Log viewer
 
     def _refresh_log_view(self):
+        # Manager log viewer (supports selecting archived logs)
+        p = None
         try:
-            if LOG_PATH.exists():
-                content = LOG_PATH.read_text(encoding="utf-8", errors="replace")
+            label = getattr(self, "var_manager_log_file", None)
+            label = label.get() if label is not None else ""
+            if label and hasattr(self, "_manager_log_files_map"):
+                p = self._manager_log_files_map.get(label)
+            if p is None:
+                p = LOG_PATH
+            if p.exists():
+                content = p.read_text(encoding="utf-8", errors="replace")
             else:
                 content = "(Log file does not exist yet.)"
         except Exception as exc:
             content = f"Failed to read log file:\n{exc}"
 
+        # Preserve scroll position unless user is already at the bottom.
+        try:
+            y0, y1 = self.log_text.yview()
+            at_bottom = y1 >= 0.999
+        except Exception:
+            at_bottom = True
+
         self.log_text.configure(state="normal")
         self.log_text.delete("1.0", tk.END)
         self.log_text.insert(tk.END, content)
         self.log_text.configure(state="disabled")
+
+        if at_bottom:
+            self.log_text.see(tk.END)
+        else:
+            try:
+                self.log_text.yview_moveto(y0)
+            except Exception:
+                pass
+
+    def _refresh_manager_log_files_and_view(self, select_latest: bool = False):
+        """Refresh dropdown list of manager log files and update the view."""
+        try:
+            files = list_manager_log_files()
+        except Exception as exc:
+            files = []
+            log(f"Failed to list manager log files: {exc}")
+
+        values: list[str] = []
+        mapping: dict[str, Path] = {}
+        for p in files:
+            if p == LOG_PATH:
+                label = f"Current ({p.name})"
+            else:
+                label = p.name
+            values.append(label)
+            mapping[label] = p
+
+        self._manager_log_files_map = mapping
+        self.manager_log_combo["values"] = values
+
+        if not values:
+            self.var_manager_log_file.set("")
+            self._set_log_text("(No manager logs found yet.)")
+            return
+
+        cur = self.var_manager_log_file.get().strip()
+        if select_latest or (cur not in mapping):
+            self.var_manager_log_file.set(values[0])
+        self._refresh_log_view()
+
+    def _set_log_text(self, text: str) -> None:
+        self.log_text.configure(state="normal")
+        self.log_text.delete("1.0", tk.END)
+        self.log_text.insert(tk.END, text)
+        self.log_text.configure(state="disabled")
         self.log_text.see(tk.END)
+
+    def _on_rotate_manager_logs(self):
+        # Manual snapshot + truncate
+        try:
+            archive = rotate_manager_logs_if_needed(force=True)
+            if archive:
+                log(f"Manual manager log rotate -> {archive}")
+            self._refresh_manager_log_files_and_view(select_latest=True)
+        except Exception as exc:
+            log(f"Failed to rotate manager logs: {exc}")
+            messagebox.showerror(PROJECT_NAME, f"Failed to rotate manager logs:\n{exc}")
+
+    def _on_export_support_bundle(self):
+        try:
+            outp = create_support_bundle()
+            messagebox.showinfo(PROJECT_NAME, f"Support bundle created:\n{outp}")
+        except Exception as exc:
+            log(f"Failed to create support bundle: {exc}")
+            messagebox.showerror(PROJECT_NAME, f"Failed to create support bundle:\n{exc}")
 
     # ------------------------------------------------------------------ Agent log viewer
 
@@ -1228,11 +1437,25 @@ class BeszelAgentManagerApp(tk.Tk):
         self._refresh_agent_log_view()
 
     def _set_agent_log_text(self, content: str) -> None:
+        # Preserve scroll position unless user is already at the bottom.
+        try:
+            y0, y1 = self.agent_log_text.yview()
+            at_bottom = y1 >= 0.999
+        except Exception:
+            at_bottom = True
+
         self.agent_log_text.configure(state="normal")
         self.agent_log_text.delete("1.0", tk.END)
         self.agent_log_text.insert(tk.END, content)
         self.agent_log_text.configure(state="disabled")
-        self.agent_log_text.see(tk.END)
+
+        if at_bottom:
+            self.agent_log_text.see(tk.END)
+        else:
+            try:
+                self.agent_log_text.yview_moveto(y0)
+            except Exception:
+                pass
 
     def _refresh_agent_log_view(self):
         sel = self.var_agent_log_file.get().strip()
@@ -1269,6 +1492,16 @@ class BeszelAgentManagerApp(tk.Tk):
             webbrowser.open(url)
         except Exception as exc:
             messagebox.showerror(PROJECT_NAME, f"Failed to open URL:\n{exc}")
+
+    def _open_path(self, path: str) -> None:
+        """Open a file/folder path in Explorer (best-effort)."""
+        try:
+            if os.name == "nt":
+                os.startfile(path)  # type: ignore[attr-defined]
+            else:
+                webbrowser.open(f"file://{path}")
+        except Exception as exc:
+            messagebox.showerror(PROJECT_NAME, f"Failed to open path:\n{exc}")
 
     # ------------------------------------------------------------------ Config builder
 
@@ -1831,7 +2064,7 @@ class BeszelAgentManagerApp(tk.Tk):
         # Start update (download + replace) and exit app so the exe can be replaced.
         def worker_update():
             try:
-                start_update(release, args=[], current_pid=os.getpid(), force=force)
+                start_update(release, args=self._current_relaunch_args(), current_pid=os.getpid(), force=force)
             except SystemExit:
                 os._exit(0)
             except Exception as exc:
@@ -1920,7 +2153,7 @@ class BeszelAgentManagerApp(tk.Tk):
                 # ------------------------------------------------------------------ Step 2: start update (download + replace)
                 def worker_update():
                     try:
-                        start_update(rel, args=[], current_pid=os.getpid(), force=False)
+                        start_update(rel, args=self._current_relaunch_args(), current_pid=os.getpid(), force=False)
                     except SystemExit:
                         # start_update calls sys.exit(0); in a thread this only exits the thread.
                         os._exit(0)
@@ -2019,7 +2252,7 @@ class BeszelAgentManagerApp(tk.Tk):
 
                 def worker_update():
                     try:
-                        start_update(rel, args=[], current_pid=os.getpid(), force=True)
+                        start_update(rel, args=self._current_relaunch_args(), current_pid=os.getpid(), force=True)
                     except SystemExit:
                         os._exit(0)
                     except Exception as exc:
@@ -2197,19 +2430,40 @@ class BeszelAgentManagerApp(tk.Tk):
 
                 try:
                     if AGENT_DIR.exists():
+                        try:
+                            run(['takeown', '/f', str(AGENT_DIR), '/r', '/d', 'y'], check=False)
+                            run(['icacls', str(AGENT_DIR), '/grant', '*S-1-5-32-544:(OI)(CI)F', '/T', '/C'], check=False)
+                            run(['icacls', str(AGENT_DIR), '/grant', '*S-1-5-18:(OI)(CI)F', '/T', '/C'], check=False)
+                        except Exception:
+                            pass
                         rmtree(AGENT_DIR)
                 except Exception as exc:
                     log(f"Failed to remove agent dir {AGENT_DIR}: {exc}")
 
-                # Also clean ProgramData and legacy C:\Beszel-Agent
-                try:
-                    if DATA_DIR.exists():
-                        rmtree(DATA_DIR)
-                except Exception as exc:
-                    log(f"Failed to remove data dir {DATA_DIR}: {exc}")
+                # Only attempt to remove ProgramData when we are NOT removing the manager.
+                # If we remove the manager, ProgramData cleanup is handled by the delayed
+                # self-delete script after this process exits (manager.log is open right now).
+                if not remove_self:
+                    try:
+                        if DATA_DIR.exists():
+                            try:
+                                run(['takeown', '/f', str(DATA_DIR), '/r', '/d', 'y'], check=False)
+                                run(['icacls', str(DATA_DIR), '/grant', '*S-1-5-32-544:(OI)(CI)F', '/T', '/C'], check=False)
+                                run(['icacls', str(DATA_DIR), '/grant', '*S-1-5-18:(OI)(CI)F', '/T', '/C'], check=False)
+                            except Exception:
+                                pass
+                            rmtree(DATA_DIR)
+                    except Exception as exc:
+                        log(f"Failed to remove data dir {DATA_DIR}: {exc}")
 
                 try:
                     if LEGACY_AGENT_DIR.exists():
+                        try:
+                            run(['takeown', '/f', str(LEGACY_AGENT_DIR), '/r', '/d', 'y'], check=False)
+                            run(['icacls', str(LEGACY_AGENT_DIR), '/grant', '*S-1-5-32-544:(OI)(CI)F', '/T', '/C'], check=False)
+                            run(['icacls', str(LEGACY_AGENT_DIR), '/grant', '*S-1-5-18:(OI)(CI)F', '/T', '/C'], check=False)
+                        except Exception:
+                            pass
                         rmtree(LEGACY_AGENT_DIR)
                 except Exception as exc:
                     log(f"Failed to remove legacy agent dir {LEGACY_AGENT_DIR}: {exc}")
@@ -2266,11 +2520,14 @@ class BeszelAgentManagerApp(tk.Tk):
             return
 
         def worker():
+            forced = False
             try:
-                stop_service()
+                forced = bool(stop_service())
             finally:
                 self.after(0, self._update_status)
                 self.after(0, self._refresh_log_view)
+                if forced:
+                    self.after(0, lambda: self._notify_service_forced_kill("stop"))
 
         threading.Thread(target=worker, daemon=True).start()
 
@@ -2279,13 +2536,51 @@ class BeszelAgentManagerApp(tk.Tk):
             return
 
         def worker():
+            forced = False
             try:
-                restart_service()
+                forced = bool(restart_service())
             finally:
                 self.after(0, self._update_status)
                 self.after(0, self._refresh_log_view)
+                if forced:
+                    self.after(0, lambda: self._notify_service_forced_kill("restart"))
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _notify_service_forced_kill(self, action: str) -> None:
+        """Inform the user that a force-kill was needed and offer diagnostics."""
+        try:
+            msg = (
+                f"The service did not {action} within 30 seconds and was force-killed to recover.\n\n"
+                "Do you want to view a diagnostics dump (sc queryex + NSSM settings)?"
+            )
+            if messagebox.askyesno(PROJECT_NAME, msg):
+                diag = get_service_diagnostics()
+                self._show_text_window("Service diagnostics", diag)
+        except Exception as exc:
+            log(f"Failed to show forced-kill diagnostics prompt: {exc}")
+
+    def _show_text_window(self, title: str, text: str) -> None:
+        """Show a scrollable read-only text window."""
+        win = tk.Toplevel(self)
+        win.title(title)
+        win.geometry("900x600")
+
+        frame = ttk.Frame(win, padding=10)
+        frame.pack(fill="both", expand=True)
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+
+        txt = tk.Text(frame, wrap="none", font=("Consolas", 9))
+        txt.insert("1.0", text or "")
+        txt.configure(state="disabled")
+        y = ttk.Scrollbar(frame, orient="vertical", command=txt.yview)
+        x = ttk.Scrollbar(frame, orient="horizontal", command=txt.xview)
+        txt.configure(yscrollcommand=y.set, xscrollcommand=x.set)
+
+        txt.grid(row=0, column=0, sticky="nsew")
+        y.grid(row=0, column=1, sticky="ns")
+        x.grid(row=1, column=0, sticky="ew")
 
     # ------------------------------------------------------------------ Status / hub
 
@@ -2448,34 +2743,139 @@ class BeszelAgentManagerApp(tk.Tk):
             legacy_agent_dir = LEGACY_AGENT_DIR
 
             if os.name == "nt":
-                cmd_str = (
-                    "timeout /t 2 /nobreak >nul & "
-                    f'taskkill /PID {os.getpid()} /F >nul 2>&1 & '
-                    f'del "{exe_path}" /Q >nul 2>&1 & '
-                    f'rmdir /S /Q "{app_dir}" >nul 2>&1 & '
-                    f'rmdir /S /Q "{data_dir}" >nul 2>&1 & '
-                    f'rmdir /S /Q "{agent_dir}" >nul 2>&1 & '
-                    f'rmdir /S /Q "{legacy_agent_dir}" >nul 2>&1'
-                )
-                cmd = ["cmd", "/c", cmd_str]
-                creationflags = 0
-                if hasattr(subprocess, "CREATE_NO_WINDOW"):
-                    creationflags = subprocess.CREATE_NO_WINDOW
+                # Use a dedicated PowerShell cleanup script.
+                # This is more reliable than a long cmd /c one-liner and avoids failing
+                # to delete ProgramData while manager.log is still open.
                 try:
-                    subprocess.Popen(cmd, creationflags=creationflags)
+                    import tempfile
+
+                    ps_path = Path(tempfile.gettempdir()) / f"{PROJECT_NAME}_cleanup.ps1"
+                    log_path = str(LOG_PATH)
+
+                    def _psq(s: str) -> str:
+                        # Single-quote escape for PowerShell
+                        return s.replace("'", "''")
+
+                    script = f"""
+param(
+  [int]$PidToWait,
+  [string]$Exe,
+  [string]$AppDir,
+  [string]$DataDir,
+  [string]$AgentDir,
+  [string]$LegacyAgentDir,
+  [string]$LogPath
+)
+
+$ErrorActionPreference = 'SilentlyContinue'
+
+function Log([string]$m) {{
+  try {{
+    $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
+    Add-Content -Path $LogPath -Value "[$ts] $m"
+  }} catch {{ }}
+}}
+
+function FixAcl([string]$p) {{
+  try {{
+    if (-not $p -or -not (Test-Path -LiteralPath $p)) {{ return }}
+    # Take ownership and grant full control to Builtin Administrators + SYSTEM
+    takeown /f "$p" /r /d y | Out-Null
+    icacls "$p" /grant *S-1-5-32-544:(OI)(CI)F /T /C | Out-Null
+    icacls "$p" /grant *S-1-5-18:(OI)(CI)F /T /C | Out-Null
+  }} catch {{ }}
+}}
+
+Log "Cleanup: waiting for PID $PidToWait to exit"
+try {{ Wait-Process -Id $PidToWait -Timeout 60 }} catch {{ }}
+
+try {{
+  # Extra safety: make sure processes are not lingering
+  # Also stop/delete the agent service in case a previous uninstall step failed.
+  # Use sc.exe explicitly (PowerShell has an alias 'sc' for Set-Content).
+  sc.exe stop "{PROJECT_NAME}" | Out-Null
+  sc.exe delete "{PROJECT_NAME}" | Out-Null
+  taskkill /IM "BeszelAgentManager.exe" /T /F | Out-Null
+  taskkill /IM "beszel-agent.exe" /T /F | Out-Null
+  taskkill /IM "nssm.exe" /T /F | Out-Null
+}} catch {{ }}
+
+$targets = @($Exe, $AppDir, $DataDir, $AgentDir, $LegacyAgentDir)
+Log ("Cleanup: targets=" + ($targets -join '; '))
+
+for ($i=0; $i -lt 120; $i++) {{
+  foreach ($t in $targets) {{
+    if ([string]::IsNullOrWhiteSpace($t)) {{ continue }}
+    try {{
+      if (Test-Path -LiteralPath $t) {{
+        FixAcl $t
+        Remove-Item -LiteralPath $t -Recurse -Force -ErrorAction SilentlyContinue
+        # If a directory still remains, try cmd rmdir as a fallback
+        if (Test-Path -LiteralPath $t) {{
+          cmd /c rmdir /s /q "\"$t\"" | Out-Null
+        }}
+      }}
+    }} catch {{ }}
+  }}
+
+  $remaining = @($targets | Where-Object {{ $_ -and (Test-Path -LiteralPath $_) }})
+  if ($remaining.Count -eq 0) {{
+    Log "Cleanup: all targets removed"
+    exit 0
+  }}
+  Start-Sleep -Milliseconds 500
+}}
+
+Log "Cleanup: timed out; remaining="
+try {{ $remaining | ForEach-Object {{ Log $_ }} }} catch {{ }}
+"""
+                    ps_path.write_text(script, encoding="utf-8")
+
+                    args = [
+                        "powershell.exe",
+                        "-NoProfile",
+                        "-ExecutionPolicy",
+                        "Bypass",
+                        "-File",
+                        str(ps_path),
+                        "-PidToWait",
+                        str(os.getpid()),
+                        "-Exe",
+                        str(exe_path),
+                        "-AppDir",
+                        str(app_dir),
+                        "-DataDir",
+                        str(data_dir),
+                        "-AgentDir",
+                        str(agent_dir),
+                        "-LegacyAgentDir",
+                        str(legacy_agent_dir),
+                        "-LogPath",
+                        log_path,
+                    ]
+
+                    creationflags = 0
+                    if hasattr(subprocess, "CREATE_NO_WINDOW"):
+                        creationflags = subprocess.CREATE_NO_WINDOW
+
+                    subprocess.Popen(args, creationflags=creationflags)
                     log(
-                        f"Scheduled self-delete for {exe_path}, {app_dir}, "
-                        f"{data_dir}, {agent_dir}, {legacy_agent_dir}"
+                        f"Scheduled cleanup via PowerShell: exe={exe_path}, app_dir={app_dir}, data_dir={data_dir}, "
+                        f"agent_dir={agent_dir}, legacy_agent_dir={legacy_agent_dir}"
                     )
                 except Exception as exc:
-                    log(f"Failed to schedule self-delete: {exc}")
+                    log(f"Failed to schedule cleanup: {exc}")
         finally:
             try:
                 if LOCK_PATH.exists():
                     LOCK_PATH.unlink()
             except Exception as exc:
                 log(f"Failed to remove lock file on self-delete: {exc}")
-            self.destroy()
+            try:
+                self.destroy()
+            finally:
+                # Ensure the process exits so the cleanup script can remove files.
+                os._exit(0)
 
     def _create_tray_image(self):
         if pystray is None:
