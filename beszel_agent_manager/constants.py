@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 PROJECT_NAME = "BeszelAgentManager"
-APP_VERSION = "2.3.3"
+APP_VERSION = "2.5.5"
 
 AGENT_SERVICE_NAME = PROJECT_NAME
 AGENT_DISPLAY_NAME = "Beszel Agent"
@@ -18,6 +18,19 @@ PROGRAM_DATA = Path(os.environ.get("ProgramData", r"C:\ProgramData"))
 DATA_DIR = PROGRAM_DATA / PROJECT_NAME
 CONFIG_PATH = DATA_DIR / "config.json"
 LOG_PATH = DATA_DIR / "manager.log"
+
+# Manager daily log archives
+MANAGER_LOG_ARCHIVE_DIR = DATA_DIR / "manager_logs"
+MANAGER_LOG_LAST_DATE_PATH = DATA_DIR / "manager_log_last_date.txt"
+
+# Support bundle exports
+SUPPORT_BUNDLES_DIR = DATA_DIR / "support_bundles"
+
+# Manager updater rollback backup
+MANAGER_PREVIOUS_EXE_PATH = Path(PROGRAM_FILES) / PROJECT_NAME / f"{PROJECT_NAME}.previous.exe"
+
+# Agent staged update when replacement is blocked
+AGENT_STAGED_EXE_PATH = AGENT_DIR / "beszel-agent.new.exe"
 
 # Agent log capture (stdout/stderr redirected by NSSM)
 AGENT_LOG_DIR = DATA_DIR / "agent_logs"

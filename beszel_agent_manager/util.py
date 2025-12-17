@@ -3,6 +3,7 @@ import datetime
 import subprocess
 import os
 from .constants import DATA_DIR, LOG_PATH
+from .manager_logs import rotate_if_needed
 
 DEBUG_LOGGING = False
 
@@ -39,6 +40,11 @@ def ensure_data_dir() -> None:
 
 def log(message: str) -> None:
     ensure_data_dir()
+    # Automatic daily rotation of manager.log
+    try:
+        rotate_if_needed(force=False)
+    except Exception:
+        pass
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     line = f"[{ts}] {message}"
     try:

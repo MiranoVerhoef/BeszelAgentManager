@@ -134,12 +134,16 @@ def _schedule_delete_file(path: Path) -> None:
     if os.name != "nt":
         return
     try:
-        # Use cmd.exe so we can wait a moment and delete quietly.
-        cmd = (
-            f'cmd.exe /C timeout /T 2 /NOBREAK >NUL & '
-            f'del /F /Q "{path}" >NUL 2>&1'
+        # Fire-and-forget. The elevated bootstrap process must exit before the file can be deleted.
+        # Also retries a few times and attempts to remove the parent folder if it becomes empty.
+        cmd_str = (
+            f'cmd.exe /C "(timeout /T 3 /NOBREAK >NUL) & '
+            f'(for /L %i in (1,1,30) do (del /F /Q "{path}" >NUL 2>&1 && goto :done) & '
+            f'timeout /T 1 /NOBREAK >NUL) & '
+            f':done & (rmdir "{path.parent}" 2>NUL)"'
         )
-        _run_hidden(cmd, check=False)
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        subprocess.Popen(cmd_str, shell=True, creationflags=creationflags)
         log(f"Scheduled deletion of original executable: {path}")
     except Exception as exc:
         log(f"Failed to schedule deletion of original executable {path}: {exc}")

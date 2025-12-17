@@ -10,6 +10,7 @@ from typing import Dict
 import requests
 
 from .constants import (
+    PROJECT_NAME,
     AGENT_DIR,
     AGENT_EXE_PATH,
     AGENT_SERVICE_NAME,
@@ -103,6 +104,17 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
     AGENT_DIR.mkdir(parents=True, exist_ok=True)
     run([nssm, 'install', AGENT_SERVICE_NAME, str(AGENT_EXE_PATH)], check=False)
     run([nssm, 'set', AGENT_SERVICE_NAME, 'DisplayName', AGENT_DISPLAY_NAME], check=False)
+    # Show in services.msc that this service is owned/maintained by the manager.
+    run(
+        [
+            nssm,
+            'set',
+            AGENT_SERVICE_NAME,
+            'Description',
+            f"Beszel agent service managed by {PROJECT_NAME}. Configure and update via {PROJECT_NAME}.",
+        ],
+        check=False,
+    )
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppDirectory', str(AGENT_DIR)], check=False)
     _configure_agent_logging(nssm)
     env_pairs = [f"{k}={v}" for k, v in env_vars.items() if v]
@@ -113,7 +125,7 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppRestartDelay', '5000'], check=False)
 
     # Restart via SCM so we can detect/handle STOP_PENDING hangs.
-    restart_service(timeout_seconds=30)
+    restart_service(timeout_seconds=15)
 
 
 def rotate_service_logs() -> None:
@@ -144,12 +156,13 @@ def get_service_status() -> str:
     return 'UNKNOWN'
 
 
-def _query_service_state_and_pid() -> tuple[str, int]:
-    """Return (STATE, PID) using `sc queryex`.
+def start_service() -> None:
+    run(['sc', 'start', AGENT_SERVICE_NAME], check=False)
+    log('Service start requested.')
 
-    STATE is typically RUNNING / STOPPED / STOP_PENDING / START_PENDING.
-    PID is 0 if not available.
-    """
+
+def _query_service_state_and_pid() -> tuple[str, int]:
+    """Return (STATE, PID) using `sc queryex`."""
     try:
         cp = run(['sc', 'queryex', AGENT_SERVICE_NAME], check=False)
     except FileNotFoundError:
@@ -177,7 +190,7 @@ def _query_service_state_and_pid() -> tuple[str, int]:
     return (state, pid)
 
 
-def _wait_for_state(target_state: str, timeout_seconds: int = 30) -> bool:
+def _wait_for_state(target_state: str, timeout_seconds: int = 15) -> bool:
     deadline = time.time() + max(1, int(timeout_seconds))
     while time.time() < deadline:
         state, _ = _query_service_state_and_pid()
@@ -188,51 +201,51 @@ def _wait_for_state(target_state: str, timeout_seconds: int = 30) -> bool:
 
 
 def _force_kill_service_process() -> None:
-    """Force-kill the service process (usually nssm.exe) if it is stuck."""
     state, pid = _query_service_state_and_pid()
     if pid and pid > 0:
         log(f"Service is stuck in {state}; forcing kill of service PID {pid}.")
         run(['taskkill', '/PID', str(pid), '/T', '/F'], check=False)
         return
 
-    # Fallback: kill agent binary if PID not reported
     log(f"Service is stuck in {state}; PID not available. Attempting to kill beszel-agent.exe.")
     run(['taskkill', '/IM', 'beszel-agent.exe', '/T', '/F'], check=False)
 
 
-def start_service() -> None:
-    run(['sc', 'start', AGENT_SERVICE_NAME], check=False)
-    log('Service start requested.')
+def stop_service(timeout_seconds: int = 15) -> bool:
+    """Stop service; if it doesn't stop within timeout, force-kill it.
 
-
-def stop_service(timeout_seconds: int = 30) -> None:
-    """Stop service; if it doesn't stop within timeout, force-kill it."""
+    Returns True if a force-kill was performed.
+    """
+    forced = False
     run(['sc', 'stop', AGENT_SERVICE_NAME], check=False)
     log('Service stop requested.')
 
-    # If it stops quickly, great.
     if _wait_for_state('STOPPED', timeout_seconds=timeout_seconds):
-        return
+        return False
 
-    # Stuck: kill and wait a bit.
+    forced = True
     _force_kill_service_process()
     if _wait_for_state('STOPPED', timeout_seconds=10):
         log('Service force-stopped successfully.')
     else:
         log('Service still not STOPPED after force kill.')
+    return forced
 
 
-def restart_service(timeout_seconds: int = 30) -> None:
-    """Restart service; force-kills it if stop/start gets stuck."""
-    stop_service(timeout_seconds=timeout_seconds)
+def restart_service(timeout_seconds: int = 15) -> bool:
+    """Restart service; force-kills it if stop/start gets stuck.
+
+    Returns True if a force-kill was performed.
+    """
+    forced = stop_service(timeout_seconds=timeout_seconds)
     start_service()
 
-    # Wait for running; if stuck starting, kill and retry once.
     if _wait_for_state('RUNNING', timeout_seconds=timeout_seconds):
         log('Service restarted successfully.')
-        return
+        return forced
 
     log('Service did not reach RUNNING in time; forcing kill and retrying start.')
+    forced = True
     _force_kill_service_process()
     time.sleep(2)
     start_service()
@@ -241,17 +254,41 @@ def restart_service(timeout_seconds: int = 30) -> None:
     else:
         state, _ = _query_service_state_and_pid()
         log(f'Service still not RUNNING after retry (state={state}).')
+    return forced
 
 
 def delete_service() -> None:
     nssm = _find_nssm()
-    # Ensure it is stopped (force kill if needed) before removal.
     try:
-        stop_service(timeout_seconds=30)
+        stop_service(timeout_seconds=15)
     except Exception:
         pass
     run([nssm, 'remove', AGENT_SERVICE_NAME, 'confirm'], check=False)
     log('Service removed via NSSM.')
+
+
+def get_service_diagnostics() -> str:
+    """Return a multi-line diagnostics dump for support bundles/UI."""
+    lines: list[str] = []
+    try:
+        cp = run(['sc', 'queryex', AGENT_SERVICE_NAME], check=False)
+        lines.append('=== sc queryex ===')
+        lines.append((cp.stdout or cp.stderr or '').strip())
+    except Exception as exc:
+        lines.append(f'=== sc queryex failed: {exc} ===')
+
+    try:
+        nssm = _find_nssm()
+        # Grab a few useful settings
+        lines.append('=== nssm get (selected) ===')
+        for key in ['DisplayName', 'AppPath', 'AppDirectory', 'AppStdout', 'AppStderr', 'AppEnvironmentExtra', 'Start', 'AppRestartDelay']:
+            cp = run([nssm, 'get', AGENT_SERVICE_NAME, key], check=False)
+            val = (cp.stdout or cp.stderr or '').strip()
+            lines.append(f'{key}: {val}')
+    except Exception as exc:
+        lines.append(f'=== nssm get failed: {exc} ===')
+
+    return "\n".join(lines).strip() + "\n"
 
 
 def ensure_firewall_rule(port: int) -> None:

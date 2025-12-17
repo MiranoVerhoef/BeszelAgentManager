@@ -15,6 +15,8 @@ from .constants import (
     MANAGER_UPDATE_SCRIPT,
     MANAGER_UPDATES_DIR,
     PROJECT_NAME,
+    MANAGER_PREVIOUS_EXE_PATH,
+    LOG_PATH,
 )
 from .util import log
 
@@ -218,28 +220,30 @@ def _write_update_script(pid: int, src_exe: Path, dst_exe: Path, args: List[str]
     MANAGER_UPDATE_SCRIPT.parent.mkdir(parents=True, exist_ok=True)
     # Build argument string for Start-Process
     arg_str = " ".join([f'"{a}"' for a in args])
-    # Write into the same manager log file (ProgramData\BeszelAgentManager\manager.log)
-    log_dir = os.environ.get("ProgramData", r"C:\\ProgramData")
-    log_path = str(Path(log_dir) / PROJECT_NAME / "manager.log")
+
+    prev = str(MANAGER_PREVIOUS_EXE_PATH)
+    logfile = str(LOG_PATH)
+
     script = f"""
 param(
   [int]$PidToWait,
   [string]$Src,
   [string]$Dst,
-  [string]$Args
+  [string]$Prev,
+  [string]$Args,
+  [string]$LogFile
 )
 
 $ErrorActionPreference = 'Stop'
 
-$LogPath = '{_ps_escape_single(log_path)}'
-function Log([string]$m) {{
+function Write-Log([string]$m) {{
   try {{
     $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-    Add-Content -Path $LogPath -Value "[$ts] $m"
-  }} catch {{ }}
+    Add-Content -Path $LogFile -Value "[$ts] $m"
+  }} catch {{}}
 }}
 
-Log "Updater: waiting for PID $PidToWait to exit"
+Write-Log "Update script started. Waiting for PID $PidToWait to exit."
 
 # wait for current process to exit
 try {{
@@ -251,6 +255,16 @@ try {{
 # ensure destination dir
 $dstDir = Split-Path -Parent $Dst
 New-Item -ItemType Directory -Force -Path $dstDir | Out-Null
+
+# backup current exe
+try {{
+  if (Test-Path -LiteralPath $Dst) {{
+    Copy-Item -Force -Path $Dst -Destination $Prev
+    Write-Log "Backed up current manager to $Prev"
+  }}
+}} catch {{
+  Write-Log "Backup failed: $($_.Exception.Message)"
+}}
 
 # copy with retry (exe can remain locked briefly)
 $copied = $false
@@ -265,32 +279,77 @@ for ($i=0; $i -lt 60; $i++) {{
 }}
 
 if (-not $copied) {{
+  Write-Log "Failed to copy updated executable to $Dst"
   throw "Failed to copy updated executable to $Dst"
 }}
 
-Log "Updater: copied updated executable to $Dst"
+Write-Log "Starting updated manager: $Dst $Args"
 
-try {{
-  if ([string]::IsNullOrWhiteSpace($Args)) {{
-    $p = Start-Process -FilePath $Dst -PassThru
-  }} else {{
-    $p = Start-Process -FilePath $Dst -ArgumentList $Args -PassThru
+function Start-Manager() {{
+  try {{
+    if ([string]::IsNullOrWhiteSpace($Args)) {{
+      $pp = Start-Process -FilePath $Dst -PassThru
+    }} else {{
+      $pp = Start-Process -FilePath $Dst -ArgumentList $Args -PassThru
+    }}
+    if ($pp -and $pp.Id) {{ Write-Log "Started manager PID $($pp.Id)" }}
+    return $pp
+  }} catch {{
+    Write-Log "Start-Process failed: $($_.Exception.Message)"
+    return $null
   }}
-  if ($p -and $p.Id) {{
-    Log "Updater: started new manager process PID $($p.Id)"
-  }} else {{
-    Log "Updater: Start-Process returned no PID (unknown)"
-  }}
-}} catch {{
-  Log "Updater: failed to start new manager: $($_.Exception.Message)"
-  # Fallback: try cmd start
+}}
+
+function Find-ManagerByPath() {{
+  try {{
+    $p = Get-CimInstance Win32_Process | Where-Object {{ $_.ExecutablePath -eq $Dst }} | Select-Object -First 1
+    return $p
+  }} catch {{ return $null }}
+}}
+
+$p = Start-Manager
+if (-not $p) {{
+  # Fallback: cmd start (best-effort)
   try {{
     cmd /c start "" "$Dst" $Args | Out-Null
-    Log "Updater: fallback cmd start invoked"
-  }} catch {{ }}
-  throw
+    Write-Log "Fallback cmd start invoked"
+  }} catch {{
+    Write-Log "Fallback cmd start failed: $($_.Exception.Message)"
+  }}
+}}
+
+Start-Sleep -Seconds 5
+
+$alive = $false
+try {{
+  if ($p -and $p.Id) {{
+    $alive = [bool](Get-Process -Id $p.Id -ErrorAction SilentlyContinue)
+  }} else {{
+    $ci = Find-ManagerByPath
+    if ($ci -and $ci.ProcessId) {{ $alive = $true }}
+  }}
+}} catch {{ $alive = $false }}
+
+if (-not $alive) {{
+  Write-Log "Updated manager did not stay running; attempting rollback."
+  try {{
+    if (Test-Path -LiteralPath $Prev) {{
+      Copy-Item -Force -Path $Prev -Destination $Dst
+      Write-Log "Rollback copy succeeded. Restarting previous manager."
+      $null = Start-Manager
+      if (-not $Args) {{
+        # if Start-Manager returned null due to args handling, try a plain start
+        Start-Process -FilePath $Dst | Out-Null
+      }}
+    }} else {{
+      Write-Log "No rollback binary found at $Prev"
+    }}
+  }} catch {{
+    Write-Log "Rollback failed: $($_.Exception.Message)"
+  }}
 }}
 """
+
     MANAGER_UPDATE_SCRIPT.write_text(script, encoding="utf-8")
     return MANAGER_UPDATE_SCRIPT
 
@@ -322,10 +381,12 @@ def start_update(
         # Keep it simple: our args are typically things like --hidden.
         args_str = args_str.replace('"', '')
 
+        prev = str(MANAGER_PREVIOUS_EXE_PATH)
+        logfile = str(LOG_PATH)
         params = (
             f"-NoProfile -ExecutionPolicy Bypass -File \"{script}\" "
             f"-PidToWait {pid} -Src \"{src}\" -Dst \"{dst}\" "
-            f"-Args \"{args_str}\""
+            f"-Prev \"{prev}\" -Args \"{args_str}\" -LogFile \"{logfile}\""
         )
         rc = ctypes.windll.shell32.ShellExecuteW(None, "runas", ps, params, None, 0)
         if rc <= 32:

@@ -1,0 +1,173 @@
+from __future__ import annotations
+
+import datetime
+import json
+import os
+import shutil
+import tempfile
+import zipfile
+from pathlib import Path
+
+from .constants import (
+    AGENT_LOG_DIR,
+    AUTO_UPDATE_TASK_NAME,
+    AGENT_LOG_ROTATE_TASK_NAME,
+    CONFIG_PATH,
+    LOG_PATH,
+    MANAGER_LOG_ARCHIVE_DIR,
+    PROJECT_NAME,
+    SUPPORT_BUNDLES_DIR,
+)
+from .util import log, run
+from .windows_service import get_service_diagnostics
+
+
+def _safe_read_text(path: Path, max_bytes: int = 5_000_000) -> str:
+    try:
+        if not path.exists():
+            return ""
+        data = path.read_bytes()
+        if len(data) > max_bytes:
+            data = data[-max_bytes:]
+        return data.decode("utf-8", errors="replace")
+    except Exception:
+        return ""
+
+
+def _run_capture(cmd: list[str], timeout: int = 30) -> str:
+    try:
+        cp = run(cmd, check=False)
+        out = (cp.stdout or "") + (cp.stderr or "")
+        return out.strip()
+    except Exception as exc:
+        return f"Failed to run {cmd}: {exc}"
+
+
+def _redacted_config_json() -> str:
+    try:
+        if not CONFIG_PATH.exists():
+            return ""
+        cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8", errors="replace"))
+        # Redact common secrets
+        for k in ["key", "token", "KEY", "TOKEN"]:
+            if k in cfg and cfg[k]:
+                cfg[k] = "***redacted***"
+        # Also redact any env tables that might contain secrets
+        if isinstance(cfg.get("env_tables"), dict):
+            for _name, table in cfg["env_tables"].items():
+                if isinstance(table, dict):
+                    for kk in list(table.keys()):
+                        if kk.upper() in ("KEY", "TOKEN"):
+                            table[kk] = "***redacted***"
+        return json.dumps(cfg, indent=2)
+    except Exception as exc:
+        return f"Failed to read/redact config: {exc}"
+
+
+def create_support_bundle() -> Path:
+    """Create a zip support bundle with logs + diagnostics + system details.
+
+    Returns the resulting zip path.
+    """
+    SUPPORT_BUNDLES_DIR.mkdir(parents=True, exist_ok=True)
+
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    out_zip = SUPPORT_BUNDLES_DIR / f"support-bundle-{ts}.zip"
+
+    with tempfile.TemporaryDirectory(prefix=f"{PROJECT_NAME}-support-") as td:
+        root = Path(td)
+        (root / "logs").mkdir(parents=True, exist_ok=True)
+
+        # Config
+        (root / "config-redacted.json").write_text(_redacted_config_json(), encoding="utf-8")
+
+        # Manager logs
+        try:
+            if LOG_PATH.exists():
+                shutil.copy2(LOG_PATH, root / "logs" / LOG_PATH.name)
+        except Exception:
+            pass
+        try:
+            if MANAGER_LOG_ARCHIVE_DIR.exists():
+                for p in sorted(MANAGER_LOG_ARCHIVE_DIR.glob("manager-*.txt")):
+                    try:
+                        shutil.copy2(p, root / "logs" / p.name)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # Agent logs
+        try:
+            if AGENT_LOG_DIR.exists():
+                agent_out = root / "agent_logs"
+                agent_out.mkdir(parents=True, exist_ok=True)
+                for p in sorted(AGENT_LOG_DIR.iterdir()):
+                    if p.is_file():
+                        try:
+                            shutil.copy2(p, agent_out / p.name)
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+
+        # Service diagnostics
+        (root / "service-diagnostics.txt").write_text(get_service_diagnostics(), encoding="utf-8")
+
+        # Scheduled tasks
+        tasks = []
+        if AUTO_UPDATE_TASK_NAME:
+            tasks.append(AUTO_UPDATE_TASK_NAME)
+        if AGENT_LOG_ROTATE_TASK_NAME:
+            tasks.append(AGENT_LOG_ROTATE_TASK_NAME)
+        if os.name == "nt" and tasks:
+            lines: list[str] = []
+            for tn in tasks:
+                lines.append(f"=== schtasks /Query /TN {tn} ===")
+                lines.append(_run_capture(["schtasks", "/Query", "/TN", tn, "/V", "/FO", "LIST"]))
+                lines.append("")
+            (root / "scheduled-tasks.txt").write_text("\n".join(lines), encoding="utf-8")
+
+        # Firewall rule
+        if os.name == "nt":
+            fw = _run_capture([
+                "netsh",
+                "advfirewall",
+                "firewall",
+                "show",
+                "rule",
+                f"name=Beszel Agent",
+            ])
+            (root / "firewall-rule.txt").write_text(fw, encoding="utf-8")
+
+        # System details (diagnostics-friendly)
+        sys_lines: list[str] = []
+        sys_lines.append("=== os.environ (selected) ===")
+        for k in ["COMPUTERNAME", "USERNAME", "OS", "PROCESSOR_ARCHITECTURE", "ProgramFiles", "ProgramData"]:
+            sys_lines.append(f"{k}={os.environ.get(k, '')}")
+        sys_lines.append("")
+        if os.name == "nt":
+            sys_lines.append("=== systeminfo (trimmed) ===")
+            # systeminfo can be huge; keep last 2000 lines if needed
+            sys_lines.append(_run_capture(["cmd", "/c", "systeminfo"], timeout=60))
+            sys_lines.append("")
+            sys_lines.append("=== disk space ===")
+            sys_lines.append(_run_capture(["cmd", "/c", "wmic logicaldisk get name,freespace,size"], timeout=30))
+            sys_lines.append("")
+            sys_lines.append("=== powershell version ===")
+            sys_lines.append(_run_capture([
+                "powershell.exe",
+                "-NoProfile",
+                "-Command",
+                "$PSVersionTable | Out-String",
+            ], timeout=30))
+        (root / "system-details.txt").write_text("\n".join(sys_lines), encoding="utf-8")
+
+        # Create zip
+        with zipfile.ZipFile(out_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            for p in root.rglob("*"):
+                if p.is_file():
+                    zf.write(p, p.relative_to(root).as_posix())
+
+    log(f"Support bundle created: {out_zip}")
+    return out_zip
