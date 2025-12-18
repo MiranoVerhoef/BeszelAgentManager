@@ -48,6 +48,7 @@ from .windows_service import (
     stop_service,
     restart_service,
     get_service_diagnostics,
+    open_nssm_edit,
 )
 from .scheduler import delete_update_task, delete_agent_log_rotate_task
 from .agent_logs import list_agent_log_files, rotate_agent_logs_and_rename
@@ -721,6 +722,10 @@ class BeszelAgentManagerApp(tk.Tk):
         btn_s_restart.grid(row=0, column=2, padx=(0, 6), pady=2, sticky="w")
         add_tooltip(btn_s_restart, "Restart the Beszel Windows service.")
 
+        btn_s_edit = ttk.Button(svc, text="Edit service...", command=self._on_edit_service)
+        btn_s_edit.grid(row=0, column=3, padx=(0, 6), pady=2, sticky="w")
+        add_tooltip(btn_s_edit, "Open NSSM service editor for the Beszel Agent service.")
+
         # ------------------------------------------------------------------ Environment Tables tab
         env_tab = ttk.Frame(notebook, padding=10, style="Card.TFrame")
         env_tab.columnconfigure(1, weight=1)
@@ -1324,25 +1329,11 @@ class BeszelAgentManagerApp(tk.Tk):
         except Exception as exc:
             content = f"Failed to read log file:\n{exc}"
 
-        # Preserve scroll position unless user is already at the bottom.
-        try:
-            y0, y1 = self.log_text.yview()
-            at_bottom = y1 >= 0.999
-        except Exception:
-            at_bottom = True
-
         self.log_text.configure(state="normal")
         self.log_text.delete("1.0", tk.END)
         self.log_text.insert(tk.END, content)
         self.log_text.configure(state="disabled")
-
-        if at_bottom:
-            self.log_text.see(tk.END)
-        else:
-            try:
-                self.log_text.yview_moveto(y0)
-            except Exception:
-                pass
+        self.log_text.see(tk.END)
 
     def _refresh_manager_log_files_and_view(self, select_latest: bool = False):
         """Refresh dropdown list of manager log files and update the view."""
@@ -1437,25 +1428,11 @@ class BeszelAgentManagerApp(tk.Tk):
         self._refresh_agent_log_view()
 
     def _set_agent_log_text(self, content: str) -> None:
-        # Preserve scroll position unless user is already at the bottom.
-        try:
-            y0, y1 = self.agent_log_text.yview()
-            at_bottom = y1 >= 0.999
-        except Exception:
-            at_bottom = True
-
         self.agent_log_text.configure(state="normal")
         self.agent_log_text.delete("1.0", tk.END)
         self.agent_log_text.insert(tk.END, content)
         self.agent_log_text.configure(state="disabled")
-
-        if at_bottom:
-            self.agent_log_text.see(tk.END)
-        else:
-            try:
-                self.agent_log_text.yview_moveto(y0)
-            except Exception:
-                pass
+        self.agent_log_text.see(tk.END)
 
     def _refresh_agent_log_view(self):
         sel = self.var_agent_log_file.get().strip()
@@ -2574,12 +2551,21 @@ class BeszelAgentManagerApp(tk.Tk):
 
         threading.Thread(target=worker, daemon=True).start()
 
+    def _on_edit_service(self):
+        if not self._require_admin():
+            return
+        try:
+            open_nssm_edit()
+        except Exception as exc:
+            log(f"Failed to open NSSM editor: {exc}")
+            messagebox.showerror(PROJECT_NAME, f"Failed to open NSSM service editor:\n{exc}")
+
     def _notify_service_forced_kill(self, action: str) -> None:
         """Inform the user that a force-kill was needed and offer diagnostics."""
         try:
             msg = (
-                f"The service did not {action} within 30 seconds and was force-killed to recover.\n\n"
-                "Do you want to view a diagnostics dump (sc queryex + NSSM settings)?"
+                f"Service {action} timed out (15s). It was force-killed.\n\n"
+                "View diagnostics?"
             )
             if messagebox.askyesno(PROJECT_NAME, msg):
                 diag = get_service_diagnostics()

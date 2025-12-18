@@ -469,14 +469,7 @@ def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -
 
 
 def _build_env_from_config(cfg: AgentConfig, *, include_process_env: bool = False) -> dict:
-    """Build environment variables for the Beszel agent.
-
-    IMPORTANT:
-    - When configuring the Windows service via NSSM, we must NOT pass a full copy of
-      the manager process environment (Windows/PyInstaller adds many variables).
-      In that case we only set Beszel agent env vars.
-    - For one-off runs (version/help), we can include the current process env.
-    """
+    """Build environment variables for the Beszel agent."""
 
     env = os.environ.copy() if include_process_env else {}
 
@@ -562,8 +555,6 @@ def install_or_update_agent_and_service(cfg: AgentConfig) -> None:
     env = _build_env_from_config(cfg, include_process_env=False)
     log("Configuring Windows service for Beszel agent")
 
-    # IMPORTANT: keep this signature in sync with windows_service.create_or_update_service
-    # windows_service.create_or_update_service currently expects a single 'env' argument.
     create_or_update_service(env)
 
     # Ensure daily agent log rotation task exists
@@ -591,7 +582,6 @@ def apply_configuration_only(cfg: AgentConfig) -> None:
     env = _build_env_from_config(cfg, include_process_env=False)
     log("Updating Windows service configuration for Beszel agent")
 
-    # IMPORTANT: keep this signature in sync with windows_service.create_or_update_service
     create_or_update_service(env)
 
     # Ensure daily agent log rotation task exists

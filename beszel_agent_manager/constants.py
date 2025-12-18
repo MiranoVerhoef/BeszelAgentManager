@@ -3,9 +3,10 @@ import os
 from pathlib import Path
 
 PROJECT_NAME = "BeszelAgentManager"
-APP_VERSION = "2.5.8"
+APP_VERSION = "2.5.9"
 
-AGENT_SERVICE_NAME = PROJECT_NAME
+# Use a single consistent service name everywhere (Windows + NSSM)
+AGENT_SERVICE_NAME = "Beszel Agent"
 AGENT_DISPLAY_NAME = "Beszel Agent"
 
 PROGRAM_FILES = os.environ.get("ProgramFiles", r"C:\Program Files")

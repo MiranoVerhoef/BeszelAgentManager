@@ -5,6 +5,7 @@ import io
 import zipfile
 import time
 import re
+import subprocess
 from typing import Dict
 
 import requests
@@ -27,6 +28,28 @@ from .util import run, log
 
 class ServiceError(RuntimeError):
     pass
+
+
+# Previous releases used the manager name as the Windows service name.
+LEGACY_AGENT_SERVICE_NAME = PROJECT_NAME
+
+
+def _service_exists(name: str) -> bool:
+    try:
+        cp = run(['sc', 'query', name], check=False)
+    except FileNotFoundError:
+        return False
+    txt = (cp.stdout or '') + (cp.stderr or '')
+    return ('does not exist' not in txt)
+
+
+def _resolve_service_name() -> str:
+    """Return the current service name (new preferred name, else legacy)."""
+    if _service_exists(AGENT_SERVICE_NAME):
+        return AGENT_SERVICE_NAME
+    if LEGACY_AGENT_SERVICE_NAME and _service_exists(LEGACY_AGENT_SERVICE_NAME):
+        return LEGACY_AGENT_SERVICE_NAME
+    return AGENT_SERVICE_NAME
 
 
 def _download_nssm() -> str:
@@ -101,10 +124,17 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
     if not AGENT_EXE_PATH.exists():
         raise ServiceError(f'Agent executable not found: {AGENT_EXE_PATH}')
     nssm = _find_nssm()
+
+    # Migrate legacy service name -> current name.
+    if LEGACY_AGENT_SERVICE_NAME != AGENT_SERVICE_NAME and _service_exists(LEGACY_AGENT_SERVICE_NAME):
+        run([nssm, 'stop', LEGACY_AGENT_SERVICE_NAME], check=False)
+        run([nssm, 'remove', LEGACY_AGENT_SERVICE_NAME, 'confirm'], check=False)
+        run(['sc', 'delete', LEGACY_AGENT_SERVICE_NAME], check=False)
+
     AGENT_DIR.mkdir(parents=True, exist_ok=True)
     run([nssm, 'install', AGENT_SERVICE_NAME, str(AGENT_EXE_PATH)], check=False)
     run([nssm, 'set', AGENT_SERVICE_NAME, 'DisplayName', AGENT_DISPLAY_NAME], check=False)
-    # Show in services.msc that this service is owned/maintained by the manager.
+    # Service description shown in services.msc
     run(
         [
             nssm,
@@ -117,16 +147,10 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
     )
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppDirectory', str(AGENT_DIR)], check=False)
     _configure_agent_logging(nssm)
-    # IMPORTANT:
-    # - Do NOT copy the manager process env into NSSM (PyInstaller adds lots of _PYI_/TCL/TK vars).
-    # - Also do NOT *replace* the entire environment for the service: the agent should still inherit
-    #   the normal system environment (SYSTEMROOT, PATH, etc.). Replacing it can break networking/DNS
-    #   and other Windows APIs.
-    # Therefore we only set Beszel variables as *extra* env vars.
+    # Only set Beszel variables as *extra* env vars.
     env_pairs = [f"{k}={v}" for k, v in env_vars.items() if v]
 
-    # Clear any previously stored environment settings (prevents old junk from persisting).
-    # We reset AppEnvironment to remove any prior "replace whole env" configuration.
+    # Clear stored environment settings.
     run([nssm, 'reset', AGENT_SERVICE_NAME, 'AppEnvironment'], check=False)
     run([nssm, 'reset', AGENT_SERVICE_NAME, 'AppEnvironmentExtra'], check=False)
 
@@ -147,13 +171,14 @@ def rotate_service_logs() -> None:
     except Exception as exc:
         log(f"Unable to find NSSM for log rotation: {exc}")
         return
-    run([nssm, 'rotate', AGENT_SERVICE_NAME], check=False)
-    log('Requested NSSM log rotation for agent service.')
+    svc = _resolve_service_name()
+    run([nssm, 'rotate', svc], check=False)
+    log('Requested agent log rotation.')
 
 
 def get_service_status() -> str:
     try:
-        cp = run(['sc', 'query', AGENT_SERVICE_NAME], check=False)
+        cp = run(['sc', 'query', _resolve_service_name()], check=False)
     except FileNotFoundError:
         return 'NOT FOUND'
     txt = (cp.stdout or '') + (cp.stderr or '')
@@ -169,14 +194,14 @@ def get_service_status() -> str:
 
 
 def start_service() -> None:
-    run(['sc', 'start', AGENT_SERVICE_NAME], check=False)
+    run(['sc', 'start', _resolve_service_name()], check=False)
     log('Service start requested.')
 
 
 def _query_service_state_and_pid() -> tuple[str, int]:
     """Return (STATE, PID) using `sc queryex`."""
     try:
-        cp = run(['sc', 'queryex', AGENT_SERVICE_NAME], check=False)
+        cp = run(['sc', 'queryex', _resolve_service_name()], check=False)
     except FileNotFoundError:
         return ('NOT FOUND', 0)
 
@@ -229,7 +254,7 @@ def stop_service(timeout_seconds: int = 15) -> bool:
     Returns True if a force-kill was performed.
     """
     forced = False
-    run(['sc', 'stop', AGENT_SERVICE_NAME], check=False)
+    run(['sc', 'stop', _resolve_service_name()], check=False)
     log('Service stop requested.')
 
     if _wait_for_state('STOPPED', timeout_seconds=timeout_seconds):
@@ -275,15 +300,20 @@ def delete_service() -> None:
         stop_service(timeout_seconds=15)
     except Exception:
         pass
+    # Remove preferred name first, then legacy if present.
     run([nssm, 'remove', AGENT_SERVICE_NAME, 'confirm'], check=False)
-    log('Service removed via NSSM.')
+    if LEGACY_AGENT_SERVICE_NAME != AGENT_SERVICE_NAME:
+        run([nssm, 'remove', LEGACY_AGENT_SERVICE_NAME, 'confirm'], check=False)
+        run(['sc', 'delete', LEGACY_AGENT_SERVICE_NAME], check=False)
+    run(['sc', 'delete', AGENT_SERVICE_NAME], check=False)
+    log('Service removed.')
 
 
 def get_service_diagnostics() -> str:
     """Return a multi-line diagnostics dump for support bundles/UI."""
     lines: list[str] = []
     try:
-        cp = run(['sc', 'queryex', AGENT_SERVICE_NAME], check=False)
+        cp = run(['sc', 'queryex', _resolve_service_name()], check=False)
         lines.append('=== sc queryex ===')
         lines.append((cp.stdout or cp.stderr or '').strip())
     except Exception as exc:
@@ -293,8 +323,9 @@ def get_service_diagnostics() -> str:
         nssm = _find_nssm()
         # Grab a few useful settings
         lines.append('=== nssm get (selected) ===')
+        svc = _resolve_service_name()
         for key in ['DisplayName', 'Description', 'AppPath', 'AppDirectory', 'AppStdout', 'AppStderr', 'AppEnvironment', 'AppEnvironmentExtra', 'Start', 'AppRestartDelay']:
-            cp = run([nssm, 'get', AGENT_SERVICE_NAME, key], check=False)
+            cp = run([nssm, 'get', svc, key], check=False)
             val = (cp.stdout or cp.stderr or '').strip()
             lines.append(f'{key}: {val}')
     except Exception as exc:
@@ -313,6 +344,16 @@ def ensure_firewall_rule(port: int) -> None:
         f'localport={port}',
     ], check=False)
     log(f'Firewall rule ensured for TCP {port}.')
+
+
+def open_nssm_edit() -> None:
+    """Open the NSSM GUI editor for the Beszel Agent service."""
+    nssm = _find_nssm()
+    svc = _resolve_service_name()
+    try:
+        subprocess.Popen([nssm, 'edit', svc], close_fds=True)
+    except Exception as exc:
+        raise ServiceError(f"Failed to open NSSM editor: {exc}") from exc
 
 
 def remove_firewall_rule() -> None:
