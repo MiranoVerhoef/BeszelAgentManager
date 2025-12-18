@@ -117,20 +117,22 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
     )
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppDirectory', str(AGENT_DIR)], check=False)
     _configure_agent_logging(nssm)
-    # IMPORTANT: Do not inherit the manager process env (PyInstaller/Windows adds tons of vars).
-    # Replace the entire service environment with only Beszel agent variables.
+    # IMPORTANT:
+    # - Do NOT copy the manager process env into NSSM (PyInstaller adds lots of _PYI_/TCL/TK vars).
+    # - Also do NOT *replace* the entire environment for the service: the agent should still inherit
+    #   the normal system environment (SYSTEMROOT, PATH, etc.). Replacing it can break networking/DNS
+    #   and other Windows APIs.
+    # Therefore we only set Beszel variables as *extra* env vars.
     env_pairs = [f"{k}={v}" for k, v in env_vars.items() if v]
 
-    # Clear any previously stored environment (prevents "regression" where old values persist).
+    # Clear any previously stored environment settings (prevents old junk from persisting).
+    # We reset AppEnvironment to remove any prior "replace whole env" configuration.
     run([nssm, 'reset', AGENT_SERVICE_NAME, 'AppEnvironment'], check=False)
     run([nssm, 'reset', AGENT_SERVICE_NAME, 'AppEnvironmentExtra'], check=False)
 
-    # If nothing is set, keep a single empty entry so NSSM accepts the call.
-    if not env_pairs:
-        env_pairs = [""]
-
-    # Use AppEnvironment (replace) rather than AppEnvironmentExtra (append)
-    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppEnvironment', *env_pairs], check=False)
+    # Only set extras if we actually have any.
+    if env_pairs:
+        run([nssm, 'set', AGENT_SERVICE_NAME, 'AppEnvironmentExtra', *env_pairs], check=False)
     run([nssm, 'set', AGENT_SERVICE_NAME, 'Start', 'SERVICE_AUTO_START'], check=False)
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppRestartDelay', '5000'], check=False)
 

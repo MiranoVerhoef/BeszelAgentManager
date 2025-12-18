@@ -208,6 +208,25 @@ def stage_download(release: dict, force: bool = False) -> Path:
 
     log(f"Downloading manager {version} from {download_url}")
     _download_file(download_url, dest, headers={"User-Agent": PROJECT_NAME}, timeout=120)
+
+    # Basic sanity checks to avoid replacing the installed EXE with a bad download (HTML, ZIP, etc.).
+    try:
+        size = dest.stat().st_size
+        log(f"Downloaded manager asset size: {size} bytes -> {dest}")
+        with dest.open("rb") as f:
+            sig = f.read(4)
+        if sig[:2] != b"MZ":
+            # Common failure mode: GitHub returns HTML/API error page or a ZIP.
+            raise RuntimeError(
+                f"Downloaded file does not look like a Windows EXE (signature={sig!r}). "
+                "Check your GitHub release asset name and the downloaded content."
+            )
+        if size < 1_000_000:
+            raise RuntimeError(f"Downloaded EXE is unexpectedly small ({size} bytes). Aborting update.")
+    except Exception as exc:
+        # Leave the staged file for inspection but refuse to proceed.
+        log(f"Manager download validation failed: {exc}")
+        raise
     return dest
 
 
@@ -245,6 +264,10 @@ function Write-Log([string]$m) {{
 
 Write-Log "Update script started. Waiting for PID $PidToWait to exit."
 
+try {{
+  Unblock-File -LiteralPath $Src -ErrorAction SilentlyContinue
+}} catch {{}}
+
 # wait for current process to exit
 try {{
   while (Get-Process -Id $PidToWait -ErrorAction SilentlyContinue) {{
@@ -281,6 +304,37 @@ for ($i=0; $i -lt 60; $i++) {{
 if (-not $copied) {{
   Write-Log "Failed to copy updated executable to $Dst"
   throw "Failed to copy updated executable to $Dst"
+}}
+
+try {{
+  $s = (Get-Item -LiteralPath $Src).Length
+  $d = (Get-Item -LiteralPath $Dst).Length
+  Write-Log "Copy verification: srcSize=$s dstSize=$d"
+
+  # Remove Mark-of-the-Web if present (can block execution on some systems)
+  try {{ Unblock-File -LiteralPath $Dst -ErrorAction SilentlyContinue }} catch {{ }}
+
+  # Basic sanity check: ensure this looks like a Windows PE executable ("MZ")
+  $bytes = Get-Content -LiteralPath $Dst -Encoding Byte -TotalCount 2 -ErrorAction SilentlyContinue
+  if ($bytes -and $bytes.Count -ge 2) {{
+    if ($bytes[0] -ne 77 -or $bytes[1] -ne 90) {{
+      Write-Log "Destination file signature check failed (not MZ). Aborting update."
+      throw "Downloaded file does not look like a Windows executable."
+    }}
+  }}
+}} catch {{
+  Write-Log "Copy verification failed: $($_.Exception.Message)"
+  # Attempt immediate rollback to previous executable if available
+  try {{
+    if (Test-Path -LiteralPath $Prev) {{
+      Copy-Item -Force -Path $Prev -Destination $Dst
+      Write-Log "Rolled back to previous executable after verification failure."
+      Start-Process -FilePath $Dst -ErrorAction SilentlyContinue | Out-Null
+    }}
+  }} catch {{
+    Write-Log "Rollback after verification failure failed: $($_.Exception.Message)"
+  }}
+  throw
 }}
 
 Write-Log "Starting updated manager: $Dst $Args"

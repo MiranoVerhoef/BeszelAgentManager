@@ -2030,6 +2030,12 @@ class BeszelAgentManagerApp(tk.Tk):
             if not messagebox.askyesno(PROJECT_NAME, f"Install {kind} version {v}?{warn}"):
                 return
 
+            # Close the dialog immediately so users get clear feedback that an install started.
+            try:
+                win.destroy()
+            except Exception:
+                pass
+
             on_install(rel, force)
 
         ttk.Button(btns, text="Refresh", command=load_releases).grid(row=0, column=0, padx=(0, 8))
@@ -2061,6 +2067,19 @@ class BeszelAgentManagerApp(tk.Tk):
     def _install_selected_manager_release(self, release: dict, force: bool) -> None:
         """Install a specific manager release (version picker dialog)."""
 
+        if self._task_running:
+            messagebox.showinfo(PROJECT_NAME, "Another operation is already in progress.")
+            return
+
+        # Mark busy immediately so the click is never perceived as "doing nothing".
+        self._task_running = True
+        try:
+            v = str(release.get("version") or "?")
+            tag = str(release.get("tag") or "?")
+            log(f"Manager version install requested: version={v} tag={tag} force={force}")
+        except Exception:
+            pass
+
         # Start update (download + replace) and exit app so the exe can be replaced.
         def worker_update():
             try:
@@ -2069,7 +2088,15 @@ class BeszelAgentManagerApp(tk.Tk):
                 os._exit(0)
             except Exception as exc:
                 log(f"Manager version install failed: {exc}\n{traceback.format_exc()}")
-                self.after(0, lambda: messagebox.showerror(PROJECT_NAME, f"Manager update failed:\n{exc}"))
+                def done_fail():
+                    self.progress.stop()
+                    self.progress.grid_remove()
+                    self._task_running = False
+                    self._update_status()
+                    self._refresh_log_view()
+                    messagebox.showerror(PROJECT_NAME, f"Manager update failed:\n{exc}")
+
+                self.after(0, done_fail)
                 return
             os._exit(0)
 
