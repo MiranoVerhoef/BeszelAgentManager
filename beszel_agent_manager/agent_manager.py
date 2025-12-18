@@ -468,8 +468,17 @@ def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -
     log(log_msg)
 
 
-def _build_env_from_config(cfg: AgentConfig) -> dict:
-    env = os.environ.copy()
+def _build_env_from_config(cfg: AgentConfig, *, include_process_env: bool = False) -> dict:
+    """Build environment variables for the Beszel agent.
+
+    IMPORTANT:
+    - When configuring the Windows service via NSSM, we must NOT pass a full copy of
+      the manager process environment (Windows/PyInstaller adds many variables).
+      In that case we only set Beszel agent env vars.
+    - For one-off runs (version/help), we can include the current process env.
+    """
+
+    env = os.environ.copy() if include_process_env else {}
 
     def set_if(value: str | None, key: str):
         if value:
@@ -520,7 +529,7 @@ def _run_agent_once(cfg: AgentConfig, args: list[str]) -> subprocess.CompletedPr
         raise RuntimeError("Agent binary does not exist, cannot run agent.")
 
     cmd = [str(exe_path)] + args
-    env = _build_env_from_config(cfg)
+    env = _build_env_from_config(cfg, include_process_env=True)
     log(f"Running agent: {' '.join(cmd)}")
     return subprocess.run(
         cmd,
@@ -549,7 +558,8 @@ def install_or_update_agent_and_service(cfg: AgentConfig) -> None:
     log(f"Starting agent install/update to version {version}")
     _download_and_extract_agent(version, changelog=changelog)
 
-    env = _build_env_from_config(cfg)
+    # Only set Beszel agent env vars for the service (do NOT include process env)
+    env = _build_env_from_config(cfg, include_process_env=False)
     log("Configuring Windows service for Beszel agent")
 
     # IMPORTANT: keep this signature in sync with windows_service.create_or_update_service
@@ -577,7 +587,8 @@ def apply_configuration_only(cfg: AgentConfig) -> None:
     if not exe_path.exists():
         raise RuntimeError("Agent is not installed yet.")
 
-    env = _build_env_from_config(cfg)
+    # Only set Beszel agent env vars for the service (do NOT include process env)
+    env = _build_env_from_config(cfg, include_process_env=False)
     log("Updating Windows service configuration for Beszel agent")
 
     # IMPORTANT: keep this signature in sync with windows_service.create_or_update_service

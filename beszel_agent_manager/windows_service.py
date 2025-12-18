@@ -117,10 +117,20 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
     )
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppDirectory', str(AGENT_DIR)], check=False)
     _configure_agent_logging(nssm)
+    # IMPORTANT: Do not inherit the manager process env (PyInstaller/Windows adds tons of vars).
+    # Replace the entire service environment with only Beszel agent variables.
     env_pairs = [f"{k}={v}" for k, v in env_vars.items() if v]
+
+    # Clear any previously stored environment (prevents "regression" where old values persist).
+    run([nssm, 'reset', AGENT_SERVICE_NAME, 'AppEnvironment'], check=False)
+    run([nssm, 'reset', AGENT_SERVICE_NAME, 'AppEnvironmentExtra'], check=False)
+
+    # If nothing is set, keep a single empty entry so NSSM accepts the call.
     if not env_pairs:
         env_pairs = [""]
-    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppEnvironmentExtra', *env_pairs], check=False)
+
+    # Use AppEnvironment (replace) rather than AppEnvironmentExtra (append)
+    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppEnvironment', *env_pairs], check=False)
     run([nssm, 'set', AGENT_SERVICE_NAME, 'Start', 'SERVICE_AUTO_START'], check=False)
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppRestartDelay', '5000'], check=False)
 
@@ -281,7 +291,7 @@ def get_service_diagnostics() -> str:
         nssm = _find_nssm()
         # Grab a few useful settings
         lines.append('=== nssm get (selected) ===')
-        for key in ['DisplayName', 'AppPath', 'AppDirectory', 'AppStdout', 'AppStderr', 'AppEnvironmentExtra', 'Start', 'AppRestartDelay']:
+        for key in ['DisplayName', 'Description', 'AppPath', 'AppDirectory', 'AppStdout', 'AppStderr', 'AppEnvironment', 'AppEnvironmentExtra', 'Start', 'AppRestartDelay']:
             cp = run([nssm, 'get', AGENT_SERVICE_NAME, key], check=False)
             val = (cp.stdout or cp.stderr or '').strip()
             lines.append(f'{key}: {val}')
