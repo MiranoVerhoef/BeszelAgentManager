@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 PROJECT_NAME = "BeszelAgentManager"
-APP_VERSION = "2.5.9"
+APP_VERSION = "2.6.6"
 
 # Use a single consistent service name everywhere (Windows + NSSM)
 AGENT_SERVICE_NAME = "Beszel Agent"
@@ -40,6 +40,9 @@ AGENT_LOG_ROTATE_TASK_NAME = PROJECT_NAME + "AgentLogRotate"
 UPDATE_SCRIPT_PATH = DATA_DIR / "update-beszel-agent.ps1"
 
 AUTO_UPDATE_TASK_NAME = PROJECT_NAME + "Update"
+
+# Periodic service restart task
+AUTO_RESTART_TASK_NAME = PROJECT_NAME + "RestartService"
 
 AGENT_DOWNLOAD_URL = (
     "https://github.com/henrygd/beszel/releases/download/"

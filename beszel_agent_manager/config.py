@@ -10,6 +10,8 @@ class AgentConfig:
     key: str = ""
     token: str = ""
     hub_url: str = ""
+    # Optional IP/URL fallback used if DNS resolution for hub_url fails.
+    hub_url_ip_fallback: str = ""
     listen: int | None = None
 
     data_dir: str = ""
@@ -37,6 +39,9 @@ class AgentConfig:
     auto_update_enabled: bool = True
     update_interval_days: int = 1
     last_known_version: str = ""
+
+    auto_restart_enabled: bool = False
+    auto_restart_interval_hours: int = 24
 
     debug_logging: bool = False
 

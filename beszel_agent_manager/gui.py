@@ -264,10 +264,23 @@ class BeszelAgentManagerApp(tk.Tk):
         self._task_running = False
         self._tray_icon = None
         self._hub_ping_started = False
+        self._hub_ping_last_error = ""
+        self._hub_ping_last_error_ts = 0.0
+
+        # HUB URL DNS fallback state
+        self._dns_fallback_active = False
+        self._dns_fallback_original = ""
+        self._dns_fallback_success_streak = 0
+        self._dns_fallback_last_log = ""
 
         # Build and load variables, then UI
         self._build_vars()
         self._build_ui(accent_color=accent)
+
+        # Ensure the window is large enough to fit newly added UI sections.
+        # (Some layouts can increase required height, and a fixed geometry may clip controls.)
+        self._ensure_window_fits_content()
+
         self._update_status()
         self._init_tray()
 
@@ -292,6 +305,46 @@ class BeszelAgentManagerApp(tk.Tk):
             self.deiconify()
 
         self._start_hub_ping_loop()
+        self._start_hub_dns_fallback_loop()
+        self._start_hub_dns_fallback_loop()
+
+    def _ensure_window_fits_content(self) -> None:
+        """Grow the window (if needed) to fit the requested UI size.
+
+        Keeps the existing size if it is already large enough.
+        """
+        try:
+            self.update_idletasks()
+
+            req_w = int(self.winfo_reqwidth())
+            req_h = int(self.winfo_reqheight())
+
+            # Current geometry (WxH+X+Y)
+            geo = self.wm_geometry()
+            cur_w, cur_h = 1000, 700
+            try:
+                wh = geo.split('+', 1)[0]
+                cur_w, cur_h = [int(x) for x in wh.split('x', 1)]
+            except Exception:
+                pass
+
+            # Cap to screen size with a small margin.
+            scr_w = max(800, int(self.winfo_screenwidth()) - 40)
+            scr_h = max(600, int(self.winfo_screenheight()) - 80)
+
+            new_w = min(scr_w, max(cur_w, req_w))
+            new_h = min(scr_h, max(cur_h, req_h))
+
+            # Ensure minsize also fits the requested layout.
+            min_w = max(920, req_w)
+            min_h = max(600, req_h)
+            self.minsize(min(min_w, scr_w), min(min_h, scr_h))
+
+            if new_w != cur_w or new_h != cur_h:
+                self.geometry(f"{new_w}x{new_h}")
+        except Exception:
+            # Never block startup over autosize.
+            return
 
     def _current_relaunch_args(self) -> list[str]:
         """Args to relaunch the manager in the same visible/hidden state."""
@@ -336,6 +389,7 @@ class BeszelAgentManagerApp(tk.Tk):
         self.var_key = tk.StringVar(value=c.key)
         self.var_token = tk.StringVar(value=c.token)
         self.var_hub_url = tk.StringVar(value=c.hub_url)
+        self.var_hub_url_ip_fallback = tk.StringVar(value=getattr(c, "hub_url_ip_fallback", ""))
         # LISTEN is optional; when blank the agent uses its default (45876)
         self.var_listen = tk.StringVar(value=str(c.listen) if c.listen else "")
 
@@ -373,6 +427,10 @@ class BeszelAgentManagerApp(tk.Tk):
         # Auto update
         self.var_auto_update = tk.BooleanVar(value=c.auto_update_enabled)
         self.var_update_interval = tk.IntVar(value=c.update_interval_days or 1)
+
+        # Periodic service restart
+        self.var_auto_restart = tk.BooleanVar(value=getattr(c, "auto_restart_enabled", False))
+        self.var_auto_restart_hours = tk.IntVar(value=int(getattr(c, "auto_restart_interval_hours", 24) or 24))
 
         # Logging & startup
         self.var_debug_logging = tk.BooleanVar(value=c.debug_logging)
@@ -456,6 +514,8 @@ class BeszelAgentManagerApp(tk.Tk):
             self.var_skip_systemd,
             self.var_auto_update,
             self.var_update_interval,
+            self.var_auto_restart,
+            self.var_auto_restart_hours,
             self.var_debug_logging,
             self.var_autostart,
             self.var_start_visible,
@@ -611,9 +671,23 @@ class BeszelAgentManagerApp(tk.Tk):
             tooltip="Monitoring / hub URL (HUB_URL).",
             is_int=False,
         )
+
         self._make_locked_entry_with_dialog(
             conn,
             row=3,
+            label="Hub URL IP Fallback",
+            var=self.var_hub_url_ip_fallback,
+            tooltip=(
+                "Optional IP/URL fallback for HUB_URL. If DNS resolution for Hub URL fails, "
+                "the manager can temporarily switch the service to this value and switch back "
+                "after DNS recovers."
+            ),
+            is_int=False,
+            allow_empty=True,
+        )
+        self._make_locked_entry_with_dialog(
+            conn,
+            row=4,
             label="Listen (port)",
             var=self.var_listen,
             tooltip="Optional agent listen port (LISTEN). Leave blank to use the agent default (45876).",
@@ -628,7 +702,7 @@ class BeszelAgentManagerApp(tk.Tk):
             command=self._on_toggle_listen_firewall,
             width=9,
         )
-        self.btn_listen_toggle.grid(row=3, column=3, sticky="w", padx=(4, 0), pady=2)
+        self.btn_listen_toggle.grid(row=4, column=3, sticky="w", padx=(4, 0), pady=2)
         add_tooltip(
             self.btn_listen_toggle,
             "Enable: set a port (if empty), apply settings, and add a Windows Firewall allow rule.\n"
@@ -648,7 +722,7 @@ class BeszelAgentManagerApp(tk.Tk):
             padding=10,
             style="Group.TLabelframe",
         )
-        auto.grid(row=4, column=0, sticky="nsew", pady=(12, 0), padx=(0, 6))
+        auto.grid(row=5, column=0, sticky="nsew", pady=(12, 0), padx=(0, 6))
         auto.columnconfigure(1, weight=1)
 
         chk_auto = ttk.Checkbutton(
@@ -676,7 +750,7 @@ class BeszelAgentManagerApp(tk.Tk):
             padding=10,
             style="Group.TLabelframe",
         )
-        startup.grid(row=4, column=1, sticky="nsew", pady=(12, 0), padx=(6, 0))
+        startup.grid(row=5, column=1, sticky="nsew", pady=(12, 0), padx=(6, 0))
 
         chk_start = ttk.Checkbutton(
             startup,
@@ -707,7 +781,7 @@ class BeszelAgentManagerApp(tk.Tk):
             padding=10,
             style="Group.TLabelframe",
         )
-        svc.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+        svc.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(12, 0))
         btn_s_start = ttk.Button(svc, text="Start service", command=self._on_start_service)
         btn_s_start.grid(row=0, column=0, padx=(0, 6), pady=2, sticky="w")
         add_tooltip(btn_s_start, "Start the Beszel Windows service.")
@@ -725,6 +799,39 @@ class BeszelAgentManagerApp(tk.Tk):
         btn_s_edit = ttk.Button(svc, text="Edit service...", command=self._on_edit_service)
         btn_s_edit.grid(row=0, column=3, padx=(0, 6), pady=2, sticky="w")
         add_tooltip(btn_s_edit, "Open NSSM service editor for the Beszel Agent service.")
+
+        restart_box = ttk.LabelFrame(
+            conn,
+            text="Periodic service restart",
+            padding=10,
+            style="Group.TLabelframe",
+        )
+        restart_box.grid(row=7, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+        restart_box.columnconfigure(2, weight=1)
+
+        chk_restart = ttk.Checkbutton(
+            restart_box,
+            text="Restart Beszel Agent every",
+            variable=self.var_auto_restart,
+        )
+        chk_restart.grid(row=0, column=0, sticky="w")
+        add_tooltip(
+            chk_restart,
+            "Creates a Scheduled Task that restarts the Beszel Agent service on a fixed interval.",
+        )
+
+        sp_hours = ttk.Spinbox(
+            restart_box,
+            from_=1,
+            to=168,
+            textvariable=self.var_auto_restart_hours,
+            width=6,
+        )
+        sp_hours.grid(row=0, column=1, padx=(6, 6), sticky="w")
+
+        ttk.Label(restart_box, text="hour(s)", style="Card.TLabel").grid(
+            row=0, column=2, sticky="w"
+        )
 
         # ------------------------------------------------------------------ Environment Tables tab
         env_tab = ttk.Frame(notebook, padding=10, style="Card.TFrame")
@@ -786,7 +893,7 @@ class BeszelAgentManagerApp(tk.Tk):
         top_actions.columnconfigure(0, weight=1)
 
         chk_debug = ttk.Checkbutton(
-            top_actions, text="Enable debug logging", variable=self.var_debug_logging
+            top_actions, text="Enable Manager Debug Logging", variable=self.var_debug_logging
         )
         chk_debug.grid(row=0, column=0, sticky="w")
         add_tooltip(
@@ -1504,6 +1611,7 @@ class BeszelAgentManagerApp(tk.Tk):
             key=self.var_key.get().strip(),
             token=self.var_token.get().strip(),
             hub_url=self.var_hub_url.get().strip(),
+            hub_url_ip_fallback=self.var_hub_url_ip_fallback.get().strip(),
             listen=listen,
             data_dir=self.var_data_dir.get().strip(),
             docker_host=self.var_docker_host.get().strip(),
@@ -1529,6 +1637,9 @@ class BeszelAgentManagerApp(tk.Tk):
             auto_update_enabled=self.var_auto_update.get(),
             update_interval_days=int(self.var_update_interval.get() or 1),
             last_known_version=c.last_known_version,
+
+            auto_restart_enabled=self.var_auto_restart.get(),
+            auto_restart_interval_hours=int(self.var_auto_restart_hours.get() or 24),
             debug_logging=self.var_debug_logging.get(),
             start_hidden=not self.var_start_visible.get(),
             first_run_done=c.first_run_done,
@@ -2627,11 +2738,160 @@ class BeszelAgentManagerApp(tk.Tk):
             pass
         self.label_hub_status.config(text=text)
 
+    def _log_hub_ping_error_throttled(self, message: str) -> None:
+        """Avoid spamming the log with repeated ping failures."""
+        import time
+
+        msg = (message or "").strip()
+        now = time.time()
+
+        # Log if the error changed, or at most once every 5 minutes.
+        if msg != self._hub_ping_last_error or (now - self._hub_ping_last_error_ts) > 300:
+            log(msg)
+            self._hub_ping_last_error = msg
+            self._hub_ping_last_error_ts = now
+
     def _start_hub_ping_loop(self):
         if self._hub_ping_started:
             return
         self._hub_ping_started = True
         self._ping_hub_once()
+
+    # ------------------------------------------------------------------ HUB URL DNS fallback
+
+    def _extract_host_from_url(self, url: str) -> str:
+        try:
+            import urllib.parse
+
+            u = (url or "").strip()
+            if not u:
+                return ""
+            if not u.startswith("http://") and not u.startswith("https://"):
+                u = "https://" + u
+            parsed = urllib.parse.urlparse(u)
+            host = parsed.hostname or ""
+            return host.strip()
+        except Exception:
+            return ""
+
+    def _write_dns_fallback_state(self, state: dict) -> None:
+        try:
+            from .constants import DATA_DIR
+            import json
+
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            (DATA_DIR / "dns-fallback-state.json").write_text(
+                json.dumps(state, indent=2), encoding="utf-8"
+            )
+        except Exception:
+            pass
+
+    def _start_hub_dns_fallback_loop(self) -> None:
+        """If HUB URL DNS resolution fails, switch service HUB_URL to fallback and switch back on recovery."""
+
+        def tick():
+            try:
+                self._dns_fallback_check_once()
+            except Exception:
+                pass
+            try:
+                # Run once per minute
+                self.after(60 * 1000, tick)
+            except Exception:
+                pass
+
+        # small delay so config vars are fully ready
+        try:
+            self.after(10 * 1000, tick)
+        except Exception:
+            pass
+
+    def _dns_fallback_check_once(self) -> None:
+        import socket
+        import datetime
+
+        # Pull from UI vars first; fallback to persisted config.
+        primary = (self.var_hub_url.get() or "").strip()
+        fallback = (self.var_hub_url_ip_fallback.get() or "").strip() if hasattr(self, "var_hub_url_ip_fallback") else ""
+        if not primary and self.config_obj:
+            primary = (self.config_obj.hub_url or "").strip()
+        if not fallback and self.config_obj:
+            fallback = (getattr(self.config_obj, "hub_url_ip_fallback", "") or "").strip()
+
+        host = self._extract_host_from_url(primary)
+        has_fallback = bool(fallback)
+
+        state = {
+            "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
+            "primary": primary,
+            "fallback": fallback if has_fallback else "",
+            "active": self._dns_fallback_active,
+            "original": self._dns_fallback_original,
+            "success_streak": int(self._dns_fallback_success_streak),
+        }
+        self._write_dns_fallback_state(state)
+
+        if not host or not has_fallback:
+            return
+
+        # Check DNS resolution (not HTTP reachability).
+        dns_ok = True
+        try:
+            socket.getaddrinfo(host, None)
+        except Exception:
+            dns_ok = False
+
+        if not self._dns_fallback_active:
+            if not dns_ok:
+                msg = f"Hub DNS resolve failed for {host}. Switching Beszel Agent HUB_URL to fallback."
+                if msg != self._dns_fallback_last_log:
+                    log(msg)
+                    self._dns_fallback_last_log = msg
+                self._dns_fallback_original = primary
+                self._dns_fallback_success_streak = 0
+                self._dns_fallback_active = True
+                self._apply_hub_url_override_async(fallback, reason="dns-fallback")
+            return
+
+        # Active fallback: look for recovery (5 consecutive good resolves, once per minute)
+        if dns_ok:
+            self._dns_fallback_success_streak += 1
+            if self._dns_fallback_success_streak in (1, 5):
+                log(
+                    f"Hub DNS resolve recovered for {host} ({self._dns_fallback_success_streak}/5)."
+                )
+            if self._dns_fallback_success_streak >= 5:
+                original = self._dns_fallback_original or primary
+                log("Hub DNS is stable again. Switching Beszel Agent HUB_URL back to primary.")
+                self._dns_fallback_active = False
+                self._dns_fallback_success_streak = 0
+                self._apply_hub_url_override_async(original, reason="dns-recover")
+        else:
+            # still broken
+            self._dns_fallback_success_streak = 0
+
+    def _apply_hub_url_override_async(self, new_hub_url: str, reason: str = "") -> None:
+        """Apply service HUB_URL change in the background (no UI blocking)."""
+
+        def worker():
+            try:
+                from .bootstrap import is_admin
+                from .agent_manager import apply_configuration_only
+                from .config import AgentConfig
+
+                if not is_admin():
+                    log("DNS fallback: admin rights required to update service configuration.")
+                    return
+
+                cfg = AgentConfig.load()
+                cfg.hub_url = (new_hub_url or "").strip()
+                # Do not persist this override to config; it is service-only.
+                log(f"DNS fallback: applying HUB_URL override ({reason}).")
+                apply_configuration_only(cfg)
+            except Exception as exc:
+                log(f"DNS fallback: failed to apply HUB_URL override: {exc}")
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def _ping_hub_once(self):
         url = self.var_hub_url.get().strip()
@@ -2686,13 +2946,15 @@ class BeszelAgentManagerApp(tk.Tk):
                         ping_ms = int((time.perf_counter() - start) * 1000)
                         reachable = True
                     else:
-                        log(f"Hub ping failed (PowerShell): {(cp.stderr or cp.stdout or '').strip()}")
+                        self._log_hub_ping_error_throttled(
+                            f"Hub ping failed (PowerShell): {(cp.stderr or cp.stdout or '').strip()}"
+                        )
                         reachable = False
                 except Exception as exc2:
-                    log(f"Hub ping failed (PowerShell exception): {exc2}")
+                    self._log_hub_ping_error_throttled(f"Hub ping failed (PowerShell exception): {exc2}")
                     reachable = False
             except Exception as exc:
-                log(f"Hub ping failed: {exc}")
+                self._log_hub_ping_error_throttled(f"Hub ping failed: {exc}")
                 reachable = False
 
             def done():

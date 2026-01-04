@@ -22,6 +22,40 @@ from .util import log, run
 from .windows_service import get_service_diagnostics
 
 
+def _redact_text(text: str) -> str:
+    """Best-effort redaction of sensitive values in logs."""
+    try:
+        import re
+
+        t = text or ""
+        # KEY/TOKEN patterns
+        t = re.sub(r"(?im)^(\s*KEY\s*=).*$", r"\1***redacted***", t)
+        t = re.sub(r"(?im)^(\s*TOKEN\s*=).*$", r"\1***redacted***", t)
+        # Common CLI-style fragments
+        t = re.sub(r"(?i)\b(KEY|TOKEN)\s*[:=]\s*[^\s\r\n]+", r"\1=***redacted***", t)
+        # SSH public keys
+        t = re.sub(r"ssh-(rsa|ed25519)\s+[A-Za-z0-9+/=]+", "ssh-\\1 ***redacted***", t)
+        # UUID-like tokens
+        t = re.sub(
+            r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b",
+            "***redacted***",
+            t,
+        )
+        return t
+    except Exception:
+        return text
+
+
+def _copy_redacted(src: Path, dst: Path) -> None:
+    try:
+        content = _safe_read_text(src)
+        if not content:
+            return
+        dst.write_text(_redact_text(content), encoding="utf-8")
+    except Exception:
+        pass
+
+
 def _safe_read_text(path: Path, max_bytes: int = 5_000_000) -> str:
     try:
         if not path.exists():
@@ -81,17 +115,25 @@ def create_support_bundle() -> Path:
         # Config
         (root / "config-redacted.json").write_text(_redacted_config_json(), encoding="utf-8")
 
+        # Agent update log (scheduled updates)
+        try:
+            upd = Path(os.getenv("ProgramData", r"C:\\ProgramData")) / PROJECT_NAME / "update.log"
+            if upd.exists():
+                _copy_redacted(upd, root / "update.log")
+        except Exception:
+            pass
+
         # Manager logs
         try:
             if LOG_PATH.exists():
-                shutil.copy2(LOG_PATH, root / "logs" / LOG_PATH.name)
+                _copy_redacted(LOG_PATH, root / "logs" / LOG_PATH.name)
         except Exception:
             pass
         try:
             if MANAGER_LOG_ARCHIVE_DIR.exists():
                 for p in sorted(MANAGER_LOG_ARCHIVE_DIR.glob("manager-*.txt")):
                     try:
-                        shutil.copy2(p, root / "logs" / p.name)
+                        _copy_redacted(p, root / "logs" / p.name)
                     except Exception:
                         pass
         except Exception:
@@ -105,9 +147,17 @@ def create_support_bundle() -> Path:
                 for p in sorted(AGENT_LOG_DIR.iterdir()):
                     if p.is_file():
                         try:
-                            shutil.copy2(p, agent_out / p.name)
+                            _copy_redacted(p, agent_out / p.name)
                         except Exception:
                             pass
+        except Exception:
+            pass
+
+        # DNS fallback state (non-sensitive)
+        try:
+            state = Path(os.getenv("ProgramData", r"C:\\ProgramData")) / PROJECT_NAME / "dns-fallback-state.json"
+            if state.exists():
+                shutil.copy2(state, root / "dns-fallback-state.json")
         except Exception:
             pass
 
@@ -152,7 +202,20 @@ def create_support_bundle() -> Path:
             sys_lines.append(_run_capture(["cmd", "/c", "systeminfo"], timeout=60))
             sys_lines.append("")
             sys_lines.append("=== disk space ===")
-            sys_lines.append(_run_capture(["cmd", "/c", "wmic logicaldisk get name,freespace,size"], timeout=30))
+            # WMIC is removed/disabled on newer Windows builds (including Server 2025).
+            # Use CIM via PowerShell instead.
+            sys_lines.append(
+                _run_capture(
+                    [
+                        "powershell.exe",
+                        "-NoProfile",
+                        "-Command",
+                        "Get-CimInstance Win32_LogicalDisk -Filter \"DriveType=3\" | "
+                        "Select-Object DeviceID,Size,FreeSpace | Format-Table -AutoSize | Out-String",
+                    ],
+                    timeout=30,
+                )
+            )
             sys_lines.append("")
             sys_lines.append("=== powershell version ===")
             sys_lines.append(_run_capture([

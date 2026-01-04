@@ -17,7 +17,7 @@ from .scheduler import delete_update_task, ensure_agent_log_rotate_task
 from .util import log
 from .windows_service import create_or_update_service, get_service_status, stop_service
 
-from .scheduler import ensure_update_task
+from .scheduler import ensure_update_task, ensure_periodic_restart_task, delete_periodic_restart_task
 
 
 AGENT_EXE_NAME = "beszel-agent.exe"
@@ -569,6 +569,14 @@ def install_or_update_agent_and_service(cfg: AgentConfig) -> None:
         log("Auto update disabled, removing scheduled update task if present")
         delete_update_task()
 
+    if getattr(cfg, "auto_restart_enabled", False):
+        hours = int(getattr(cfg, "auto_restart_interval_hours", 24) or 24)
+        log(f"Ensuring periodic restart task (every {hours} hour(s))")
+        ensure_periodic_restart_task(hours)
+    else:
+        log("Periodic restart disabled, removing restart task if present")
+        delete_periodic_restart_task()
+
 
 def apply_configuration_only(cfg: AgentConfig) -> None:
     """
@@ -595,6 +603,14 @@ def apply_configuration_only(cfg: AgentConfig) -> None:
     else:
         log("Auto update disabled, removing scheduled update task if present")
         delete_update_task()
+
+    if getattr(cfg, "auto_restart_enabled", False):
+        hours = int(getattr(cfg, "auto_restart_interval_hours", 24) or 24)
+        log(f"Ensuring periodic restart task (every {hours} hour(s))")
+        ensure_periodic_restart_task(hours)
+    else:
+        log("Periodic restart disabled, removing restart task if present")
+        delete_periodic_restart_task()
 
 
 def update_agent_only(version: str | None = None, changelog: str | None = None) -> None:

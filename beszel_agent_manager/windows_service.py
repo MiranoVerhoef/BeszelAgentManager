@@ -146,6 +146,14 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
         check=False,
     )
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppDirectory', str(AGENT_DIR)], check=False)
+
+    # Make service stops more reliable (reduces STOP_PENDING hangs).
+    # These are NSSM shutdown settings (milliseconds between stop methods).
+    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodConsole', '1500'], check=False)
+    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodWindow', '1500'], check=False)
+    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodThreads', '1500'], check=False)
+    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppKillProcessTree', '1'], check=False)
+
     _configure_agent_logging(nssm)
     # Only set Beszel variables as *extra* env vars.
     env_pairs = [f"{k}={v}" for k, v in env_vars.items() if v]
@@ -194,7 +202,14 @@ def get_service_status() -> str:
 
 
 def start_service() -> None:
-    run(['sc', 'start', _resolve_service_name()], check=False)
+    svc = _resolve_service_name()
+    state, _ = _query_service_state_and_pid()
+    if state == 'RUNNING':
+        return
+    if state == 'NOT FOUND':
+        log('Service start requested but service was not found.')
+        return
+    run(['sc', 'start', svc], check=False)
     log('Service start requested.')
 
 
@@ -254,8 +269,27 @@ def stop_service(timeout_seconds: int = 15) -> bool:
     Returns True if a force-kill was performed.
     """
     forced = False
-    run(['sc', 'stop', _resolve_service_name()], check=False)
+    svc = _resolve_service_name()
+    state, _ = _query_service_state_and_pid()
+    if state == 'STOPPED':
+        return False
+    if state == 'NOT FOUND':
+        log('Service stop requested but service was not found.')
+        return False
+
+    run(['sc', 'stop', svc], check=False)
     log('Service stop requested.')
+
+    # NSSM sometimes responds better to its own stop command than SCM alone.
+    # If the service immediately enters STOP_PENDING, try a direct NSSM stop once.
+    try:
+        time.sleep(1)
+        state2, _ = _query_service_state_and_pid()
+        if state2 == 'STOP_PENDING':
+            nssm = _find_nssm()
+            run([nssm, 'stop', svc], check=False)
+    except Exception:
+        pass
 
     if _wait_for_state('STOPPED', timeout_seconds=timeout_seconds):
         return False
@@ -324,7 +358,7 @@ def get_service_diagnostics() -> str:
         # Grab a few useful settings
         lines.append('=== nssm get (selected) ===')
         svc = _resolve_service_name()
-        for key in ['DisplayName', 'Description', 'AppPath', 'AppDirectory', 'AppStdout', 'AppStderr', 'AppEnvironment', 'AppEnvironmentExtra', 'Start', 'AppRestartDelay']:
+        for key in ['DisplayName', 'Description', 'Application', 'AppDirectory', 'AppStdout', 'AppStderr', 'AppEnvironment', 'AppEnvironmentExtra', 'Start', 'AppRestartDelay', 'AppStopMethodConsole', 'AppStopMethodWindow', 'AppStopMethodThreads', 'AppKillProcessTree']:
             cp = run([nssm, 'get', svc, key], check=False)
             val = (cp.stdout or cp.stderr or '').strip()
             lines.append(f'{key}: {val}')
@@ -351,7 +385,25 @@ def open_nssm_edit() -> None:
     nssm = _find_nssm()
     svc = _resolve_service_name()
     try:
-        subprocess.Popen([nssm, 'edit', svc], close_fds=True)
+        # NSSM itself is a console subsystem exe; launching it from a GUI app can
+        # briefly show a console window. Hide it.
+        creationflags = 0
+        startupinfo = None
+        if os.name == 'nt':
+            creationflags = 0x08000000  # CREATE_NO_WINDOW
+            try:
+                startupinfo = subprocess.STARTUPINFO()
+                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                startupinfo.wShowWindow = 0  # SW_HIDE
+            except Exception:
+                startupinfo = None
+
+        subprocess.Popen(
+            [nssm, 'edit', svc],
+            close_fds=True,
+            creationflags=creationflags,
+            startupinfo=startupinfo,
+        )
     except Exception as exc:
         raise ServiceError(f"Failed to open NSSM editor: {exc}") from exc
 

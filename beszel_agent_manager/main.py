@@ -1,11 +1,26 @@
 from __future__ import annotations
 
 import sys
+import os
+import time
+import subprocess
+from pathlib import Path
 
 from .bootstrap import ensure_elevated_and_location, ensure_single_instance
 from .gui import main as gui_main
 from .agent_logs import rotate_agent_logs_and_rename
-from .util import log
+from .windows_service import restart_service, stop_service, start_service, get_service_status
+from .util import log, try_write_event_log
+from .constants import AGENT_EXE_PATH, PROJECT_NAME
+
+
+def _parse_auto_update_agent_flag() -> bool:
+    """Detect and strip the --auto-update-agent flag from sys.argv."""
+    argv = sys.argv
+    if "--auto-update-agent" not in argv:
+        return False
+    sys.argv = [a for a in argv if a != "--auto-update-agent"]
+    return True
 
 
 def _parse_start_hidden_flag() -> bool:
@@ -33,6 +48,15 @@ def _parse_rotate_agent_logs_flag() -> bool:
     return True
 
 
+def _parse_restart_agent_service_flag() -> bool:
+    """Detect and strip the --restart-agent-service flag from sys.argv."""
+    argv = sys.argv
+    if "--restart-agent-service" not in argv:
+        return False
+    sys.argv = [a for a in argv if a != "--restart-agent-service"]
+    return True
+
+
 def main() -> None:
     """
     Real entry point used by both:
@@ -41,14 +65,94 @@ def main() -> None:
     """
     start_hidden = _parse_start_hidden_flag()
     rotate_agent_logs = _parse_rotate_agent_logs_flag()
+    restart_agent_service = _parse_restart_agent_service_flag()
+    auto_update_agent = _parse_auto_update_agent_flag()
 
     # 1) Make sure we're in the right place and have run once elevated if needed
     ensure_elevated_and_location()
 
-    # If invoked by the scheduled task, just rotate logs and exit.
+    # If invoked by scheduled tasks, run and exit (no GUI / no single-instance prompt).
     if rotate_agent_logs:
         log("Running agent log rotation (CLI mode)")
         rotate_agent_logs_and_rename()
+        return
+
+    if restart_agent_service:
+        log("Scheduled restart triggered: restarting Beszel Agent service")
+        try_write_event_log("Scheduled restart triggered: restarting Beszel Agent service", event_id=2601, level="INFORMATION")
+        try:
+            restart_service(timeout_seconds=15)
+            log("Scheduled restart complete: Beszel Agent service restarted")
+            try_write_event_log("Scheduled restart complete: Beszel Agent service restarted", event_id=2602, level="INFORMATION")
+        except Exception as exc:
+            log(f"Scheduled restart failed: {exc}")
+            try_write_event_log(f"Scheduled restart failed: {exc}", event_id=2603, level="ERROR")
+        return
+
+    if auto_update_agent:
+        # Run the agent's built-in update in a robust, timeout-bound way.
+        # This is used by the scheduled auto-update task.
+        log("Scheduled agent update triggered")
+        try_write_event_log("Scheduled agent update triggered", event_id=2611, level="INFORMATION")
+
+        if not AGENT_EXE_PATH.exists():
+            log(f"Scheduled agent update: agent not installed at {AGENT_EXE_PATH}")
+            return
+
+        data_dir = Path(os.getenv("ProgramData", r"C:\\ProgramData")) / PROJECT_NAME
+        data_dir.mkdir(parents=True, exist_ok=True)
+        update_log = data_dir / "update.log"
+
+        forced = False
+        try:
+            forced = stop_service(timeout_seconds=15)
+        except Exception as exc:
+            log(f"Scheduled agent update: failed to stop service: {exc}")
+
+        cmd = [str(AGENT_EXE_PATH), "update"]
+        try:
+            cp = subprocess.run(
+                cmd,
+                cwd=str(AGENT_EXE_PATH.parent),
+                capture_output=True,
+                text=True,
+                timeout=600,
+            )
+            out = (cp.stdout or "") + (cp.stderr or "")
+            ts = time.strftime("%Y-%m-%d %H:%M:%S")
+            try:
+                with update_log.open("a", encoding="utf-8", errors="replace") as f:
+                    f.write(f"[{ts}] beszel-agent update exit_code={cp.returncode} forced_stop={forced}\n")
+                    if out:
+                        f.write(out)
+                        if not out.endswith("\n"):
+                            f.write("\n")
+                    f.write("---\n")
+            except Exception:
+                pass
+            log(f"Scheduled agent update finished (exit_code={cp.returncode}, forced_stop={forced})")
+        except subprocess.TimeoutExpired:
+            log("Scheduled agent update timed out after 600s")
+            try_write_event_log("Scheduled agent update timed out after 600s", event_id=2613, level="ERROR")
+        except Exception as exc:
+            log(f"Scheduled agent update failed: {exc}")
+            try_write_event_log(f"Scheduled agent update failed: {exc}", event_id=2613, level="ERROR")
+        finally:
+            try:
+                start_service()
+            except Exception:
+                pass
+            # Wait for RUNNING (max ~20s)
+            for _ in range(20):
+                if get_service_status() == "RUNNING":
+                    break
+                time.sleep(1)
+            if get_service_status() == "RUNNING":
+                log("Scheduled agent update complete: service RUNNING")
+                try_write_event_log("Scheduled agent update complete: service RUNNING", event_id=2612, level="INFORMATION")
+            else:
+                log(f"Scheduled agent update complete: service state={get_service_status()}")
+                try_write_event_log(f"Scheduled agent update complete: service state={get_service_status()}", event_id=2614, level="ERROR")
         return
 
     # 2) Enforce single instance (with “kill old instance?” prompt)

@@ -88,3 +88,43 @@ def run(cmd, check: bool = True) -> subprocess.CompletedProcess:
             f"stdout: {cp.stdout}\nstderr: {cp.stderr}"
         )
     return cp
+
+
+def try_write_event_log(message: str, *, event_id: int = 2600, level: str = "INFORMATION") -> None:
+    """Best-effort write to Windows Application event log.
+
+    Uses `eventcreate.exe` because it works without pre-registering an event source.
+    This is best-effort and never raises.
+    """
+    if os.name != "nt":
+        return
+    try:
+        lvl = (level or "INFORMATION").upper()
+        if lvl not in ("INFORMATION", "WARNING", "ERROR"):
+            lvl = "INFORMATION"
+        # eventcreate requires an integer 1..1000 for /ID
+        eid = int(event_id)
+        if eid < 1:
+            eid = 1
+        if eid > 1000:
+            eid = 1000
+        subprocess.run(
+            [
+                "eventcreate",
+                "/L",
+                "APPLICATION",
+                "/T",
+                lvl,
+                "/ID",
+                str(eid),
+                "/SO",
+                "BeszelAgentManager",
+                "/D",
+                str(message),
+            ],
+            capture_output=True,
+            text=True,
+            creationflags=CREATE_NO_WINDOW if CREATE_NO_WINDOW else 0,
+        )
+    except Exception:
+        return
