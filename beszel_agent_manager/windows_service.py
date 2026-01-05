@@ -385,25 +385,30 @@ def open_nssm_edit() -> None:
     nssm = _find_nssm()
     svc = _resolve_service_name()
     try:
-        # NSSM itself is a console subsystem exe; launching it from a GUI app can
-        # briefly show a console window. Hide it.
-        creationflags = 0
-        startupinfo = None
+        # On some systems, launching NSSM directly with CREATE_NO_WINDOW can
+        # prevent the GUI editor from appearing. Prefer PowerShell Start-Process
+        # with a hidden window; it reliably opens the NSSM GUI without flashing
+        # a console.
         if os.name == 'nt':
-            creationflags = 0x08000000  # CREATE_NO_WINDOW
-            try:
-                startupinfo = subprocess.STARTUPINFO()
-                startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                startupinfo.wShowWindow = 0  # SW_HIDE
-            except Exception:
-                startupinfo = None
+            def _ps_single(s: str) -> str:
+                return s.replace("'", "''")
 
-        subprocess.Popen(
-            [nssm, 'edit', svc],
-            close_fds=True,
-            creationflags=creationflags,
-            startupinfo=startupinfo,
-        )
+            ps = (
+                "Start-Process -FilePath '{nssm}' -ArgumentList @('edit','{svc}')"
+            ).format(nssm=_ps_single(str(nssm)), svc=_ps_single(str(svc)))
+            log(f"Opening NSSM editor: {nssm} edit {svc}")
+
+            # Hide the PowerShell window itself.
+            creationflags = 0x08000000  # CREATE_NO_WINDOW
+            subprocess.Popen(
+                ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-Command', ps],
+                close_fds=True,
+                creationflags=creationflags,
+            )
+            return
+
+        # Non-Windows fallback (shouldn't normally happen)
+        subprocess.Popen([str(nssm), 'edit', str(svc)], close_fds=True)
     except Exception as exc:
         raise ServiceError(f"Failed to open NSSM editor: {exc}") from exc
 
