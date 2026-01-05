@@ -51,6 +51,11 @@ class AgentConfig:
     # Internal flag so the GUI shows only on the very first run
     first_run_done: bool = False
 
+    # Manager update notifications
+    manager_update_notify_enabled: bool = True
+    manager_update_check_interval_hours: int = 6
+    manager_update_skip_version: str = ""
+
     @classmethod
     def load(cls) -> "AgentConfig":
         DATA_DIR.mkdir(parents=True, exist_ok=True)

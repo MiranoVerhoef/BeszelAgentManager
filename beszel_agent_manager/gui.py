@@ -273,6 +273,9 @@ class BeszelAgentManagerApp(tk.Tk):
         self._dns_fallback_success_streak = 0
         self._dns_fallback_last_log = ""
 
+        # Manager update notifications
+        self._manager_update_prompted_version = ""
+
         # Build and load variables, then UI
         self._build_vars()
         self._build_ui(accent_color=accent)
@@ -306,7 +309,9 @@ class BeszelAgentManagerApp(tk.Tk):
 
         self._start_hub_ping_loop()
         self._start_hub_dns_fallback_loop()
-        self._start_hub_dns_fallback_loop()
+
+        # Periodically check for manager updates and notify with a popup.
+        self._start_manager_update_check_loop()
 
     def _ensure_window_fits_content(self) -> None:
         """Grow the window (if needed) to fit the requested UI size.
@@ -379,6 +384,155 @@ class BeszelAgentManagerApp(tk.Tk):
             self.after(1000, tick)
         except Exception:
             pass
+
+    def _start_manager_update_check_loop(self) -> None:
+        """Periodically check GitHub for manager updates and show a popup when available."""
+
+        def schedule_next(delay_ms: int) -> None:
+            try:
+                self.after(delay_ms, tick)
+            except Exception:
+                pass
+
+        def tick() -> None:
+            # Read from persisted config each time so changes take effect without restart.
+            try:
+                cfg = self.config_obj or AgentConfig.load()
+                enabled = bool(getattr(cfg, "manager_update_notify_enabled", True))
+                interval_h = int(getattr(cfg, "manager_update_check_interval_hours", 6) or 6)
+                interval_h = max(1, min(168, interval_h))
+                delay = interval_h * 60 * 60 * 1000
+            except Exception:
+                enabled = True
+                delay = 6 * 60 * 60 * 1000
+
+            if enabled:
+                threading.Thread(target=self._check_manager_update_once, daemon=True).start()
+
+            schedule_next(delay)
+
+        # Initial delay so startup is quiet.
+        schedule_next(60 * 1000)
+
+    def _check_manager_update_once(self) -> None:
+        try:
+            cfg = self.config_obj or AgentConfig.load()
+            skip = (getattr(cfg, "manager_update_skip_version", "") or "").strip()
+
+            latest = fetch_latest_release()
+            if not latest:
+                log("Manager update check: no release info (offline or no stable release).")
+                return
+
+            latest_version = str(latest.get("version") or "").strip()
+            log(f"Manager update check: current={APP_VERSION} latest={latest_version}")
+
+            if not latest_version:
+                return
+            if skip and latest_version == skip:
+                return
+            if self._manager_update_prompted_version == latest_version:
+                return
+            if not is_update_available(APP_VERSION, latest_version):
+                return
+
+            # Show prompt on UI thread.
+            try:
+                self.after(0, lambda: self._show_manager_update_popup(latest))
+            except Exception:
+                pass
+        except Exception as exc:
+            log(f"Manager update check failed: {exc}")
+
+    def _show_manager_update_popup(self, release: dict) -> None:
+        try:
+            latest_version = str(release.get("version") or "").strip()
+            if not latest_version:
+                return
+            if self._manager_update_prompted_version == latest_version:
+                return
+            self._manager_update_prompted_version = latest_version
+
+            top = tk.Toplevel(self)
+            top.title(f"{PROJECT_NAME} update available")
+            top.geometry("720x520")
+            try:
+                top.attributes("-topmost", True)
+            except Exception:
+                pass
+
+            frm = ttk.Frame(top, padding=12)
+            frm.pack(fill="both", expand=True)
+
+            ttk.Label(
+                frm,
+                text=f"A new version is available: {latest_version} (current: {APP_VERSION})",
+                font=("Segoe UI", 11, "bold"),
+            ).pack(anchor="w")
+
+            ttk.Label(frm, text="Release notes:").pack(anchor="w", pady=(10, 4))
+
+            txt_frame = ttk.Frame(frm)
+            txt_frame.pack(fill="both", expand=True)
+
+            sb = ttk.Scrollbar(txt_frame, orient="vertical")
+            sb.pack(side="right", fill="y")
+
+            body = str(release.get("body") or "").strip() or "(No release notes provided.)"
+            txt = tk.Text(txt_frame, wrap="word", yscrollcommand=sb.set)
+            txt.insert("1.0", body)
+            txt.config(state="disabled")
+            txt.pack(side="left", fill="both", expand=True)
+            sb.config(command=txt.yview)
+
+            btn_row = ttk.Frame(frm)
+            btn_row.pack(fill="x", pady=(12, 0))
+
+            def do_update() -> None:
+                try:
+                    log(f"Manager update prompt accepted -> {latest_version}")
+                    start_update(
+                        release,
+                        args=self._current_relaunch_args(),
+                        current_pid=os.getpid(),
+                        force=False,
+                    )
+                except Exception as exc:
+                    messagebox.showerror("Update failed", str(exc))
+
+            def remind_later() -> None:
+                log("Manager update prompt dismissed (remind later).")
+                try:
+                    top.destroy()
+                except Exception:
+                    pass
+
+            def skip_version() -> None:
+                try:
+                    cfg = self.config_obj or AgentConfig.load()
+                    cfg.manager_update_skip_version = latest_version
+                    cfg.save()
+                except Exception:
+                    pass
+                log(f"Manager update skipped for version {latest_version}")
+                try:
+                    top.destroy()
+                except Exception:
+                    pass
+
+            ttk.Button(btn_row, text="Update now", command=do_update).pack(side="left")
+            ttk.Button(btn_row, text="Remind me later", command=remind_later).pack(side="left", padx=(8, 0))
+            ttk.Button(btn_row, text="Skip this version", command=skip_version).pack(side="right")
+
+            try:
+                top.lift()
+                top.focus_force()
+                # Drop topmost after a short delay.
+                self.after(1500, lambda: top.attributes("-topmost", False))
+            except Exception:
+                pass
+        except Exception as exc:
+            log(f"Failed to show manager update popup: {exc}")
 
     # ------------------------------------------------------------------ Vars / autosave
 
