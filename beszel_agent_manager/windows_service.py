@@ -393,10 +393,17 @@ def open_nssm_edit() -> None:
             def _ps_single(s: str) -> str:
                 return s.replace("'", "''")
 
+            # Be explicit about quoting the service name for NSSM, because it
+            # contains a space. Some environments end up effectively executing
+            # `nssm.exe edit Beszel Agent` (two args) instead of a single
+            # `"Beszel Agent"` argument. Passing an argument that already
+            # includes quotes forces the final command line to be:
+            #   nssm.exe edit "Beszel Agent"
+            quoted_svc = '"' + str(svc) + '"'
             ps = (
-                "Start-Process -FilePath '{nssm}' -ArgumentList @('edit','{svc}')"
-            ).format(nssm=_ps_single(str(nssm)), svc=_ps_single(str(svc)))
-            log(f"Opening NSSM editor: {nssm} edit {svc}")
+                "Start-Process -FilePath '{nssm}' -ArgumentList @('edit','{qsvc}')"
+            ).format(nssm=_ps_single(str(nssm)), qsvc=_ps_single(quoted_svc))
+            log(f"Opening NSSM editor: {nssm} edit \"{svc}\"")
 
             # Hide the PowerShell window itself.
             creationflags = 0x08000000  # CREATE_NO_WINDOW
