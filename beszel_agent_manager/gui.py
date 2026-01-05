@@ -263,6 +263,9 @@ class BeszelAgentManagerApp(tk.Tk):
 
         self._task_running = False
         self._tray_icon = None
+        self._tray_base_image = None
+        self._tray_badged_image = None
+        self._tray_badge_active = False
         self._hub_ping_started = False
         self._hub_ping_last_error = ""
         self._hub_ping_last_error_ts = 0.0
@@ -275,6 +278,7 @@ class BeszelAgentManagerApp(tk.Tk):
 
         # Manager update notifications
         self._manager_update_prompted_version = ""
+        self._manager_update_available_version = ""
 
         # Build and load variables, then UI
         self._build_vars()
@@ -418,22 +422,57 @@ class BeszelAgentManagerApp(tk.Tk):
         try:
             cfg = self.config_obj or AgentConfig.load()
             skip = (getattr(cfg, "manager_update_skip_version", "") or "").strip()
+            badge_enabled = bool(getattr(cfg, "manager_update_tray_badge_enabled", True))
 
             latest = fetch_latest_release()
             if not latest:
                 log("Manager update check: no release info (offline or no stable release).")
+                self._manager_update_available_version = ""
+                if badge_enabled:
+                    try:
+                        self.after(0, lambda: self._set_tray_update_badge(False))
+                    except Exception:
+                        pass
                 return
 
             latest_version = str(latest.get("version") or "").strip()
             log(f"Manager update check: current={APP_VERSION} latest={latest_version}")
 
             if not latest_version:
+                self._manager_update_available_version = ""
+                if badge_enabled:
+                    try:
+                        self.after(0, lambda: self._set_tray_update_badge(False))
+                    except Exception:
+                        pass
                 return
             if skip and latest_version == skip:
-                return
-            if self._manager_update_prompted_version == latest_version:
+                self._manager_update_available_version = ""
+                if badge_enabled:
+                    try:
+                        self.after(0, lambda: self._set_tray_update_badge(False))
+                    except Exception:
+                        pass
                 return
             if not is_update_available(APP_VERSION, latest_version):
+                self._manager_update_available_version = ""
+                if badge_enabled:
+                    try:
+                        self.after(0, lambda: self._set_tray_update_badge(False))
+                    except Exception:
+                        pass
+                return
+
+            # Mark update as available for tray badge.
+            self._manager_update_available_version = latest_version
+            if badge_enabled:
+                try:
+                    self.after(0, lambda: self._set_tray_update_badge(True))
+                except Exception:
+                    pass
+
+            # Avoid spamming popups for the same version.
+            if self._manager_update_prompted_version == latest_version:
                 return
 
             # Show prompt on UI thread.
@@ -491,6 +530,11 @@ class BeszelAgentManagerApp(tk.Tk):
             def do_update() -> None:
                 try:
                     log(f"Manager update prompt accepted -> {latest_version}")
+                    try:
+                        self._manager_update_available_version = ""
+                        self._set_tray_update_badge(False)
+                    except Exception:
+                        pass
                     start_update(
                         release,
                         args=self._current_relaunch_args(),
@@ -515,6 +559,11 @@ class BeszelAgentManagerApp(tk.Tk):
                 except Exception:
                     pass
                 log(f"Manager update skipped for version {latest_version}")
+                try:
+                    self._manager_update_available_version = ""
+                    self._set_tray_update_badge(False)
+                except Exception:
+                    pass
                 try:
                     top.destroy()
                 except Exception:
@@ -588,6 +637,11 @@ class BeszelAgentManagerApp(tk.Tk):
 
         # Logging & startup
         self.var_debug_logging = tk.BooleanVar(value=c.debug_logging)
+
+        # Manager update notifications
+        self.var_mgr_update_notify = tk.BooleanVar(value=bool(getattr(c, "manager_update_notify_enabled", True)))
+        self.var_mgr_update_interval_h = tk.IntVar(value=int(getattr(c, "manager_update_check_interval_hours", 6) or 6))
+        self.var_mgr_update_tray_badge = tk.BooleanVar(value=bool(getattr(c, "manager_update_tray_badge_enabled", True)))
 
         # Read back actual Run-key
         enabled, start_hidden_flag = get_autostart_state()
@@ -671,6 +725,9 @@ class BeszelAgentManagerApp(tk.Tk):
             self.var_auto_restart,
             self.var_auto_restart_hours,
             self.var_debug_logging,
+            self.var_mgr_update_notify,
+            self.var_mgr_update_interval_h,
+            self.var_mgr_update_tray_badge,
             self.var_autostart,
             self.var_start_visible,
         )
@@ -718,6 +775,12 @@ class BeszelAgentManagerApp(tk.Tk):
             cfg = self._build_config()
             cfg.save()
             self.config_obj = cfg
+
+            # Apply tray badge setting immediately if an update is pending.
+            try:
+                self._set_tray_update_badge(bool(getattr(self, "_manager_update_available_version", "")))
+            except Exception:
+                pass
 
             try:
                 set_autostart(
@@ -985,6 +1048,49 @@ class BeszelAgentManagerApp(tk.Tk):
 
         ttk.Label(restart_box, text="hour(s)", style="Card.TLabel").grid(
             row=0, column=2, sticky="w"
+        )
+
+        # Manager update notifications
+        mgr_upd = ttk.LabelFrame(
+            conn,
+            text="Manager update notifications",
+            padding=10,
+            style="Group.TLabelframe",
+        )
+        mgr_upd.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+        mgr_upd.columnconfigure(3, weight=1)
+
+        chk_mgr_upd = ttk.Checkbutton(
+            mgr_upd,
+            text="Notify me when a manager update is available",
+            variable=self.var_mgr_update_notify,
+        )
+        chk_mgr_upd.grid(row=0, column=0, columnspan=4, sticky="w")
+        add_tooltip(
+            chk_mgr_upd,
+            "Periodically checks GitHub Releases and shows a popup when a newer manager version is available.",
+        )
+
+        ttk.Label(mgr_upd, text="Check every:", style="Card.TLabel").grid(row=1, column=0, sticky="w", pady=(6, 0))
+        sp_mgr_h = ttk.Spinbox(
+            mgr_upd,
+            from_=1,
+            to=168,
+            textvariable=self.var_mgr_update_interval_h,
+            width=6,
+        )
+        sp_mgr_h.grid(row=1, column=1, sticky="w", pady=(6, 0), padx=(6, 6))
+        ttk.Label(mgr_upd, text="hour(s)", style="Card.TLabel").grid(row=1, column=2, sticky="w", pady=(6, 0))
+
+        chk_badge = ttk.Checkbutton(
+            mgr_upd,
+            text="Show a red dot in the tray when an update is available",
+            variable=self.var_mgr_update_tray_badge,
+        )
+        chk_badge.grid(row=2, column=0, columnspan=4, sticky="w", pady=(6, 0))
+        add_tooltip(
+            chk_badge,
+            "When enabled, the tray icon will show a small red dot until you update (or skip the version).",
         )
 
         # ------------------------------------------------------------------ Environment Tables tab
@@ -1797,6 +1903,11 @@ class BeszelAgentManagerApp(tk.Tk):
             debug_logging=self.var_debug_logging.get(),
             start_hidden=not self.var_start_visible.get(),
             first_run_done=c.first_run_done,
+
+            manager_update_notify_enabled=self.var_mgr_update_notify.get(),
+            manager_update_check_interval_hours=int(self.var_mgr_update_interval_h.get() or 6),
+            manager_update_skip_version=getattr(c, "manager_update_skip_version", ""),
+            manager_update_tray_badge_enabled=self.var_mgr_update_tray_badge.get(),
         )
 
         # Attach extra env dynamically for older configs
@@ -3320,6 +3431,58 @@ try {{ $remaining | ForEach-Object {{ Log $_ }} }} catch {{ }}
             dc.rectangle((1, 1, size - 2, size - 2))
             return img
 
+    def _make_tray_badged_image(self, img):
+        """Create a copy of the tray icon with a small red dot (update badge)."""
+        try:
+            base = img.convert("RGBA")
+            out = base.copy()
+            draw = ImageDraw.Draw(out)
+            w, h = out.size
+            r = max(4, int(min(w, h) * 0.18))
+            pad = max(2, int(min(w, h) * 0.05))
+            x1 = w - (r * 2) - pad
+            y1 = pad
+            x2 = w - pad
+            y2 = (r * 2) + pad
+            # White outline + red fill
+            draw.ellipse((x1 - 1, y1 - 1, x2 + 1, y2 + 1), fill=(255, 255, 255, 255))
+            draw.ellipse((x1, y1, x2, y2), fill=(220, 38, 38, 255))
+            return out
+        except Exception:
+            return img
+
+    def _set_tray_update_badge(self, active: bool) -> None:
+        """Toggle the red-dot badge on the tray icon."""
+        try:
+            if self._tray_icon is None:
+                return
+
+            # If user disabled the badge, always show the base icon.
+            try:
+                cfg = self.config_obj or AgentConfig.load()
+                badge_enabled = bool(getattr(cfg, "manager_update_tray_badge_enabled", True))
+            except Exception:
+                badge_enabled = True
+
+            want = bool(active and badge_enabled)
+            if want == bool(getattr(self, "_tray_badge_active", False)):
+                return
+
+            self._tray_badge_active = want
+            img = self._tray_badged_image if want else self._tray_base_image
+            if img is None:
+                return
+
+            try:
+                self._tray_icon.icon = img
+                # Some pystray backends expose update_icon()
+                if hasattr(self._tray_icon, "update_icon"):
+                    self._tray_icon.update_icon()
+            except Exception:
+                pass
+        except Exception:
+            return
+
     def _tray_open(self, _icon, _item):
         self.after(0, lambda: [self.deiconify(), self.lift(), self.focus_force()])
 
@@ -3348,6 +3511,10 @@ try {{ $remaining | ForEach-Object {{ Log $_ }} }} catch {{ }}
         img = self._create_tray_image()
         if img is None:
             return
+
+        # Keep both base and badged images ready for fast switching.
+        self._tray_base_image = img
+        self._tray_badged_image = self._make_tray_badged_image(img)
         menu = pystray.Menu(
             pystray.MenuItem(
                 "Open BeszelAgentManager", self._tray_open, default=True
@@ -3369,6 +3536,13 @@ try {{ $remaining | ForEach-Object {{ Log $_ }} }} catch {{ }}
         t = threading.Thread(target=run_icon, daemon=True)
         t.start()
         self._tray_icon = icon
+
+        # If an update was already detected before tray init, show the badge.
+        try:
+            if getattr(self, "_manager_update_available_version", ""):
+                self._set_tray_update_badge(True)
+        except Exception:
+            pass
 
     def _update_tray_title(self, status: str):
         if self._tray_icon is None:

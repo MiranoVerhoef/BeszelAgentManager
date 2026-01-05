@@ -55,6 +55,7 @@ class AgentConfig:
     manager_update_notify_enabled: bool = True
     manager_update_check_interval_hours: int = 6
     manager_update_skip_version: str = ""
+    manager_update_tray_badge_enabled: bool = True
 
     @classmethod
     def load(cls) -> "AgentConfig":
