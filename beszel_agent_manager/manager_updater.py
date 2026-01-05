@@ -116,45 +116,59 @@ def _download_file(url: str, dest: Path, headers: Optional[Dict[str, str]] = Non
         raise RuntimeError((cp.stderr or cp.stdout or "").strip())
 
 
-def fetch_latest_release() -> Optional[dict]:
-    url = f"https://api.github.com/repos/{MANAGER_REPO}/releases/latest"
-    headers = {"User-Agent": PROJECT_NAME, "Accept": "application/vnd.github+json"}
-    data = _http_get_json(url, headers=headers, timeout=20)
+def fetch_latest_release(*, include_prereleases: bool = False) -> Optional[dict]:
+    """Fetch the latest manager release.
 
-    if data.get("draft") or data.get("prerelease"):
-        # Should not happen for /latest, but keep it safe.
-        return None
+    By default this returns the latest *stable* release.
+    When include_prereleases=True, it will consider GitHub pre-releases as well
+    (and pick the highest semantic version that has the expected asset).
+    """
 
-    tag = str(data.get("tag_name") or "").strip()
-    version = _normalize_version(tag)
-    body = str(data.get("body") or "")
+    if not include_prereleases:
+        url = f"https://api.github.com/repos/{MANAGER_REPO}/releases/latest"
+        headers = {"User-Agent": PROJECT_NAME, "Accept": "application/vnd.github+json"}
+        data = _http_get_json(url, headers=headers, timeout=20)
 
-    asset_url = None
-    for a in (data.get("assets") or []):
-        if str(a.get("name") or "").lower() == MANAGER_ASSET_NAME.lower():
-            asset_url = a.get("browser_download_url")
-            break
+        if data.get("draft") or data.get("prerelease"):
+            # Should not happen for /latest, but keep it safe.
+            return None
 
-    if not version or not asset_url:
-        return None
+        tag = str(data.get("tag_name") or "").strip()
+        version = _normalize_version(tag)
+        body = str(data.get("body") or "")
 
-    return {
-        "version": version,
-        "tag": tag,
-        "body": body,
-        "download_url": asset_url,
-        "published_at": data.get("published_at"),
-    }
+        asset_url = None
+        for a in (data.get("assets") or []):
+            if str(a.get("name") or "").lower() == MANAGER_ASSET_NAME.lower():
+                asset_url = a.get("browser_download_url")
+                break
+
+        if not version or not asset_url:
+            return None
+
+        return {
+            "version": version,
+            "tag": tag,
+            "body": body,
+            "download_url": asset_url,
+            "published_at": data.get("published_at"),
+            "prerelease": bool(data.get("prerelease")),
+        }
+
+    rels = fetch_stable_releases(limit=50, include_prereleases=True)
+    return rels[0] if rels else None
 
 
-def fetch_stable_releases(limit: int = 50) -> List[dict]:
+def fetch_stable_releases(limit: int = 50, *, include_prereleases: bool = False) -> List[dict]:
     url = f"https://api.github.com/repos/{MANAGER_REPO}/releases?per_page={limit}"
     headers = {"User-Agent": PROJECT_NAME, "Accept": "application/vnd.github+json"}
     data = _http_get_json(url, headers=headers, timeout=20)
 
     releases: List[dict] = []
     for r in data if isinstance(data, list) else []:
-        if r.get("draft") or r.get("prerelease"):
+        if r.get("draft"):
+            continue
+        if (not include_prereleases) and r.get("prerelease"):
             continue
 
         tag = str(r.get("tag_name") or "").strip()
@@ -178,6 +192,7 @@ def fetch_stable_releases(limit: int = 50) -> List[dict]:
                 "body": str(r.get("body") or ""),
                 "download_url": asset_url,
                 "published_at": r.get("published_at"),
+                "prerelease": bool(r.get("prerelease")),
             }
         )
 

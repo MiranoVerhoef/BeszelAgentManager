@@ -423,10 +423,14 @@ class BeszelAgentManagerApp(tk.Tk):
             cfg = self.config_obj or AgentConfig.load()
             skip = (getattr(cfg, "manager_update_skip_version", "") or "").strip()
             badge_enabled = bool(getattr(cfg, "manager_update_tray_badge_enabled", True))
+            include_pre = bool(getattr(cfg, "manager_update_include_prereleases", False))
 
-            latest = fetch_latest_release()
+            latest = fetch_latest_release(include_prereleases=include_pre)
             if not latest:
-                log("Manager update check: no release info (offline or no stable release).")
+                if include_pre:
+                    log("Manager update check: no release info (offline or no matching release).")
+                else:
+                    log("Manager update check: no release info (offline or no stable release).")
                 self._manager_update_available_version = ""
                 if badge_enabled:
                     try:
@@ -505,7 +509,7 @@ class BeszelAgentManagerApp(tk.Tk):
 
             ttk.Label(
                 frm,
-                text=f"A new version is available: {latest_version} (current: {APP_VERSION})",
+                text=f"A new version is available: {latest_version}{' (preview)' if bool(release.get('prerelease')) else ''} (current: {APP_VERSION})",
                 font=("Segoe UI", 11, "bold"),
             ).pack(anchor="w")
 
@@ -642,6 +646,7 @@ class BeszelAgentManagerApp(tk.Tk):
         self.var_mgr_update_notify = tk.BooleanVar(value=bool(getattr(c, "manager_update_notify_enabled", True)))
         self.var_mgr_update_interval_h = tk.IntVar(value=int(getattr(c, "manager_update_check_interval_hours", 6) or 6))
         self.var_mgr_update_tray_badge = tk.BooleanVar(value=bool(getattr(c, "manager_update_tray_badge_enabled", True)))
+        self.var_mgr_update_include_pre = tk.BooleanVar(value=bool(getattr(c, "manager_update_include_prereleases", False)))
 
         # Read back actual Run-key
         enabled, start_hidden_flag = get_autostart_state()
@@ -1091,6 +1096,17 @@ class BeszelAgentManagerApp(tk.Tk):
         add_tooltip(
             chk_badge,
             "When enabled, the tray icon will show a small red dot until you update (or skip the version).",
+        )
+
+        chk_pre = ttk.Checkbutton(
+            mgr_upd,
+            text="Include preview (pre-release) versions",
+            variable=self.var_mgr_update_include_pre,
+        )
+        chk_pre.grid(row=3, column=0, columnspan=4, sticky="w", pady=(6, 0))
+        add_tooltip(
+            chk_pre,
+            "When enabled, update checks and the version picker will also include GitHub pre-releases.",
         )
 
         # ------------------------------------------------------------------ Environment Tables tab
@@ -1908,6 +1924,7 @@ class BeszelAgentManagerApp(tk.Tk):
             manager_update_check_interval_hours=int(self.var_mgr_update_interval_h.get() or 6),
             manager_update_skip_version=getattr(c, "manager_update_skip_version", ""),
             manager_update_tray_badge_enabled=self.var_mgr_update_tray_badge.get(),
+            manager_update_include_prereleases=self.var_mgr_update_include_pre.get(),
         )
 
         # Attach extra env dynamically for older configs
@@ -2264,6 +2281,23 @@ class BeszelAgentManagerApp(tk.Tk):
 
         ttk.Label(frm, text=f"Installed: {current_version}").grid(row=0, column=0, columnspan=2, sticky="w")
 
+        # For manager versions, optionally include GitHub pre-releases (preview/beta builds).
+        var_include_pre = None
+        if kind == "manager":
+            try:
+                cfg0 = self.config_obj or AgentConfig.load()
+                default_pre = bool(getattr(cfg0, "manager_update_include_prereleases", False))
+            except Exception:
+                default_pre = False
+            var_include_pre = tk.BooleanVar(value=default_pre)
+            chk_pre = ttk.Checkbutton(
+                frm,
+                text="Include preview versions",
+                variable=var_include_pre,
+                command=lambda: load_releases(),
+            )
+            chk_pre.grid(row=0, column=1, sticky="e")
+
         ttk.Label(frm, text="Select version:").grid(row=1, column=0, sticky="w", pady=(10, 4))
         var_sel = tk.StringVar()
         cbo = ttk.Combobox(frm, textvariable=var_sel, state="readonly")
@@ -2315,7 +2349,10 @@ class BeszelAgentManagerApp(tk.Tk):
 
             def worker():
                 try:
-                    state["releases"] = fetch_releases() or []
+                    if kind == "manager" and var_include_pre is not None:
+                        state["releases"] = fetch_stable_releases(include_prereleases=var_include_pre.get()) or []
+                    else:
+                        state["releases"] = fetch_releases() or []
                 except Exception as exc:
                     state["error"] = exc
 
@@ -2336,6 +2373,8 @@ class BeszelAgentManagerApp(tk.Tk):
                         if not v:
                             continue
                         label = f"{v} ({tag})" if tag and tag != v else v
+                        if bool(r.get("prerelease")):
+                            label += " [preview]"
                         values.append(label)
                         mapping[label] = r
 

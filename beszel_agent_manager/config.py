@@ -56,6 +56,8 @@ class AgentConfig:
     manager_update_check_interval_hours: int = 6
     manager_update_skip_version: str = ""
     manager_update_tray_badge_enabled: bool = True
+    # If enabled, manager update checks/version picker will include GitHub pre-releases.
+    manager_update_include_prereleases: bool = False
 
     @classmethod
     def load(cls) -> "AgentConfig":
