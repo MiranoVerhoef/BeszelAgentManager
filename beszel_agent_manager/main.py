@@ -11,7 +11,17 @@ from .gui import main as gui_main
 from .agent_logs import rotate_agent_logs_and_rename
 from .windows_service import restart_service, stop_service, start_service, get_service_status
 from .util import log, try_write_event_log
-from .constants import AGENT_EXE_PATH, PROJECT_NAME
+from .constants import AGENT_EXE_PATH, PROJECT_NAME, APP_VERSION
+
+
+def _parse_print_version_flag() -> bool:
+    """Detect and strip lightweight version/health flags (no GUI)."""
+    argv = sys.argv
+    flags = {"--version", "--healthcheck", "--print-version"}
+    if not any(a in flags for a in argv):
+        return False
+    sys.argv = [a for a in argv if a not in flags]
+    return True
 
 
 def _parse_auto_update_agent_flag() -> bool:
@@ -63,6 +73,11 @@ def main() -> None:
       - python -m beszel_agent_manager.main
       - the PyInstaller-built BeszelAgentManager.exe (via top-level main.py)
     """
+    # Quick CLI mode for update validation/troubleshooting.
+    if _parse_print_version_flag():
+        print(APP_VERSION)
+        return
+
     start_hidden = _parse_start_hidden_flag()
     rotate_agent_logs = _parse_rotate_agent_logs_flag()
     restart_agent_service = _parse_restart_agent_service_flag()

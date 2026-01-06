@@ -238,6 +238,27 @@ def stage_download(release: dict, force: bool = False) -> Path:
             )
         if size < 1_000_000:
             raise RuntimeError(f"Downloaded EXE is unexpectedly small ({size} bytes). Aborting update.")
+
+        # Extra guardrail: prevent deploying a PyInstaller build that is missing the embedded Python DLL.
+        # When this happens, users see: "Failed to load Python DLL ... python3xx.dll".
+        pat = re.compile(br"python3\d\d\.dll", re.IGNORECASE)
+        found = False
+        tail = b""
+        with dest.open("rb") as f:
+            while True:
+                chunk = f.read(1024 * 1024)
+                if not chunk:
+                    break
+                buf = tail + chunk
+                if pat.search(buf):
+                    found = True
+                    break
+                tail = buf[-32:]
+        if not found:
+            raise RuntimeError(
+                "Downloaded EXE does not contain an embedded python3xx.dll marker. "
+                "This usually means the release asset is not a valid PyInstaller onefile build (or is corrupted)."
+            )
     except Exception as exc:
         # Leave the staged file for inspection but refuse to proceed.
         log(f"Manager download validation failed: {exc}")
