@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 PROJECT_NAME = "BeszelAgentManager"
-APP_VERSION = "2.6.18"
+APP_VERSION = "2.7.0"
 
 # Use a single consistent service name everywhere (Windows + NSSM)
 AGENT_SERVICE_NAME = "Beszel Agent"
@@ -19,11 +19,6 @@ PROGRAM_DATA = Path(os.environ.get("ProgramData", r"C:\ProgramData"))
 DATA_DIR = PROGRAM_DATA / PROJECT_NAME
 CONFIG_PATH = DATA_DIR / "config.json"
 LOG_PATH = DATA_DIR / "manager.log"
-
-# PyInstaller onefile extraction directory.
-# Recommended build flag:
-#   pyinstaller --onefile ... --runtime-tmpdir "C:\\ProgramData\\BeszelAgentManager\\tmp"
-RUNTIME_TMP_DIR = DATA_DIR / "tmp"
 
 # Manager daily log archives
 MANAGER_LOG_ARCHIVE_DIR = DATA_DIR / "manager_logs"

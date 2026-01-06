@@ -54,12 +54,7 @@ from .scheduler import delete_update_task, delete_agent_log_rotate_task
 from .agent_logs import list_agent_log_files, rotate_agent_logs_and_rename
 from .manager_logs import list_manager_log_files, rotate_if_needed as rotate_manager_logs_if_needed
 from .support_bundle import create_support_bundle
-from .manager_updater import (
-    fetch_latest_release,
-    fetch_stable_releases,
-    is_update_available,
-    start_update,
-)
+from .manager_updater import fetch_latest_release, is_update_available
 from .util import log, set_debug_logging, run
 from .autostart import (
     get_autostart_state,
@@ -264,8 +259,6 @@ class BeszelAgentManagerApp(tk.Tk):
         self._task_running = False
         self._tray_icon = None
         self._tray_base_image = None
-        self._tray_badged_image = None
-        self._tray_badge_active = False
         self._hub_ping_started = False
         self._hub_ping_last_error = ""
         self._hub_ping_last_error_ts = 0.0
@@ -275,17 +268,6 @@ class BeszelAgentManagerApp(tk.Tk):
         self._dns_fallback_original = ""
         self._dns_fallback_success_streak = 0
         self._dns_fallback_last_log = ""
-
-        # Manager update notifications
-        self._manager_update_prompted_version = ""
-        self._manager_update_available_version = ""
-        self._mgr_update_settings_last = (
-            bool(getattr(self.config_obj, "manager_update_notify_enabled", True)),
-            int(getattr(self.config_obj, "manager_update_check_interval_hours", 6) or 6),
-            bool(getattr(self.config_obj, "manager_update_tray_badge_enabled", True)),
-            bool(getattr(self.config_obj, "manager_update_include_prereleases", False)),
-            str(getattr(self.config_obj, "manager_update_skip_version", "") or ""),
-        )
 
         # Build and load variables, then UI
         self._build_vars()
@@ -321,8 +303,6 @@ class BeszelAgentManagerApp(tk.Tk):
         self._start_hub_ping_loop()
         self._start_hub_dns_fallback_loop()
 
-        # Periodically check for manager updates and notify with a popup.
-        self._start_manager_update_check_loop()
 
     def _ensure_window_fits_content(self) -> None:
         """Grow the window (if needed) to fit the requested UI size.
@@ -396,203 +376,7 @@ class BeszelAgentManagerApp(tk.Tk):
         except Exception:
             pass
 
-    def _start_manager_update_check_loop(self) -> None:
-        """Periodically check GitHub for manager updates and show a popup when available."""
-
-        def schedule_next(delay_ms: int) -> None:
-            try:
-                self.after(delay_ms, tick)
-            except Exception:
-                pass
-
-        def tick() -> None:
-            # Read from persisted config each time so changes take effect without restart.
-            try:
-                cfg = self.config_obj or AgentConfig.load()
-                enabled = bool(getattr(cfg, "manager_update_notify_enabled", True))
-                interval_h = int(getattr(cfg, "manager_update_check_interval_hours", 6) or 6)
-                interval_h = max(1, min(168, interval_h))
-                delay = interval_h * 60 * 60 * 1000
-            except Exception:
-                enabled = True
-                delay = 6 * 60 * 60 * 1000
-
-            if enabled:
-                threading.Thread(target=self._check_manager_update_once, daemon=True).start()
-
-            schedule_next(delay)
-
-        # Initial delay so startup is quiet.
-        schedule_next(60 * 1000)
-
-    def _check_manager_update_once(self) -> None:
-        try:
-            cfg = self.config_obj or AgentConfig.load()
-            skip = (getattr(cfg, "manager_update_skip_version", "") or "").strip()
-            badge_enabled = bool(getattr(cfg, "manager_update_tray_badge_enabled", True))
-            include_pre = bool(getattr(cfg, "manager_update_include_prereleases", False))
-
-            latest = fetch_latest_release(include_prereleases=include_pre)
-            if not latest:
-                if include_pre:
-                    log("Manager update check: no release info (offline or no matching release).")
-                else:
-                    log("Manager update check: no release info (offline or no stable release).")
-                self._manager_update_available_version = ""
-                if badge_enabled:
-                    try:
-                        self.after(0, lambda: self._set_tray_update_badge(False))
-                    except Exception:
-                        pass
-                return
-
-            latest_version = str(latest.get("version") or "").strip()
-            log(f"Manager update check: current={APP_VERSION} latest={latest_version}")
-
-            if not latest_version:
-                self._manager_update_available_version = ""
-                if badge_enabled:
-                    try:
-                        self.after(0, lambda: self._set_tray_update_badge(False))
-                    except Exception:
-                        pass
-                return
-            if skip and latest_version == skip:
-                self._manager_update_available_version = ""
-                if badge_enabled:
-                    try:
-                        self.after(0, lambda: self._set_tray_update_badge(False))
-                    except Exception:
-                        pass
-                return
-            if not is_update_available(APP_VERSION, latest_version):
-                self._manager_update_available_version = ""
-                if badge_enabled:
-                    try:
-                        self.after(0, lambda: self._set_tray_update_badge(False))
-                    except Exception:
-                        pass
-                return
-
-            # Mark update as available for tray badge.
-            self._manager_update_available_version = latest_version
-            if badge_enabled:
-                try:
-                    self.after(0, lambda: self._set_tray_update_badge(True))
-                except Exception:
-                    pass
-
-            # Avoid spamming popups for the same version.
-            if self._manager_update_prompted_version == latest_version:
-                return
-
-            # Show prompt on UI thread.
-            try:
-                self.after(0, lambda: self._show_manager_update_popup(latest))
-            except Exception:
-                pass
-        except Exception as exc:
-            log(f"Manager update check failed: {exc}")
-
-    def _show_manager_update_popup(self, release: dict) -> None:
-        try:
-            latest_version = str(release.get("version") or "").strip()
-            if not latest_version:
-                return
-            if self._manager_update_prompted_version == latest_version:
-                return
-            self._manager_update_prompted_version = latest_version
-
-            top = tk.Toplevel(self)
-            top.title(f"{PROJECT_NAME} update available")
-            top.geometry("720x520")
-            try:
-                top.attributes("-topmost", True)
-            except Exception:
-                pass
-
-            frm = ttk.Frame(top, padding=12)
-            frm.pack(fill="both", expand=True)
-
-            ttk.Label(
-                frm,
-                text=f"A new version is available: {latest_version}{' (preview)' if bool(release.get('prerelease')) else ''} (current: {APP_VERSION})",
-                font=("Segoe UI", 11, "bold"),
-            ).pack(anchor="w")
-
-            ttk.Label(frm, text="Release notes:").pack(anchor="w", pady=(10, 4))
-
-            txt_frame = ttk.Frame(frm)
-            txt_frame.pack(fill="both", expand=True)
-
-            sb = ttk.Scrollbar(txt_frame, orient="vertical")
-            sb.pack(side="right", fill="y")
-
-            body = str(release.get("body") or "").strip() or "(No release notes provided.)"
-            txt = tk.Text(txt_frame, wrap="word", yscrollcommand=sb.set)
-            txt.insert("1.0", body)
-            txt.config(state="disabled")
-            txt.pack(side="left", fill="both", expand=True)
-            sb.config(command=txt.yview)
-
-            btn_row = ttk.Frame(frm)
-            btn_row.pack(fill="x", pady=(12, 0))
-
-            def do_update() -> None:
-                try:
-                    log(f"Manager update prompt accepted -> {latest_version}")
-                    try:
-                        self._manager_update_available_version = ""
-                        self._set_tray_update_badge(False)
-                    except Exception:
-                        pass
-                    start_update(
-                        release,
-                        args=self._current_relaunch_args(),
-                        current_pid=os.getpid(),
-                        force=False,
-                    )
-                except Exception as exc:
-                    messagebox.showerror("Update failed", str(exc))
-
-            def remind_later() -> None:
-                log("Manager update prompt dismissed (remind later).")
-                try:
-                    top.destroy()
-                except Exception:
-                    pass
-
-            def skip_version() -> None:
-                try:
-                    cfg = self.config_obj or AgentConfig.load()
-                    cfg.manager_update_skip_version = latest_version
-                    cfg.save()
-                except Exception:
-                    pass
-                log(f"Manager update skipped for version {latest_version}")
-                try:
-                    self._manager_update_available_version = ""
-                    self._set_tray_update_badge(False)
-                except Exception:
-                    pass
-                try:
-                    top.destroy()
-                except Exception:
-                    pass
-
-            ttk.Button(btn_row, text="Update now", command=do_update).pack(side="left")
-            ttk.Button(btn_row, text="Remind me later", command=remind_later).pack(side="left", padx=(8, 0))
-            ttk.Button(btn_row, text="Skip this version", command=skip_version).pack(side="right")
-
-            try:
-                top.lift()
-                top.focus_force()
-                # Drop topmost after a short delay.
-                self.after(1500, lambda: top.attributes("-topmost", False))
-            except Exception:
-                pass
-        except Exception as exc:
-            log(f"Failed to show manager update popup: {exc}")
+    # Manager in-place updating is intentionally disabled (manual downloads only).
 
     # ------------------------------------------------------------------ Vars / autosave
 
@@ -651,12 +435,6 @@ class BeszelAgentManagerApp(tk.Tk):
 
         # Logging & startup
         self.var_debug_logging = tk.BooleanVar(value=c.debug_logging)
-
-        # Manager update notifications
-        self.var_mgr_update_notify = tk.BooleanVar(value=bool(getattr(c, "manager_update_notify_enabled", True)))
-        self.var_mgr_update_interval_h = tk.IntVar(value=int(getattr(c, "manager_update_check_interval_hours", 6) or 6))
-        self.var_mgr_update_tray_badge = tk.BooleanVar(value=bool(getattr(c, "manager_update_tray_badge_enabled", True)))
-        self.var_mgr_update_include_pre = tk.BooleanVar(value=bool(getattr(c, "manager_update_include_prereleases", False)))
 
         # Read back actual Run-key
         enabled, start_hidden_flag = get_autostart_state()
@@ -740,10 +518,6 @@ class BeszelAgentManagerApp(tk.Tk):
             self.var_auto_restart,
             self.var_auto_restart_hours,
             self.var_debug_logging,
-            self.var_mgr_update_notify,
-            self.var_mgr_update_interval_h,
-            self.var_mgr_update_tray_badge,
-            self.var_mgr_update_include_pre,
             self.var_autostart,
             self.var_start_visible,
         )
@@ -792,18 +566,6 @@ class BeszelAgentManagerApp(tk.Tk):
             cfg.save()
             self.config_obj = cfg
 
-            # Apply manager-only settings immediately (no service restart needed).
-            try:
-                self._maybe_apply_manager_update_settings(cfg)
-            except Exception:
-                pass
-
-            # Apply tray badge setting immediately if an update is pending.
-            try:
-                self._set_tray_update_badge(bool(getattr(self, "_manager_update_available_version", "")))
-            except Exception:
-                pass
-
             try:
                 set_autostart(
                     self.var_autostart.get(),
@@ -816,34 +578,6 @@ class BeszelAgentManagerApp(tk.Tk):
             self.after(2000, lambda: self.label_config_saved.config(text=""))
         except Exception as exc:
             log(f"Autosave failed: {exc}")
-
-    def _maybe_apply_manager_update_settings(self, cfg: AgentConfig) -> None:
-        """Apply manager update notification settings immediately.
-
-        These settings should not require 'Apply settings' (which restarts the agent service).
-        """
-        try:
-            cur = (
-                bool(getattr(cfg, "manager_update_notify_enabled", True)),
-                int(getattr(cfg, "manager_update_check_interval_hours", 6) or 6),
-                bool(getattr(cfg, "manager_update_tray_badge_enabled", True)),
-                bool(getattr(cfg, "manager_update_include_prereleases", False)),
-                str(getattr(cfg, "manager_update_skip_version", "") or ""),
-            )
-        except Exception:
-            return
-
-        if getattr(self, "_mgr_update_settings_last", None) == cur:
-            return
-        self._mgr_update_settings_last = cur
-
-        enabled = bool(cur[0])
-        if enabled:
-            # Kick an immediate check so the UI reacts right away to interval/prerelease changes.
-            try:
-                self.after(1000, lambda: threading.Thread(target=self._check_manager_update_once, daemon=True).start())
-            except Exception:
-                pass
 
     # ------------------------------------------------------------------ UI construction
 
@@ -1120,60 +854,6 @@ class BeszelAgentManagerApp(tk.Tk):
 
         ttk.Label(restart_box, text="hour(s)", style="Card.TLabel").grid(
             row=0, column=2, sticky="w"
-        )
-
-        # Manager update notifications
-        mgr_upd = ttk.LabelFrame(
-            conn,
-            text="Manager update notifications",
-            padding=10,
-            style="Group.TLabelframe",
-        )
-        mgr_upd.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(12, 0))
-        mgr_upd.columnconfigure(3, weight=1)
-
-        chk_mgr_upd = ttk.Checkbutton(
-            mgr_upd,
-            text="Notify me when a manager update is available",
-            variable=self.var_mgr_update_notify,
-        )
-        chk_mgr_upd.grid(row=0, column=0, columnspan=4, sticky="w")
-        add_tooltip(
-            chk_mgr_upd,
-            "Periodically checks GitHub Releases and shows a popup when a newer manager version is available.",
-        )
-
-        ttk.Label(mgr_upd, text="Check every:", style="Card.TLabel").grid(row=1, column=0, sticky="w", pady=(6, 0))
-        sp_mgr_h = ttk.Spinbox(
-            mgr_upd,
-            from_=1,
-            to=168,
-            textvariable=self.var_mgr_update_interval_h,
-            width=6,
-        )
-        sp_mgr_h.grid(row=1, column=1, sticky="w", pady=(6, 0), padx=(6, 6))
-        ttk.Label(mgr_upd, text="hour(s)", style="Card.TLabel").grid(row=1, column=2, sticky="w", pady=(6, 0))
-
-        chk_badge = ttk.Checkbutton(
-            mgr_upd,
-            text="Show a red dot in the tray when an update is available",
-            variable=self.var_mgr_update_tray_badge,
-        )
-        chk_badge.grid(row=2, column=0, columnspan=4, sticky="w", pady=(6, 0))
-        add_tooltip(
-            chk_badge,
-            "When enabled, the tray icon will show a small red dot until you update (or skip the version).",
-        )
-
-        chk_pre = ttk.Checkbutton(
-            mgr_upd,
-            text="Include preview (pre-release) versions",
-            variable=self.var_mgr_update_include_pre,
-        )
-        chk_pre.grid(row=3, column=0, columnspan=4, sticky="w", pady=(6, 0))
-        add_tooltip(
-            chk_pre,
-            "When enabled, update checks and the version picker will also include GitHub pre-releases.",
         )
 
         # ------------------------------------------------------------------ Environment Tables tab
@@ -1497,13 +1177,13 @@ class BeszelAgentManagerApp(tk.Tk):
         add_tooltip(btn_manage_agent, "Pick a version to install/rollback, or force reinstall the latest agent.")
 
         # Manager: quick update button (row 0) + manage version button (row 1)
-        btn_update_manager = ttk.Button(bottom, text="Update manager", width=BTN_W, command=self._on_update_manager)
+        btn_update_manager = ttk.Button(bottom, text="Download manager", width=BTN_W, command=self._on_download_manager)
         btn_update_manager.grid(row=0, column=3, padx=4, pady=4, sticky="e")
-        add_tooltip(btn_update_manager, "Check GitHub and update BeszelAgentManager if a newer version is available.")
+        add_tooltip(btn_update_manager, "Check GitHub and open the download link for the latest BeszelAgentManager release.")
 
         btn_manage_manager = ttk.Button(bottom, text="Manage Manager Version...", width=BTN_W, command=self._on_manage_manager_version)
         btn_manage_manager.grid(row=1, column=3, padx=4, pady=(0, 4), sticky="e")
-        add_tooltip(btn_manage_manager, "Pick a version to install/rollback, or force reinstall the latest manager.")
+        add_tooltip(btn_manage_manager, "Open the BeszelAgentManager releases page to download a specific version.")
 
         btn_apply = ttk.Button(bottom, text="Apply settings", width=BTN_W, command=self._on_apply)
         btn_apply.grid(row=0, column=4, padx=4, pady=4, sticky="e")
@@ -2325,21 +2005,19 @@ class BeszelAgentManagerApp(tk.Tk):
         self._on_agent_versions()
 
     def _on_manager_versions(self):
-        """Open a dialog to install/rollback the manager to a selected stable version."""
-        if self._task_running:
-            messagebox.showinfo(PROJECT_NAME, "Another operation is already in progress.")
-            return
-
-        self._open_version_dialog(
-            kind="manager",
-            title="Manage Manager Version",
-            current_version=APP_VERSION,
-            fetch_releases=fetch_stable_releases,
-            on_install=self._install_selected_manager_release,
+        """Open the GitHub releases page for manual manager downloads."""
+        try:
+            webbrowser.open("https://github.com/MiranoVerhoef/BeszelAgentManager/releases")
+        except Exception:
+            pass
+        messagebox.showinfo(
+            PROJECT_NAME,
+            "BeszelAgentManager updates are downloaded manually.\n\n"
+            "A browser window will open with the releases page.",
         )
 
     def _on_manage_manager_version(self):
-        """Single entry point for managing the manager version (install/rollback/force reinstall)."""
+        """Single entry point for managing the manager version (manual downloads only)."""
         self._on_manager_versions()
 
     def _open_version_dialog(
@@ -2365,22 +2043,7 @@ class BeszelAgentManagerApp(tk.Tk):
 
         ttk.Label(frm, text=f"Installed: {current_version}").grid(row=0, column=0, columnspan=2, sticky="w")
 
-        # For manager versions, optionally include GitHub pre-releases (preview/beta builds).
-        var_include_pre = None
-        if kind == "manager":
-            try:
-                cfg0 = self.config_obj or AgentConfig.load()
-                default_pre = bool(getattr(cfg0, "manager_update_include_prereleases", False))
-            except Exception:
-                default_pre = False
-            var_include_pre = tk.BooleanVar(value=default_pre)
-            chk_pre = ttk.Checkbutton(
-                frm,
-                text="Include preview versions",
-                variable=var_include_pre,
-                command=lambda: load_releases(),
-            )
-            chk_pre.grid(row=0, column=1, sticky="e")
+        # (Manager updates are downloaded manually; this dialog is used for agent versions.)
 
         ttk.Label(frm, text="Select version:").grid(row=1, column=0, sticky="w", pady=(10, 4))
         var_sel = tk.StringVar()
@@ -2433,10 +2096,7 @@ class BeszelAgentManagerApp(tk.Tk):
 
             def worker():
                 try:
-                    if kind == "manager" and var_include_pre is not None:
-                        state["releases"] = fetch_stable_releases(include_prereleases=var_include_pre.get()) or []
-                    else:
-                        state["releases"] = fetch_releases() or []
+                    state["releases"] = fetch_releases() or []
                 except Exception as exc:
                     state["error"] = exc
 
@@ -2541,160 +2201,31 @@ class BeszelAgentManagerApp(tk.Tk):
         self._run_task(f"Installing agent {version}...", task)
 
     def _install_selected_manager_release(self, release: dict, force: bool) -> None:
-        """Install a specific manager release (version picker dialog)."""
+        """Manual downloads only: open the selected release in a browser."""
+        v = str(release.get("version") or "").strip() or "?"
+        tag = str(release.get("tag") or "").strip() or "?"
+        dl = str(release.get("download_url") or "").strip()
+        page = str(release.get("html_url") or "").strip()
+        log(f"Manager manual download requested: version={v} tag={tag} url={dl or page or '?'}")
 
-        if self._task_running:
-            messagebox.showinfo(PROJECT_NAME, "Another operation is already in progress.")
-            return
-
-        # Mark busy immediately so the click is never perceived as "doing nothing".
-        self._task_running = True
+        url = dl or page or "https://github.com/MiranoVerhoef/BeszelAgentManager/releases"
         try:
-            v = str(release.get("version") or "?")
-            tag = str(release.get("tag") or "?")
-            log(f"Manager version install requested: version={v} tag={tag} force={force}")
+            webbrowser.open(url)
         except Exception:
             pass
+        messagebox.showinfo(
+            PROJECT_NAME,
+            "BeszelAgentManager updates are downloaded manually.\n\n"
+            "Your browser will open to the release download.",
+        )
 
-        # Start update (download + replace) and exit app so the exe can be replaced.
-        def worker_update():
-            try:
-                start_update(release, args=self._current_relaunch_args(), current_pid=os.getpid(), force=force)
-            except SystemExit:
-                os._exit(0)
-            except Exception as exc:
-                log(f"Manager version install failed: {exc}\n{traceback.format_exc()}")
-                def done_fail():
-                    self.progress.stop()
-                    self.progress.grid_remove()
-                    self._task_running = False
-                    self._update_status()
-                    self._refresh_log_view()
-                    messagebox.showerror(PROJECT_NAME, f"Manager update failed:\n{exc}")
-
-                self.after(0, done_fail)
-                return
-            os._exit(0)
-
-        self.label_status.config(text="Updating manager (selected version)...")
-        self.progress.grid()
-        self.progress.start(10)
-        threading.Thread(target=worker_update, daemon=True).start()
-
-    def _on_update_manager(self):
-        """Check GitHub for a newer manager release and perform an in-place update."""
+    def _on_download_manager(self):
+        """Check GitHub for the latest manager release and open the download link."""
         if self._task_running:
             messagebox.showinfo(PROJECT_NAME, "Another operation is already in progress.")
             return
 
         # ------------------------------------------------------------------ Step 1: check latest release
-        self._task_running = True
-        self.label_status.config(text="Checking for manager updates...")
-        self.progress.grid()
-        self.progress.start(10)
-
-        state = {"error": None, "release": None}
-
-        def worker_check():
-            try:
-                cfg = self.config_obj or AgentConfig.load()
-                include_pre = bool(getattr(cfg, "manager_update_include_prereleases", False))
-                state["release"] = fetch_latest_release(include_prereleases=include_pre)
-            except Exception as exc:
-                state["error"] = exc
-                log(f"Manager update check failed: {exc}\n{traceback.format_exc()}")
-
-            def done_check():
-                self.progress.stop()
-                self.progress.grid_remove()
-                self._task_running = False
-                self._update_status()
-                self._refresh_log_view()
-
-                if state["error"]:
-                    messagebox.showerror(PROJECT_NAME, f"Failed to check for updates:\n{state['error']}")
-                    return
-
-                rel = state["release"]
-                if not rel:
-                    messagebox.showinfo(PROJECT_NAME, "No manager release information found on GitHub.")
-                    return
-
-                latest = rel.get("version") or "?"
-                tag = rel.get("tag") or "?"
-                dl = rel.get("download_url") or "?"
-                log(f"Manager update check: current={APP_VERSION} latest={latest} tag={tag} url={dl}")
-                if not is_update_available(APP_VERSION, latest):
-                    log("Manager update check result: already up-to-date")
-                    messagebox.showinfo(PROJECT_NAME, f"You are already on the latest version ({APP_VERSION}).")
-                    return
-
-                log("Manager update check result: update available")
-
-                # Build short release notes snippet
-                body = str(rel.get("body") or "")
-                snippet = ""
-                if body:
-                    lines = [ln.rstrip() for ln in body.splitlines()]
-                    while lines and not lines[0]:
-                        lines.pop(0)
-                    while lines and not lines[-1]:
-                        lines.pop()
-                    max_lines = 12
-                    if len(lines) > max_lines:
-                        lines = lines[:max_lines] + ["...", "(truncated)"]
-                    snippet = "\n\nWhat's changed:\n" + "\n".join(lines)
-
-                msg = (
-                    f"A new BeszelAgentManager version is available.\n\n"
-                    f"Installed: {APP_VERSION}\n"
-                    f"Latest on GitHub: {latest}"
-                    f"{snippet}\n\n"
-                    "Do you want to update now?"
-                )
-                if not messagebox.askyesno(PROJECT_NAME, msg):
-                    return
-
-                # ------------------------------------------------------------------ Step 2: start update (download + replace)
-                def worker_update():
-                    try:
-                        start_update(rel, args=self._current_relaunch_args(), current_pid=os.getpid(), force=False)
-                    except SystemExit:
-                        # start_update calls sys.exit(0); in a thread this only exits the thread.
-                        os._exit(0)
-                    except Exception as exc:
-                        log(f"Manager update failed: {exc}\n{traceback.format_exc()}")
-
-                        def done_fail():
-                            self.progress.stop()
-                            self.progress.grid_remove()
-                            self._task_running = False
-                            self._update_status()
-                            self._refresh_log_view()
-                            messagebox.showerror(PROJECT_NAME, f"Manager update failed:\n{exc}")
-
-                        self.after(0, done_fail)
-                        return
-
-                    # If it ever returns, force exit to allow replacement.
-                    os._exit(0)
-
-                self._task_running = True
-                self.label_status.config(text="Updating manager (downloading + replacing)...")
-                self.progress.grid()
-                self.progress.start(10)
-                threading.Thread(target=worker_update, daemon=True).start()
-
-            self.after(0, done_check)
-
-        threading.Thread(target=worker_check, daemon=True).start()
-
-    def _on_force_update_manager(self):
-        """Force re-download and reinstall of the latest manager release."""
-        if self._task_running:
-            messagebox.showinfo(PROJECT_NAME, "Another operation is already in progress.")
-            return
-
         self._task_running = True
         self.label_status.config(text="Checking latest manager release...")
         self.progress.grid()
@@ -2704,10 +2235,10 @@ class BeszelAgentManagerApp(tk.Tk):
 
         def worker_check():
             try:
-                state["release"] = fetch_latest_release()
+                state["release"] = fetch_latest_release(include_prereleases=False)
             except Exception as exc:
                 state["error"] = exc
-                log(f"Manager force update check failed: {exc}\n{traceback.format_exc()}")
+                log(f"Manager download check failed: {exc}\n{traceback.format_exc()}")
 
             def done_check():
                 self.progress.stop()
@@ -2722,13 +2253,15 @@ class BeszelAgentManagerApp(tk.Tk):
 
                 rel = state["release"]
                 if not rel:
-                    messagebox.showinfo(PROJECT_NAME, "No manager release information found on GitHub.")
+                    self.label_status.config(text="No release info")
+                    messagebox.showinfo(PROJECT_NAME, "Could not fetch release info from GitHub.")
                     return
 
-                latest = rel.get("version") or "?"
-                tag = rel.get("tag") or "?"
-                dl = rel.get("download_url") or "?"
-                log(f"Manager FORCE update: current={APP_VERSION} latest={latest} tag={tag} url={dl}")
+                latest = str(rel.get("version") or "").strip() or "?"
+                tag = str(rel.get("tag") or "").strip() or "?"
+                dl = str(rel.get("download_url") or "").strip()
+                page = str(rel.get("html_url") or "").strip()
+                log(f"Manager download check: current={APP_VERSION} latest={latest} tag={tag} url={dl or page or '?'}")
 
                 # Build short release notes snippet
                 body = str(rel.get("body") or "")
@@ -2744,47 +2277,31 @@ class BeszelAgentManagerApp(tk.Tk):
                         lines = lines[:max_lines] + ["...", "(truncated)"]
                     snippet = "\n\nWhat's changed:\n" + "\n".join(lines)
 
+                up_to_date = bool(latest and (not is_update_available(APP_VERSION, latest)))
+
                 msg = (
-                    "This will redownload and reinstall the latest BeszelAgentManager release.\n\n"
                     f"Installed: {APP_VERSION}\n"
-                    f"Latest on GitHub: {latest}\n"
-                    f"Tag: {tag}"
+                    f"Latest on GitHub: {latest} (tag: {tag})"
                     f"{snippet}\n\n"
-                    "Continue?"
+                    "Open the download in your browser?"
                 )
                 if not messagebox.askyesno(PROJECT_NAME, msg):
                     return
 
-                def worker_update():
-                    try:
-                        start_update(rel, args=self._current_relaunch_args(), current_pid=os.getpid(), force=True)
-                    except SystemExit:
-                        os._exit(0)
-                    except Exception as exc:
-                        log(f"Manager force update failed: {exc}\n{traceback.format_exc()}")
-
-                        def done_fail():
-                            self.progress.stop()
-                            self.progress.grid_remove()
-                            self._task_running = False
-                            self._update_status()
-                            self._refresh_log_view()
-                            messagebox.showerror(PROJECT_NAME, f"Manager force update failed:\n{exc}")
-
-                        self.after(0, done_fail)
-                        return
-
-                    os._exit(0)
-
-                self._task_running = True
-                self.label_status.config(text="Forcing manager update (downloading + replacing)...")
-                self.progress.grid()
-                self.progress.start(10)
-                threading.Thread(target=worker_update, daemon=True).start()
+                url = dl or page or "https://github.com/MiranoVerhoef/BeszelAgentManager/releases"
+                try:
+                    webbrowser.open(url)
+                except Exception:
+                    pass
+                self.label_status.config(text=("Manager is up to date" if up_to_date else "Manager download opened"))
 
             self.after(0, done_check)
 
         threading.Thread(target=worker_check, daemon=True).start()
+
+    def _on_force_update_manager(self):
+        """Deprecated: manager is downloaded manually."""
+        self._on_download_manager()
 
     def _on_apply(self):
         # If nothing relevant changed, don't restart the service.
@@ -3684,57 +3201,7 @@ try {{ $remaining | ForEach-Object {{ Log $_ }} }} catch {{ }}
             dc.rectangle((1, 1, size - 2, size - 2))
             return img
 
-    def _make_tray_badged_image(self, img):
-        """Create a copy of the tray icon with a small red dot (update badge)."""
-        try:
-            base = img.convert("RGBA")
-            out = base.copy()
-            draw = ImageDraw.Draw(out)
-            w, h = out.size
-            r = max(4, int(min(w, h) * 0.18))
-            pad = max(2, int(min(w, h) * 0.05))
-            x1 = w - (r * 2) - pad
-            y1 = pad
-            x2 = w - pad
-            y2 = (r * 2) + pad
-            # White outline + red fill
-            draw.ellipse((x1 - 1, y1 - 1, x2 + 1, y2 + 1), fill=(255, 255, 255, 255))
-            draw.ellipse((x1, y1, x2, y2), fill=(220, 38, 38, 255))
-            return out
-        except Exception:
-            return img
-
-    def _set_tray_update_badge(self, active: bool) -> None:
-        """Toggle the red-dot badge on the tray icon."""
-        try:
-            if self._tray_icon is None:
-                return
-
-            # If user disabled the badge, always show the base icon.
-            try:
-                cfg = self.config_obj or AgentConfig.load()
-                badge_enabled = bool(getattr(cfg, "manager_update_tray_badge_enabled", True))
-            except Exception:
-                badge_enabled = True
-
-            want = bool(active and badge_enabled)
-            if want == bool(getattr(self, "_tray_badge_active", False)):
-                return
-
-            self._tray_badge_active = want
-            img = self._tray_badged_image if want else self._tray_base_image
-            if img is None:
-                return
-
-            try:
-                self._tray_icon.icon = img
-                # Some pystray backends expose update_icon()
-                if hasattr(self._tray_icon, "update_icon"):
-                    self._tray_icon.update_icon()
-            except Exception:
-                pass
-        except Exception:
-            return
+    # Tray icon badge support (manager auto-update) was removed in v2.7.0.
 
     def _tray_open(self, _icon, _item):
         self.after(0, lambda: [self.deiconify(), self.lift(), self.focus_force()])
@@ -3765,9 +3232,7 @@ try {{ $remaining | ForEach-Object {{ Log $_ }} }} catch {{ }}
         if img is None:
             return
 
-        # Keep both base and badged images ready for fast switching.
         self._tray_base_image = img
-        self._tray_badged_image = self._make_tray_badged_image(img)
         menu = pystray.Menu(
             pystray.MenuItem(
                 "Open BeszelAgentManager", self._tray_open, default=True
@@ -3790,12 +3255,7 @@ try {{ $remaining | ForEach-Object {{ Log $_ }} }} catch {{ }}
         t.start()
         self._tray_icon = icon
 
-        # If an update was already detected before tray init, show the badge.
-        try:
-            if getattr(self, "_manager_update_available_version", ""):
-                self._set_tray_update_badge(True)
-        except Exception:
-            pass
+        
 
     def _update_tray_title(self, status: str):
         if self._tray_icon is None:

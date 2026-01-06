@@ -17,7 +17,6 @@ from .constants import (
     PROJECT_NAME,
     MANAGER_PREVIOUS_EXE_PATH,
     LOG_PATH,
-    RUNTIME_TMP_DIR,
 )
 from .util import log
 
@@ -288,7 +287,6 @@ def _write_update_script(pid: int, src_exe: Path, dst_exe: Path, args: List[str]
     prev = str(MANAGER_PREVIOUS_EXE_PATH)
     logfile = str(LOG_PATH)
     hpath = str(handshake_path)
-    extract_dir = str(RUNTIME_TMP_DIR)
 
     script = f"""
 param(
@@ -326,26 +324,6 @@ try {{
 # ensure destination dir
 $dstDir = Split-Path -Parent $Dst
 New-Item -ItemType Directory -Force -Path $dstDir | Out-Null
-
-# Ensure PyInstaller extracts into a stable, excluded directory.
-# PyInstaller onefile bootloader uses TEMP/TMP at process start. Some systems (Defender/AV)
-# may block/quarantine python3xx.dll when extracted in the user temp, causing
-# "Failed to load Python DLL ... python3xx.dll".
-$ExtractDir = '{extract_dir.replace("'", "''")}'
-try {{ New-Item -ItemType Directory -Force -Path $ExtractDir | Out-Null }} catch {{ }}
-try {{
-  # Grant BUILTIN\Users modify rights using the SID (avoids localization issues)
-  icacls $ExtractDir /grant "*S-1-5-32-545:(OI)(CI)M" /T /C | Out-Null
-}} catch {{ }}
-try {{
-  # Best-effort: exclude the extraction directory.
-  Add-MpPreference -ExclusionPath $ExtractDir -ErrorAction SilentlyContinue | Out-Null
-}} catch {{ }}
-try {{
-  $env:TEMP = $ExtractDir
-  $env:TMP  = $ExtractDir
-  Write-Log "Using TEMP/TMP extraction dir: $ExtractDir"
-}} catch {{ }}
 
 # backup current exe
 try {{
