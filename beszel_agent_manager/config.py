@@ -12,6 +12,8 @@ class AgentConfig:
     hub_url: str = ""
     # Optional IP/URL fallback used if DNS resolution for hub_url fails.
     hub_url_ip_fallback: str = ""
+    # Enable/disable automatic switching to hub_url_ip_fallback when DNS fails.
+    hub_url_ip_fallback_enabled: bool = False
     listen: int | None = None
 
     data_dir: str = ""
@@ -69,6 +71,14 @@ class AgentConfig:
                 kwargs: dict[str, object] = {}
                 for fld in dataclasses.fields(cls):
                     kwargs[fld.name] = raw.get(fld.name, fld.default)
+
+                # Backward-compat: if older configs had a fallback value set but no enable flag,
+                # default to enabled so behavior doesn't silently change after upgrade.
+                if (
+                    "hub_url_ip_fallback_enabled" not in raw
+                    and str(raw.get("hub_url_ip_fallback", "") or "").strip() != ""
+                ):
+                    kwargs["hub_url_ip_fallback_enabled"] = True
                 return cls(**kwargs)
             except Exception:
                 return cls()

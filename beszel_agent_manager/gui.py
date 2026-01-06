@@ -597,6 +597,9 @@ class BeszelAgentManagerApp(tk.Tk):
         self.var_token = tk.StringVar(value=c.token)
         self.var_hub_url = tk.StringVar(value=c.hub_url)
         self.var_hub_url_ip_fallback = tk.StringVar(value=getattr(c, "hub_url_ip_fallback", ""))
+        self.var_hub_url_ip_fallback_enabled = tk.BooleanVar(
+            value=bool(getattr(c, "hub_url_ip_fallback_enabled", False))
+        )
         # LISTEN is optional; when blank the agent uses its default (45876)
         self.var_listen = tk.StringVar(value=str(c.listen) if c.listen else "")
 
@@ -907,6 +910,28 @@ class BeszelAgentManagerApp(tk.Tk):
             is_int=False,
             allow_empty=True,
         )
+
+        # Dynamic HUB URL fallback toggle
+        self.btn_hub_fallback_toggle = ttk.Button(
+            conn,
+            text="Enable",
+            command=self._on_toggle_hub_url_fallback,
+            width=9,
+        )
+        self.btn_hub_fallback_toggle.grid(row=3, column=3, sticky="w", padx=(4, 0), pady=2)
+        add_tooltip(
+            self.btn_hub_fallback_toggle,
+            "Enable/Disable automatic switching to the Hub URL IP Fallback when DNS resolve fails.\n"
+            "When disabled, the agent will always use the main Hub URL.",
+        )
+        self._update_hub_fallback_toggle_ui()
+        # Keep button text in sync with the enabled flag
+        try:
+            self.var_hub_url_ip_fallback_enabled.trace_add(
+                "write", lambda *_: self._update_hub_fallback_toggle_ui()
+            )
+        except Exception:
+            pass
         self._make_locked_entry_with_dialog(
             conn,
             row=4,
@@ -1888,6 +1913,9 @@ class BeszelAgentManagerApp(tk.Tk):
             token=self.var_token.get().strip(),
             hub_url=self.var_hub_url.get().strip(),
             hub_url_ip_fallback=self.var_hub_url_ip_fallback.get().strip(),
+            hub_url_ip_fallback_enabled=bool(
+                getattr(self, "var_hub_url_ip_fallback_enabled", tk.BooleanVar(value=False)).get()
+            ),
             listen=listen,
             data_dir=self.var_data_dir.get().strip(),
             docker_host=self.var_docker_host.get().strip(),
@@ -2718,6 +2746,74 @@ class BeszelAgentManagerApp(tk.Tk):
 
         self._run_task("Applying configuration to service...", task)
 
+    def _update_hub_fallback_toggle_ui(self) -> None:
+        """Update the Enable/Disable button for the Hub URL IP fallback feature."""
+        btn = getattr(self, "btn_hub_fallback_toggle", None)
+        if btn is None:
+            return
+        try:
+            enabled = bool(self.var_hub_url_ip_fallback_enabled.get())
+        except Exception:
+            enabled = bool(getattr(self.config_obj, "hub_url_ip_fallback_enabled", False))
+        btn.configure(text=("Disable" if enabled else "Enable"))
+
+    def _on_toggle_hub_url_fallback(self) -> None:
+        """Enable/disable the Hub URL IP fallback feature."""
+        if not self._require_admin():
+            return
+
+        try:
+            enabled = bool(self.var_hub_url_ip_fallback_enabled.get())
+        except Exception:
+            enabled = False
+
+        primary = (self.var_hub_url.get() or "").strip()
+        fallback = (self.var_hub_url_ip_fallback.get() or "").strip()
+
+        # ------------------------------------------------------------------ Disable
+        if enabled:
+            if not messagebox.askyesno(
+                PROJECT_NAME,
+                "This will disable Hub URL IP Fallback. The agent will stay on the main Hub URL.\n\nContinue?",
+            ):
+                return
+
+            self.var_hub_url_ip_fallback_enabled.set(False)
+            cfg = self._build_config()
+            cfg.save()
+            self.config_obj = cfg
+            self._update_hub_fallback_toggle_ui()
+
+            # If we were actively on fallback, switch back to primary now.
+            if self._dns_fallback_active:
+                self._dns_fallback_active = False
+                self._dns_fallback_success_streak = 0
+                self._dns_fallback_original = ""
+                self._apply_hub_url_override_async(primary, reason="dns-fallback-disabled")
+            log("Hub URL IP Fallback disabled")
+            return
+
+        # ------------------------------------------------------------------ Enable
+        if not fallback:
+            messagebox.showerror(
+                PROJECT_NAME,
+                "Please set 'Hub URL IP Fallback' before enabling this feature.",
+            )
+            return
+
+        if not messagebox.askyesno(
+            PROJECT_NAME,
+            "Enable Hub URL IP Fallback? If DNS resolve for the Hub URL fails, the manager will switch the service to the fallback and switch back when DNS recovers.",
+        ):
+            return
+
+        self.var_hub_url_ip_fallback_enabled.set(True)
+        cfg = self._build_config()
+        cfg.save()
+        self.config_obj = cfg
+        self._update_hub_fallback_toggle_ui()
+        log("Hub URL IP Fallback enabled")
+
     def _update_listen_toggle_button(self) -> None:
         """Update the Enable/Disable button based on whether LISTEN is set."""
         try:
@@ -3114,6 +3210,13 @@ class BeszelAgentManagerApp(tk.Tk):
         import socket
         import datetime
 
+        # Feature enable flag
+        enabled = False
+        try:
+            enabled = bool(getattr(self, "var_hub_url_ip_fallback_enabled", None).get())
+        except Exception:
+            enabled = bool(getattr(self.config_obj, "hub_url_ip_fallback_enabled", False))
+
         # Pull from UI vars first; fallback to persisted config.
         primary = (self.var_hub_url.get() or "").strip()
         fallback = (self.var_hub_url_ip_fallback.get() or "").strip() if hasattr(self, "var_hub_url_ip_fallback") else ""
@@ -3127,6 +3230,7 @@ class BeszelAgentManagerApp(tk.Tk):
 
         state = {
             "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
+            "enabled": bool(enabled),
             "primary": primary,
             "fallback": fallback if has_fallback else "",
             "active": self._dns_fallback_active,
@@ -3134,6 +3238,17 @@ class BeszelAgentManagerApp(tk.Tk):
             "success_streak": int(self._dns_fallback_success_streak),
         }
         self._write_dns_fallback_state(state)
+
+        # If disabled, ensure we are not left in fallback mode.
+        if not enabled:
+            if self._dns_fallback_active:
+                self._dns_fallback_active = False
+                self._dns_fallback_success_streak = 0
+                self._dns_fallback_original = ""
+                if host:
+                    log("Hub URL IP Fallback disabled. Switching Beszel Agent HUB_URL back to primary.")
+                self._apply_hub_url_override_async(primary, reason="dns-fallback-disabled")
+            return
 
         if not host or not has_fallback:
             return
