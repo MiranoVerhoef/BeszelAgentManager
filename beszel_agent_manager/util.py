@@ -2,7 +2,7 @@ from __future__ import annotations
 import datetime
 import subprocess
 import os
-from .constants import DATA_DIR, LOG_PATH
+from .constants import DATA_DIR, LOG_PATH, RUNTIME_TMP_DIR
 from .manager_logs import rotate_if_needed
 
 DEBUG_LOGGING = False
@@ -29,6 +29,14 @@ def ensure_data_dir() -> None:
         # Some other filesystem error; also non-fatal.
         return
 
+    # Best-effort: prepare a stable PyInstaller onefile extraction directory.
+    # This helps on machines where AV/Defender interferes with the default user-temp
+    # _MEI... folder extraction.
+    try:
+        ensure_runtime_tmp_dir()
+    except Exception:
+        pass
+
     try:
         LOG_PATH.touch(exist_ok=True)
     except PermissionError:
@@ -36,6 +44,43 @@ def ensure_data_dir() -> None:
         pass
     except OSError:
         pass
+
+def ensure_runtime_tmp_dir() -> None:
+    """Best-effort create and ACL-fix the PyInstaller onefile runtime tmp dir.
+
+    If you build the manager with:
+      --runtime-tmpdir "C:\\ProgramData\\BeszelAgentManager\\tmp"
+
+    then the PyInstaller bootloader will extract into this folder.
+    Some systems run scheduled tasks / GUI actions under different users; granting
+    BUILTIN\Users modify rights makes extraction more reliable.
+    """
+    try:
+        RUNTIME_TMP_DIR.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        return
+
+    if os.name != "nt":
+        return
+
+    # Grant BUILTIN\Users modify rights using the SID to avoid localization issues.
+    # SID S-1-5-32-545 = Builtin Users.
+    try:
+        subprocess.run(
+            [
+                "icacls",
+                str(RUNTIME_TMP_DIR),
+                "/grant",
+                "*S-1-5-32-545:(OI)(CI)M",
+                "/T",
+                "/C",
+            ],
+            capture_output=True,
+            text=True,
+            creationflags=CREATE_NO_WINDOW if CREATE_NO_WINDOW else 0,
+        )
+    except Exception:
+        return
 
 
 def log(message: str) -> None:

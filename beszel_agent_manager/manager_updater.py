@@ -17,6 +17,7 @@ from .constants import (
     PROJECT_NAME,
     MANAGER_PREVIOUS_EXE_PATH,
     LOG_PATH,
+    RUNTIME_TMP_DIR,
 )
 from .util import log
 
@@ -287,8 +288,7 @@ def _write_update_script(pid: int, src_exe: Path, dst_exe: Path, args: List[str]
     prev = str(MANAGER_PREVIOUS_EXE_PATH)
     logfile = str(LOG_PATH)
     hpath = str(handshake_path)
-    pdata = os.environ.get("ProgramData", r"C:\\ProgramData")
-    extract_dir = str(Path(pdata) / PROJECT_NAME / "temp")
+    extract_dir = str(RUNTIME_TMP_DIR)
 
     script = f"""
 param(
@@ -333,6 +333,10 @@ New-Item -ItemType Directory -Force -Path $dstDir | Out-Null
 # "Failed to load Python DLL ... python3xx.dll".
 $ExtractDir = '{extract_dir.replace("'", "''")}'
 try {{ New-Item -ItemType Directory -Force -Path $ExtractDir | Out-Null }} catch {{ }}
+try {{
+  # Grant BUILTIN\Users modify rights using the SID (avoids localization issues)
+  icacls $ExtractDir /grant "*S-1-5-32-545:(OI)(CI)M" /T /C | Out-Null
+}} catch {{ }}
 try {{
   # Best-effort: exclude the extraction directory.
   Add-MpPreference -ExclusionPath $ExtractDir -ErrorAction SilentlyContinue | Out-Null
