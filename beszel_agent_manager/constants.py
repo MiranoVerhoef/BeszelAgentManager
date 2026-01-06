@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 PROJECT_NAME = "BeszelAgentManager"
-APP_VERSION = "2.6.16"
+APP_VERSION = "2.6.17"
 
 # Use a single consistent service name everywhere (Windows + NSSM)
 AGENT_SERVICE_NAME = "Beszel Agent"
