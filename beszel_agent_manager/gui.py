@@ -54,7 +54,7 @@ from .scheduler import delete_update_task, delete_agent_log_rotate_task
 from .agent_logs import list_agent_log_files, rotate_agent_logs_and_rename
 from .manager_logs import list_manager_log_files, rotate_if_needed as rotate_manager_logs_if_needed
 from .support_bundle import create_support_bundle
-from .manager_updater import fetch_latest_release, is_update_available
+from .manager_updater import fetch_latest_release, fetch_stable_releases, is_update_available
 from .util import log, set_debug_logging, run
 from .autostart import (
     get_autostart_state,
@@ -443,6 +443,21 @@ class BeszelAgentManagerApp(tk.Tk):
             value=enabled and not start_hidden_flag
         )
 
+        # Manager update preferences (UI-only; no service Apply required)
+        self.var_mgr_update_notify = tk.BooleanVar(
+            value=bool(getattr(c, "manager_update_notify_enabled", True))
+        )
+        self.var_mgr_update_interval_h = tk.StringVar(
+            value=str(getattr(c, "manager_update_check_interval_hours", 6))
+        )
+        self.var_mgr_update_tray_badge = tk.BooleanVar(
+            value=bool(getattr(c, "manager_update_tray_badge_enabled", True))
+        )
+        # When enabled, manager update checks/dialogs include GitHub pre-releases (BETA)
+        self.var_mgr_update_include_pre = tk.BooleanVar(
+            value=bool(getattr(c, "manager_update_include_prereleases", False))
+        )
+
         # Env table definitions
         self.env_definitions = [
             ("DATA_DIR", self.var_data_dir, "Custom data directory used by the agent (DATA_DIR)."),
@@ -520,6 +535,12 @@ class BeszelAgentManagerApp(tk.Tk):
             self.var_debug_logging,
             self.var_autostart,
             self.var_start_visible,
+
+            # Manager update preferences
+            self.var_mgr_update_notify,
+            self.var_mgr_update_interval_h,
+            self.var_mgr_update_tray_badge,
+            self.var_mgr_update_include_pre,
         )
         for v in autosave_vars:
             v.trace_add("write", self._on_var_changed)
@@ -854,6 +875,26 @@ class BeszelAgentManagerApp(tk.Tk):
 
         ttk.Label(restart_box, text="hour(s)", style="Card.TLabel").grid(
             row=0, column=2, sticky="w"
+        )
+
+        mgr_beta_box = ttk.LabelFrame(
+            conn,
+            text="Manager BETA",
+            padding=10,
+            style="Group.TLabelframe",
+        )
+        mgr_beta_box.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+        mgr_beta_box.columnconfigure(0, weight=1)
+
+        chk_mgr_beta = ttk.Checkbutton(
+            mgr_beta_box,
+            text="Include manager BETA (pre-releases) in manager updates",
+            variable=self.var_mgr_update_include_pre,
+        )
+        chk_mgr_beta.grid(row=0, column=0, sticky="w")
+        add_tooltip(
+            chk_mgr_beta,
+            "When enabled, BeszelAgentManager will include GitHub pre-releases (BETA) for manager download checks and in the manager version picker.",
         )
 
         # ------------------------------------------------------------------ Environment Tables tab
@@ -2005,16 +2046,8 @@ class BeszelAgentManagerApp(tk.Tk):
         self._on_agent_versions()
 
     def _on_manager_versions(self):
-        """Open the GitHub releases page for manual manager downloads."""
-        try:
-            webbrowser.open("https://github.com/MiranoVerhoef/BeszelAgentManager/releases")
-        except Exception:
-            pass
-        messagebox.showinfo(
-            PROJECT_NAME,
-            "BeszelAgentManager updates are downloaded manually.\n\n"
-            "A browser window will open with the releases page.",
-        )
+        """Open a version picker for BeszelAgentManager (manual downloads only)."""
+        self._open_manager_version_dialog()
 
     def _on_manage_manager_version(self):
         """Single entry point for managing the manager version (manual downloads only)."""
@@ -2182,6 +2215,188 @@ class BeszelAgentManagerApp(tk.Tk):
         cbo.bind("<<ComboboxSelected>>", on_pick)
         load_releases()
 
+
+    def _open_manager_version_dialog(self) -> None:
+        """Manager version picker dialog (manual downloads only).
+
+        Provides:
+          - Optional inclusion of GitHub pre-releases (BETA)
+          - Buttons: Go to release page / Direct Download
+        """
+
+        win = tk.Toplevel(self)
+        win.title("Manage Manager Version")
+        win.geometry("660x450")
+        win.transient(self)
+        win.grab_set()
+
+        frm = ttk.Frame(win, padding=12)
+        frm.pack(fill="both", expand=True)
+        frm.columnconfigure(1, weight=1)
+        frm.rowconfigure(4, weight=1)
+
+        ttk.Label(frm, text=f"Installed: {APP_VERSION}").grid(row=0, column=0, columnspan=2, sticky="w")
+
+        # Keep the dialog toggle in sync with the global preference (bottom bar).
+        var_show_beta = tk.BooleanVar(value=bool(self.var_mgr_update_include_pre.get()))
+
+        chk = ttk.Checkbutton(frm, text="Show BETA (pre-releases)", variable=var_show_beta)
+        chk.grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
+        add_tooltip(
+            chk,
+            "When enabled, the version list will also include GitHub pre-releases (BETA).",
+        )
+
+        ttk.Label(frm, text="Select version:").grid(row=2, column=0, sticky="w", pady=(10, 4))
+        var_sel = tk.StringVar()
+        cbo = ttk.Combobox(frm, textvariable=var_sel, state="readonly")
+        cbo.grid(row=2, column=1, sticky="ew", pady=(10, 4))
+
+        ttk.Separator(frm, orient="horizontal").grid(row=3, column=0, columnspan=2, sticky="ew", pady=8)
+
+        txt_notes = tk.Text(frm, wrap="word", height=12, state="disabled", font=("Consolas", 9))
+        txt_notes.grid(row=4, column=0, columnspan=2, sticky="nsew")
+
+        progress = ttk.Progressbar(frm, mode="indeterminate")
+        progress.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        progress.grid_remove()
+
+        btns = ttk.Frame(frm)
+        btns.grid(row=6, column=0, columnspan=2, sticky="e", pady=(10, 0))
+
+        mapping: dict[str, dict] = {}
+
+        def set_text(content: str) -> None:
+            txt_notes.configure(state="normal")
+            txt_notes.delete("1.0", tk.END)
+            txt_notes.insert(tk.END, content)
+            txt_notes.configure(state="disabled")
+
+        def on_pick(_evt=None):
+            rel = mapping.get(var_sel.get())
+            if not rel:
+                set_text("")
+                return
+            body = str(rel.get("body") or "")
+            if not body:
+                body = "(No release notes.)"
+            lines = [ln.rstrip() for ln in body.splitlines()]
+            while lines and not lines[0]:
+                lines.pop(0)
+            while lines and not lines[-1]:
+                lines.pop()
+            if len(lines) > 40:
+                lines = lines[:40] + ["...", "(truncated)"]
+            set_text("\n".join(lines))
+
+        def load_releases():
+            # Persist the preference so the main UI + next checks use the same setting.
+            try:
+                self.var_mgr_update_include_pre.set(bool(var_show_beta.get()))
+            except Exception:
+                pass
+
+            progress.grid()
+            progress.start(10)
+
+            state = {"error": None, "releases": None}
+
+            def worker():
+                try:
+                    state["releases"] = fetch_stable_releases(
+                        limit=50,
+                        include_prereleases=bool(var_show_beta.get()),
+                    )
+                except Exception as exc:
+                    state["error"] = exc
+                    log(f"Failed to fetch manager versions: {exc}\n{traceback.format_exc()}")
+
+                def done():
+                    try:
+                        progress.stop()
+                        progress.grid_remove()
+                    except Exception:
+                        pass
+
+                    if state["error"]:
+                        messagebox.showerror(PROJECT_NAME, f"Failed to fetch versions:\n{state['error']}")
+                        return
+
+                    rels = state["releases"] or []
+                    mapping.clear()
+                    values: list[str] = []
+
+                    for r in rels:
+                        v = str(r.get("version") or "")
+                        tag = str(r.get("tag") or "")
+                        if not v:
+                            continue
+                        label = f"{v} ({tag})" if tag and tag != v else v
+                        if bool(r.get("prerelease")):
+                            label += " [BETA]"
+                        values.append(label)
+                        mapping[label] = r
+
+                    cbo["values"] = values
+                    if not values:
+                        var_sel.set("")
+                        set_text("(No versions found.)")
+                        return
+
+                    # Prefer installed version if present in list, else first (newest)
+                    pick = None
+                    for label, r in mapping.items():
+                        if str(r.get("version") or "") == APP_VERSION:
+                            pick = label
+                            break
+                    if not pick:
+                        pick = values[0]
+                    var_sel.set(pick)
+                    on_pick()
+
+                self.after(0, done)
+
+            threading.Thread(target=worker, daemon=True).start()
+
+        def _open_url(url: str) -> None:
+            if not url:
+                return
+            try:
+                webbrowser.open(url)
+            except Exception:
+                pass
+
+        def go_release():
+            rel = mapping.get(var_sel.get())
+            if not rel:
+                messagebox.showinfo(PROJECT_NAME, "Select a version first.")
+                return
+            url = str(rel.get("html_url") or "").strip()
+            if not url:
+                # Fallback: repository releases page
+                url = "https://github.com/MiranoVerhoef/BeszelAgentManager/releases"
+            _open_url(url)
+
+        def direct_download():
+            rel = mapping.get(var_sel.get())
+            if not rel:
+                messagebox.showinfo(PROJECT_NAME, "Select a version first.")
+                return
+            url = str(rel.get("download_url") or "").strip()
+            if not url:
+                # If the expected asset is missing, fall back to release page.
+                url = str(rel.get("html_url") or "").strip() or "https://github.com/MiranoVerhoef/BeszelAgentManager/releases"
+            _open_url(url)
+
+        ttk.Button(btns, text="Refresh", command=load_releases).grid(row=0, column=0, padx=(0, 8))
+        ttk.Button(btns, text="Go to release", command=go_release).grid(row=0, column=1, padx=(0, 8))
+        ttk.Button(btns, text="Direct Download", command=direct_download).grid(row=0, column=2, padx=(0, 8))
+        ttk.Button(btns, text="Close", command=win.destroy).grid(row=0, column=3)
+
+        cbo.bind("<<ComboboxSelected>>", on_pick)
+        chk.configure(command=load_releases)
+        load_releases()
+
     def _install_selected_agent_release(self, release: dict, force: bool) -> None:
         """Install a specific agent release (version picker dialog)."""
         version = str(release.get("version") or "").strip()
@@ -2235,7 +2450,7 @@ class BeszelAgentManagerApp(tk.Tk):
 
         def worker_check():
             try:
-                state["release"] = fetch_latest_release(include_prereleases=False)
+                state["release"] = fetch_latest_release(include_prereleases=self.var_mgr_update_include_pre.get())
             except Exception as exc:
                 state["error"] = exc
                 log(f"Manager download check failed: {exc}\n{traceback.format_exc()}")
