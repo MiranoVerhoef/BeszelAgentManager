@@ -279,6 +279,13 @@ class BeszelAgentManagerApp(tk.Tk):
         # Manager update notifications
         self._manager_update_prompted_version = ""
         self._manager_update_available_version = ""
+        self._mgr_update_settings_last = (
+            bool(getattr(self.config_obj, "manager_update_notify_enabled", True)),
+            int(getattr(self.config_obj, "manager_update_check_interval_hours", 6) or 6),
+            bool(getattr(self.config_obj, "manager_update_tray_badge_enabled", True)),
+            bool(getattr(self.config_obj, "manager_update_include_prereleases", False)),
+            str(getattr(self.config_obj, "manager_update_skip_version", "") or ""),
+        )
 
         # Build and load variables, then UI
         self._build_vars()
@@ -736,6 +743,7 @@ class BeszelAgentManagerApp(tk.Tk):
             self.var_mgr_update_notify,
             self.var_mgr_update_interval_h,
             self.var_mgr_update_tray_badge,
+            self.var_mgr_update_include_pre,
             self.var_autostart,
             self.var_start_visible,
         )
@@ -784,6 +792,12 @@ class BeszelAgentManagerApp(tk.Tk):
             cfg.save()
             self.config_obj = cfg
 
+            # Apply manager-only settings immediately (no service restart needed).
+            try:
+                self._maybe_apply_manager_update_settings(cfg)
+            except Exception:
+                pass
+
             # Apply tray badge setting immediately if an update is pending.
             try:
                 self._set_tray_update_badge(bool(getattr(self, "_manager_update_available_version", "")))
@@ -802,6 +816,34 @@ class BeszelAgentManagerApp(tk.Tk):
             self.after(2000, lambda: self.label_config_saved.config(text=""))
         except Exception as exc:
             log(f"Autosave failed: {exc}")
+
+    def _maybe_apply_manager_update_settings(self, cfg: AgentConfig) -> None:
+        """Apply manager update notification settings immediately.
+
+        These settings should not require 'Apply settings' (which restarts the agent service).
+        """
+        try:
+            cur = (
+                bool(getattr(cfg, "manager_update_notify_enabled", True)),
+                int(getattr(cfg, "manager_update_check_interval_hours", 6) or 6),
+                bool(getattr(cfg, "manager_update_tray_badge_enabled", True)),
+                bool(getattr(cfg, "manager_update_include_prereleases", False)),
+                str(getattr(cfg, "manager_update_skip_version", "") or ""),
+            )
+        except Exception:
+            return
+
+        if getattr(self, "_mgr_update_settings_last", None) == cur:
+            return
+        self._mgr_update_settings_last = cur
+
+        enabled = bool(cur[0])
+        if enabled:
+            # Kick an immediate check so the UI reacts right away to interval/prerelease changes.
+            try:
+                self.after(1000, lambda: threading.Thread(target=self._check_manager_update_once, daemon=True).start())
+            except Exception:
+                pass
 
     # ------------------------------------------------------------------ UI construction
 
@@ -2541,7 +2583,9 @@ class BeszelAgentManagerApp(tk.Tk):
 
         def worker_check():
             try:
-                state["release"] = fetch_latest_release()
+                cfg = self.config_obj or AgentConfig.load()
+                include_pre = bool(getattr(cfg, "manager_update_include_prereleases", False))
+                state["release"] = fetch_latest_release(include_prereleases=include_pre)
             except Exception as exc:
                 state["error"] = exc
                 log(f"Manager update check failed: {exc}\n{traceback.format_exc()}")
