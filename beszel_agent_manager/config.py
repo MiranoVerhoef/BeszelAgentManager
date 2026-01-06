@@ -61,6 +61,64 @@ class AgentConfig:
     # If enabled, manager update checks/version picker will include GitHub pre-releases.
     manager_update_include_prereleases: bool = False
 
+    # Tracks the last configuration that was applied to the Windows service (env/tasks).
+    # Used to avoid unnecessary Apply operations (service restarts) when nothing changed.
+    last_applied_fingerprint: str = ""
+    last_applied_at: str = ""
+
+    def _apply_relevant_dict(self) -> dict:
+        """Subset of settings that require Apply settings (service + scheduled tasks).
+
+        Manager-only settings (UI, update notifications, etc.) are intentionally excluded.
+        """
+        keys = [
+            # Core agent env
+            "key",
+            "token",
+            "hub_url",
+            "listen",
+
+            # Agent advanced env
+            "data_dir",
+            "docker_host",
+            "exclude_containers",
+            "exclude_smart",
+            "extra_filesystems",
+            "filesystem",
+            "intel_gpu_device",
+            "key_file",
+            "token_file",
+            "lhm",
+            "log_level",
+            "mem_calc",
+            "network",
+            "nics",
+            "sensors",
+            "primary_sensor",
+            "sys_sensors",
+            "service_patterns",
+            "smart_devices",
+            "system_name",
+            "skip_gpu",
+
+            # Scheduled tasks
+            "auto_update_enabled",
+            "update_interval_days",
+            "auto_restart_enabled",
+            "auto_restart_interval_hours",
+        ]
+        d: dict[str, object] = {}
+        for k in keys:
+            d[k] = getattr(self, k)
+        return d
+
+    def apply_fingerprint(self) -> str:
+        import hashlib
+        import json
+
+        payload = json.dumps(self._apply_relevant_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
     @classmethod
     def load(cls) -> "AgentConfig":
         DATA_DIR.mkdir(parents=True, exist_ok=True)

@@ -2070,7 +2070,7 @@ class BeszelAgentManagerApp(tk.Tk):
 
     # ------------------------------------------------------------------ Task runner
 
-    def _run_task(self, description: str, func):
+    def _run_task(self, description: str, func, *, show_success_popup: bool = True, success_message: str | None = None, on_success=None):
         if self._task_running:
             messagebox.showinfo(
                 PROJECT_NAME, "Another operation is already in progress."
@@ -2100,9 +2100,16 @@ class BeszelAgentManagerApp(tk.Tk):
                         PROJECT_NAME, f"Operation failed:\n{error}"
                     )
                 else:
-                    messagebox.showinfo(
-                        PROJECT_NAME, "Operation completed successfully."
-                    )
+                    try:
+                        if on_success is not None:
+                            on_success()
+                    except Exception:
+                        pass
+                    if show_success_popup:
+                        messagebox.showinfo(
+                            PROJECT_NAME,
+                            success_message or "Operation completed successfully.",
+                        )
 
             self.after(0, done)
 
@@ -2168,6 +2175,13 @@ class BeszelAgentManagerApp(tk.Tk):
                     )
 
             install_or_update_agent_and_service(cfg)
+            try:
+                from datetime import datetime
+
+                cfg.last_applied_fingerprint = cfg.apply_fingerprint()
+                cfg.last_applied_at = datetime.now().isoformat(timespec="seconds")
+            except Exception:
+                pass
             cfg.save()
             self.config_obj = cfg
             shortcut_mod.ensure_start_menu_shortcut()
@@ -2773,10 +2787,31 @@ class BeszelAgentManagerApp(tk.Tk):
         threading.Thread(target=worker_check, daemon=True).start()
 
     def _on_apply(self):
+        # If nothing relevant changed, don't restart the service.
+        try:
+            cfg = self._build_config()
+        except Exception:
+            cfg = None
+
+        if cfg is not None:
+            try:
+                prev_fp = str(getattr(self.config_obj, "last_applied_fingerprint", "") or "")
+                cur_fp = str(cfg.apply_fingerprint() or "")
+                if prev_fp and cur_fp and prev_fp == cur_fp:
+                    self.label_status.config(text="No changes to apply")
+                    try:
+                        self.label_config_saved.config(text="No changes")
+                        self.after(2500, lambda: self.label_config_saved.config(text=""))
+                    except Exception:
+                        pass
+                    return
+            except Exception:
+                pass
+
         if not self._require_admin():
             return
 
-        cfg = self._build_config()
+        cfg = cfg or self._build_config()
         set_debug_logging(cfg.debug_logging)
         set_autostart(
             self.var_autostart.get(), start_hidden=not self.var_start_visible.get()
@@ -2784,11 +2819,31 @@ class BeszelAgentManagerApp(tk.Tk):
 
         def task():
             apply_configuration_only(cfg)
+            try:
+                from datetime import datetime
+
+                cfg.last_applied_fingerprint = cfg.apply_fingerprint()
+                cfg.last_applied_at = datetime.now().isoformat(timespec="seconds")
+            except Exception:
+                pass
             cfg.save()
             self.config_obj = cfg
             shortcut_mod.ensure_start_menu_shortcut()
 
-        self._run_task("Applying configuration to service...", task)
+        def on_success():
+            try:
+                self.label_status.config(text="Configuration applied")
+                self.label_config_saved.config(text="Applied")
+                self.after(2500, lambda: self.label_config_saved.config(text=""))
+            except Exception:
+                pass
+
+        self._run_task(
+            "Applying configuration to service...",
+            task,
+            show_success_popup=False,
+            on_success=on_success,
+        )
 
     def _update_hub_fallback_toggle_ui(self) -> None:
         """Update the Enable/Disable button for the Hub URL IP fallback feature."""
