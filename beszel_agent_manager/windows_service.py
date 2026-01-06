@@ -6,6 +6,7 @@ import zipfile
 import time
 import re
 import subprocess
+import ctypes
 from typing import Dict
 
 import requests
@@ -381,43 +382,104 @@ def ensure_firewall_rule(port: int) -> None:
 
 
 def open_nssm_edit() -> None:
-    """Open the NSSM GUI editor for the Beszel Agent service."""
+    """Open the NSSM GUI editor for the Beszel Agent service.
+
+    Goal: open the NSSM *GUI* without flashing a black console window.
+    Some approaches (direct subprocess / PowerShell) can briefly show a console
+    depending on the host environment. We try ShellExecuteW first with SW_HIDE,
+    then fall back to a hidden PowerShell Start-Process, and finally a detached
+    subprocess as a last resort.
+    """
     nssm = _find_nssm()
     svc = _resolve_service_name()
+
     try:
-        # On some systems, launching NSSM directly with CREATE_NO_WINDOW can
-        # prevent the GUI editor from appearing. Prefer PowerShell Start-Process
-        # with a hidden window; it reliably opens the NSSM GUI without flashing
-        # a console.
         if os.name == 'nt':
-            def _ps_single(s: str) -> str:
-                return s.replace("'", "''")
+            # 1) Best effort: ShellExecuteW with SW_HIDE to avoid a console flash.
+            try:
+                params = f'edit "{svc}"'
+                rc = ctypes.windll.shell32.ShellExecuteW(
+                    None, 'open', str(nssm), params, None, 0  # SW_HIDE
+                )
+                # Per ShellExecute docs: return value > 32 indicates success.
+                if isinstance(rc, int) and rc > 32:
+                    log(f'Opening NSSM editor (ShellExecute): {nssm} {params}')
+                    return
+                log(f'ShellExecuteW returned {rc}; falling back to PowerShell.')
+            except Exception as exc:
+                log(f'ShellExecuteW failed: {exc}; falling back to PowerShell.')
 
-            # Be explicit about quoting the service name for NSSM, because it
-            # contains a space. Some environments end up effectively executing
-            # `nssm.exe edit Beszel Agent` (two args) instead of a single
-            # `"Beszel Agent"` argument. Passing an argument that already
-            # includes quotes forces the final command line to be:
-            #   nssm.exe edit "Beszel Agent"
-            quoted_svc = '"' + str(svc) + '"'
-            ps = (
-                "Start-Process -FilePath '{nssm}' -ArgumentList @('edit','{qsvc}')"
-            ).format(nssm=_ps_single(str(nssm)), qsvc=_ps_single(quoted_svc))
-            log(f"Opening NSSM editor: {nssm} edit \"{svc}\"")
+            # 2) Fallback: PowerShell Start-Process hidden
+            try:
+                def _ps_single(s: str) -> str:
+                    return s.replace("'", "''")
 
-            # Hide the PowerShell window itself.
-            creationflags = 0x08000000  # CREATE_NO_WINDOW
-            subprocess.Popen(
-                ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-Command', ps],
-                close_fds=True,
-                creationflags=creationflags,
-            )
-            return
+                quoted_svc = '"' + str(svc) + '"'
+                ps = (
+                    "Start-Process -FilePath '{nssm}' -ArgumentList @('edit','{qsvc}')"
+                ).format(nssm=_ps_single(str(nssm)), qsvc=_ps_single(quoted_svc))
+
+                log(f'Opening NSSM editor (PowerShell): {nssm} edit "{svc}"')
+
+                creationflags = 0
+                try:
+                    creationflags |= subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
+                except Exception:
+                    creationflags |= 0x08000000  # CREATE_NO_WINDOW (fallback literal)
+
+                # Also hide via STARTUPINFO to reduce console flashing.
+                startupinfo = None
+                try:
+                    startupinfo = subprocess.STARTUPINFO()
+                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                    startupinfo.wShowWindow = 0  # SW_HIDE
+                except Exception:
+                    startupinfo = None
+
+                subprocess.Popen(
+                    [
+                        'powershell.exe',
+                        '-NoProfile',
+                        '-ExecutionPolicy', 'Bypass',
+                        '-WindowStyle', 'Hidden',
+                        '-Command', ps,
+                    ],
+                    close_fds=True,
+                    creationflags=creationflags,
+                    startupinfo=startupinfo,
+                )
+                return
+            except Exception as exc:
+                log(f'PowerShell Start-Process failed: {exc}; falling back to detached subprocess.')
+
+            # 3) Last resort: detached subprocess (should still avoid a console window)
+            try:
+                creationflags = 0
+                for flag_name in ('DETACHED_PROCESS', 'CREATE_NEW_PROCESS_GROUP', 'CREATE_NO_WINDOW'):
+                    creationflags |= int(getattr(subprocess, flag_name, 0))
+                startupinfo = None
+                try:
+                    startupinfo = subprocess.STARTUPINFO()
+                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                    startupinfo.wShowWindow = 0
+                except Exception:
+                    startupinfo = None
+
+                subprocess.Popen(
+                    [str(nssm), 'edit', str(svc)],
+                    close_fds=True,
+                    creationflags=creationflags,
+                    startupinfo=startupinfo,
+                )
+                return
+            except Exception as exc:
+                raise ServiceError(f'Failed to open NSSM editor: {exc}') from exc
 
         # Non-Windows fallback (shouldn't normally happen)
         subprocess.Popen([str(nssm), 'edit', str(svc)], close_fds=True)
     except Exception as exc:
         raise ServiceError(f"Failed to open NSSM editor: {exc}") from exc
+
 
 
 def remove_firewall_rule() -> None:
