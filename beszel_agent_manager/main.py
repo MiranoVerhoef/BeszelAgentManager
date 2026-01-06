@@ -14,6 +14,35 @@ from .util import log, try_write_event_log
 from .constants import AGENT_EXE_PATH, PROJECT_NAME, APP_VERSION
 
 
+def _parse_update_handshake_flag() -> str | None:
+    """Detect and strip the --update-handshake <token> flag from sys.argv.
+
+    This is used by the manager self-updater to verify that the *new* binary
+    actually started far enough to run Python code. It should be handled
+    before any elevation/single-instance logic.
+    """
+    argv = list(sys.argv)
+    if "--update-handshake" not in argv:
+        return None
+    try:
+        i = argv.index("--update-handshake")
+        token = argv[i + 1]
+    except Exception:
+        # malformed, just strip the flag
+        sys.argv = [a for a in argv if a != "--update-handshake"]
+        return None
+
+    # Remove flag + token
+    new_argv = []
+    skip = {i, i + 1}
+    for idx, a in enumerate(argv):
+        if idx in skip:
+            continue
+        new_argv.append(a)
+    sys.argv = new_argv
+    return str(token).strip() or None
+
+
 def _parse_print_version_flag() -> bool:
     """Detect and strip lightweight version/health flags (no GUI)."""
     argv = sys.argv
@@ -77,6 +106,20 @@ def main() -> None:
     if _parse_print_version_flag():
         print(APP_VERSION)
         return
+
+    # Updater handshake: if present, write a marker file immediately so the
+    # updater can confirm the new binary actually started.
+    handshake = _parse_update_handshake_flag()
+    if handshake:
+        try:
+            data_dir = Path(os.getenv("ProgramData", r"C:\\ProgramData")) / PROJECT_NAME
+            data_dir.mkdir(parents=True, exist_ok=True)
+            marker = data_dir / f"update-handshake-{handshake}.ok"
+            marker.write_text(f"version={APP_VERSION}\n", encoding="utf-8")
+            log(f"Update handshake written: {marker}")
+        except Exception:
+            # Never break startup if marker write fails.
+            pass
 
     start_hidden = _parse_start_hidden_flag()
     rotate_agent_logs = _parse_rotate_agent_logs_flag()

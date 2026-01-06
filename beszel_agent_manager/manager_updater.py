@@ -21,6 +21,14 @@ from .constants import (
 from .util import log
 
 
+def _new_handshake_token() -> str:
+    """Generate a short token used to confirm the new binary started."""
+    try:
+        return os.urandom(8).hex()
+    except Exception:
+        return str(int(os.getpid()))
+
+
 def _normalize_version(tag: Optional[str]) -> Optional[str]:
     if not tag:
         return None
@@ -271,13 +279,14 @@ def _installed_manager_path() -> Path:
     return Path(program_files) / PROJECT_NAME / MANAGER_ASSET_NAME
 
 
-def _write_update_script(pid: int, src_exe: Path, dst_exe: Path, args: List[str]) -> Path:
+def _write_update_script(pid: int, src_exe: Path, dst_exe: Path, args: List[str], handshake_path: Path) -> Path:
     MANAGER_UPDATE_SCRIPT.parent.mkdir(parents=True, exist_ok=True)
     # Build argument string for Start-Process
     arg_str = " ".join([f'"{a}"' for a in args])
 
     prev = str(MANAGER_PREVIOUS_EXE_PATH)
     logfile = str(LOG_PATH)
+    hpath = str(handshake_path)
 
     script = f"""
 param(
@@ -286,7 +295,8 @@ param(
   [string]$Dst,
   [string]$Prev,
   [string]$Args,
-  [string]$LogFile
+  [string]$LogFile,
+  [string]$HandshakePath
 )
 
 $ErrorActionPreference = 'Stop'
@@ -374,6 +384,13 @@ try {{
 }}
 
 Write-Log "Starting updated manager: $Dst $Args"
+Write-Log "Waiting for update handshake marker at: $HandshakePath"
+
+try {{
+  if (Test-Path -LiteralPath $HandshakePath) {{
+    Remove-Item -Force -LiteralPath $HandshakePath -ErrorAction SilentlyContinue
+  }}
+}} catch {{}}
 
 function Start-Manager() {{
   try {{
@@ -408,27 +425,55 @@ if (-not $p) {{
   }}
 }}
 
-Start-Sleep -Seconds 5
-
-$alive = $false
+# Wait up to 30 seconds for the handshake marker.
+$maxSeconds = 30
+$ok = $false
+$pid = $null
 try {{
-  if ($p -and $p.Id) {{
-    $alive = [bool](Get-Process -Id $p.Id -ErrorAction SilentlyContinue)
-  }} else {{
+  if ($p -and $p.Id) {{ $pid = $p.Id }}
+  else {{
     $ci = Find-ManagerByPath
-    if ($ci -and $ci.ProcessId) {{ $alive = $true }}
+    if ($ci -and $ci.ProcessId) {{ $pid = $ci.ProcessId }}
   }}
-}} catch {{ $alive = $false }}
+}} catch {{ $pid = $null }}
 
-if (-not $alive) {{
-  Write-Log "Updated manager did not stay running; attempting rollback."
+for ($i=0; $i -lt ($maxSeconds*2); $i++) {{
+  try {{
+    if (Test-Path -LiteralPath $HandshakePath) {{
+      $ok = $true
+      break
+    }}
+  }} catch {{}}
+
+  # If the process died early, stop waiting.
+  try {{
+    if ($pid) {{
+      if (-not (Get-Process -Id $pid -ErrorAction SilentlyContinue)) {{ break }}
+    }}
+  }} catch {{}}
+
+  Start-Sleep -Milliseconds 500
+}}
+
+if ($ok) {{
+  Write-Log "Update handshake received. Update considered successful."
+}} else {{
+  Write-Log "Update handshake not received within $maxSeconds seconds; treating update as failed."
+
+  # Best-effort: terminate the newly started manager if it exists.
+  try {{
+    if ($pid) {{
+      Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
+    }}
+  }} catch {{}}
+
+  Write-Log "Attempting rollback to previous manager."
   try {{
     if (Test-Path -LiteralPath $Prev) {{
       Copy-Item -Force -Path $Prev -Destination $Dst
       Write-Log "Rollback copy succeeded. Restarting previous manager."
       $null = Start-Manager
       if (-not $Args) {{
-        # if Start-Manager returned null due to args handling, try a plain start
         Start-Process -FilePath $Dst | Out-Null
       }}
     }} else {{
@@ -457,7 +502,15 @@ def start_update(
     src = stage_download(release, force=force)
     dst = _installed_manager_path()
 
-    _write_update_script(pid, src, dst, args)
+    # Handshake: the new binary writes a marker file as soon as it starts.
+    # This lets the update script detect broken builds that show a popup
+    # (e.g. missing python3xx.dll) but never actually run.
+    token = _new_handshake_token()
+    data_dir = Path(os.getenv("ProgramData", r"C:\\ProgramData")) / PROJECT_NAME
+    handshake_path = data_dir / f"update-handshake-{token}.ok"
+    new_args = list(args) + ["--update-handshake", token]
+
+    _write_update_script(pid, src, dst, new_args, handshake_path)
 
     # Launch elevated PowerShell to run the script
     script = str(MANAGER_UPDATE_SCRIPT)
@@ -467,16 +520,18 @@ def start_update(
     try:
         import ctypes
 
-        args_str = " ".join(args)
+        args_str = " ".join(new_args)
         # Keep it simple: our args are typically things like --hidden.
         args_str = args_str.replace('"', '')
 
         prev = str(MANAGER_PREVIOUS_EXE_PATH)
         logfile = str(LOG_PATH)
+        hpath = str(handshake_path)
         params = (
             f"-NoProfile -ExecutionPolicy Bypass -File \"{script}\" "
             f"-PidToWait {pid} -Src \"{src}\" -Dst \"{dst}\" "
-            f"-Prev \"{prev}\" -Args \"{args_str}\" -LogFile \"{logfile}\""
+            f"-Prev \"{prev}\" -Args \"{args_str}\" -LogFile \"{logfile}\" "
+            f"-HandshakePath \"{hpath}\""
         )
         rc = ctypes.windll.shell32.ShellExecuteW(None, "runas", ps, params, None, 0)
         if rc <= 32:
