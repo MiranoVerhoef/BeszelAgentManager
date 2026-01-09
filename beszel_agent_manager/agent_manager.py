@@ -578,6 +578,21 @@ def install_or_update_agent_and_service(cfg: AgentConfig) -> None:
         delete_periodic_restart_task()
 
 
+
+def apply_service_env_only(cfg: AgentConfig) -> None:
+    """Update only the Windows service environment for the agent and restart it.
+
+    This is intended for fast operations like HUB_URL fallback switching.
+    It does NOT touch scheduled tasks, firewall rules, or any other manager-side settings.
+    """
+    exe_path = _agent_exe_path()
+    if not exe_path.exists():
+        raise RuntimeError("Agent is not installed yet.")
+
+    env = _build_env_from_config(cfg, include_process_env=False)
+    log("DNS fallback: updating Windows service environment (env-only)")
+    create_or_update_service(env)
+
 def apply_configuration_only(cfg: AgentConfig) -> None:
     """
     Apply configuration/env/service settings without re-downloading the agent.

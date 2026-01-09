@@ -382,26 +382,18 @@ def ensure_firewall_rule(port: int) -> None:
 
 
 def open_nssm_edit() -> None:
-    """Open the NSSM GUI editor for the Beszel Agent service.
-
-    Goal: open the NSSM *GUI* without flashing a black console window.
-    Some approaches (direct subprocess / PowerShell) can briefly show a console
-    depending on the host environment. We try ShellExecuteW first with SW_HIDE,
-    then fall back to a hidden PowerShell Start-Process, and finally a detached
-    subprocess as a last resort.
-    """
+    """Open the NSSM GUI editor for the Beszel Agent service (no console flash)."""
     nssm = _find_nssm()
     svc = _resolve_service_name()
 
     try:
         if os.name == 'nt':
-            # 1) Best effort: ShellExecuteW with SW_HIDE to avoid a console flash.
+            # 1) Best effort: ShellExecuteW with SW_HIDE to avoid console flashes.
             try:
                 params = f'edit "{svc}"'
                 rc = ctypes.windll.shell32.ShellExecuteW(
                     None, 'open', str(nssm), params, None, 0  # SW_HIDE
                 )
-                # Per ShellExecute docs: return value > 32 indicates success.
                 if isinstance(rc, int) and rc > 32:
                     log(f'Opening NSSM editor (ShellExecute): {nssm} {params}')
                     return
@@ -425,9 +417,8 @@ def open_nssm_edit() -> None:
                 try:
                     creationflags |= subprocess.CREATE_NO_WINDOW  # type: ignore[attr-defined]
                 except Exception:
-                    creationflags |= 0x08000000  # CREATE_NO_WINDOW (fallback literal)
+                    creationflags |= 0x08000000  # CREATE_NO_WINDOW
 
-                # Also hide via STARTUPINFO to reduce console flashing.
                 startupinfo = None
                 try:
                     startupinfo = subprocess.STARTUPINFO()
@@ -475,8 +466,9 @@ def open_nssm_edit() -> None:
             except Exception as exc:
                 raise ServiceError(f'Failed to open NSSM editor: {exc}') from exc
 
-        # Non-Windows fallback (shouldn't normally happen)
+        # Non-Windows fallback
         subprocess.Popen([str(nssm), 'edit', str(svc)], close_fds=True)
+
     except Exception as exc:
         raise ServiceError(f"Failed to open NSSM editor: {exc}") from exc
 

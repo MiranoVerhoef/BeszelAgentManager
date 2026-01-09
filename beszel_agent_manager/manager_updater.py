@@ -159,7 +159,6 @@ def fetch_latest_release(*, include_prereleases: bool = False) -> Optional[dict]
             "tag": tag,
             "body": body,
             "download_url": asset_url,
-            "html_url": data.get("html_url"),
             "published_at": data.get("published_at"),
             "prerelease": bool(data.get("prerelease")),
         }
@@ -200,7 +199,6 @@ def fetch_stable_releases(limit: int = 50, *, include_prereleases: bool = False)
                 "tag": tag,
                 "body": str(r.get("body") or ""),
                 "download_url": asset_url,
-                "html_url": r.get("html_url"),
                 "published_at": r.get("published_at"),
                 "prerelease": bool(r.get("prerelease")),
             }

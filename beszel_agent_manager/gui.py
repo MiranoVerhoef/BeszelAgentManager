@@ -38,6 +38,7 @@ from .agent_manager import (
     update_agent_only,
     check_hub_status,
     fetch_agent_stable_releases,
+    apply_service_env_only,
 )
 from .windows_service import (
     get_service_status,
@@ -54,7 +55,7 @@ from .scheduler import delete_update_task, delete_agent_log_rotate_task
 from .agent_logs import list_agent_log_files, rotate_agent_logs_and_rename
 from .manager_logs import list_manager_log_files, rotate_if_needed as rotate_manager_logs_if_needed
 from .support_bundle import create_support_bundle
-from .manager_updater import fetch_latest_release, fetch_stable_releases, is_update_available
+from .manager_updater import fetch_latest_release, is_update_available
 from .util import log, set_debug_logging, run
 from .autostart import (
     get_autostart_state,
@@ -268,6 +269,9 @@ class BeszelAgentManagerApp(tk.Tk):
         self._dns_fallback_original = ""
         self._dns_fallback_success_streak = 0
         self._dns_fallback_last_log = ""
+        self._dns_fallback_fail_streak = 0
+        self._dns_fallback_last_enabled = None  # type: bool | None
+        self._dns_fallback_last_target = ""
 
         # Build and load variables, then UI
         self._build_vars()
@@ -391,6 +395,18 @@ class BeszelAgentManagerApp(tk.Tk):
         self.var_hub_url_ip_fallback_enabled = tk.BooleanVar(
             value=bool(getattr(c, "hub_url_ip_fallback_enabled", False))
         )
+
+        # Hub URL IP fallback tuning
+        self.var_fallback_check_interval_s = tk.StringVar(
+            value=str(getattr(c, "hub_url_ip_fallback_check_interval_seconds", 15))
+        )
+        self.var_fallback_failover_after = tk.StringVar(
+            value=str(getattr(c, "hub_url_ip_fallback_failures_to_failover", 2))
+        )
+        self.var_fallback_restore_after = tk.StringVar(
+            value=str(getattr(c, "hub_url_ip_fallback_successes_to_restore", 2))
+        )
+
         # LISTEN is optional; when blank the agent uses its default (45876)
         self.var_listen = tk.StringVar(value=str(c.listen) if c.listen else "")
 
@@ -443,7 +459,7 @@ class BeszelAgentManagerApp(tk.Tk):
             value=enabled and not start_hidden_flag
         )
 
-        # Manager update preferences (UI-only; no service Apply required)
+        # Manager update preferences (required for _build_config)
         self.var_mgr_update_notify = tk.BooleanVar(
             value=bool(getattr(c, "manager_update_notify_enabled", True))
         )
@@ -453,7 +469,6 @@ class BeszelAgentManagerApp(tk.Tk):
         self.var_mgr_update_tray_badge = tk.BooleanVar(
             value=bool(getattr(c, "manager_update_tray_badge_enabled", True))
         )
-        # When enabled, manager update checks/dialogs include GitHub pre-releases (BETA)
         self.var_mgr_update_include_pre = tk.BooleanVar(
             value=bool(getattr(c, "manager_update_include_prereleases", False))
         )
@@ -595,10 +610,43 @@ class BeszelAgentManagerApp(tk.Tk):
             except Exception as exc:
                 log(f"Failed to update autostart from autosave: {exc}")
 
-            self.label_config_saved.config(text="Config saved")
-            self.after(2000, lambda: self.label_config_saved.config(text=""))
+            self._flash_saved_badge("Auto-saved")
         except Exception as exc:
             log(f"Autosave failed: {exc}")
+    def _flash_saved_badge(self, text: str, kind: str = "success") -> None:
+        """Show a prominent short-lived badge in the status bar.
+
+        kind: success | info | warn | error
+        """
+        try:
+            if not hasattr(self, "label_config_saved") or self.label_config_saved is None:
+                return
+
+            # Colors chosen to be readable on both light/dark themes.
+            palette = {
+                "success": ("#dcfce7", "#166534"),
+                "info": ("#dbeafe", "#1d4ed8"),
+                "warn": ("#fef9c3", "#854d0e"),
+                "error": ("#fee2e2", "#991b1b"),
+            }
+            bg, fg = palette.get(kind, palette["success"])
+
+            self.label_config_saved.configure(text=text, bg=bg, fg=fg)
+            self.label_config_saved.grid()
+            # Keep it visible a bit longer so it's hard to miss.
+            self.after(3500, lambda: self._hide_saved_badge())
+        except Exception:
+            pass
+
+    def _hide_saved_badge(self) -> None:
+        try:
+            if hasattr(self, "label_config_saved") and self.label_config_saved is not None:
+                self.label_config_saved.configure(text="", bg=self._base_bg)
+                self.label_config_saved.grid_remove()
+        except Exception:
+            pass
+
+
 
     # ------------------------------------------------------------------ UI construction
 
@@ -877,26 +925,6 @@ class BeszelAgentManagerApp(tk.Tk):
             row=0, column=2, sticky="w"
         )
 
-        mgr_beta_box = ttk.LabelFrame(
-            conn,
-            text="Manager BETA",
-            padding=10,
-            style="Group.TLabelframe",
-        )
-        mgr_beta_box.grid(row=8, column=0, columnspan=2, sticky="ew", pady=(12, 0))
-        mgr_beta_box.columnconfigure(0, weight=1)
-
-        chk_mgr_beta = ttk.Checkbutton(
-            mgr_beta_box,
-            text="Include manager BETA (pre-releases) in manager updates",
-            variable=self.var_mgr_update_include_pre,
-        )
-        chk_mgr_beta.grid(row=0, column=0, sticky="w")
-        add_tooltip(
-            chk_mgr_beta,
-            "When enabled, BeszelAgentManager will include GitHub pre-releases (BETA) for manager download checks and in the manager version picker.",
-        )
-
         # ------------------------------------------------------------------ Environment Tables tab
         env_tab = ttk.Frame(notebook, padding=10, style="Card.TFrame")
         env_tab.columnconfigure(1, weight=1)
@@ -1040,6 +1068,77 @@ class BeszelAgentManagerApp(tk.Tk):
         agent_log_tab.rowconfigure(4, weight=1)
         notebook.add(agent_log_tab, text="Agent Logging")
 
+        # ------------------------------------------------------------------ Extra tab
+        extra_tab = ttk.Frame(notebook, padding=8, style="Card.TFrame")
+        notebook.add(extra_tab, text="Extra")
+
+        extra_tab.columnconfigure(0, weight=1)
+
+        fallback_box = ttk.LabelFrame(
+            extra_tab,
+            text="Hub URL IP Fallback",
+            padding=10,
+            style="Group.TLabelframe",
+        )
+        fallback_box.grid(row=0, column=0, sticky="ew")
+        fallback_box.columnconfigure(1, weight=1)
+
+        ttk.Label(
+            fallback_box,
+            text="Tune how often the manager checks the hub and when it fails over / restores.",
+            style="Card.TLabel",
+        ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
+
+        ttk.Label(fallback_box, text="Check interval (seconds):", style="Card.TLabel").grid(row=1, column=0, sticky="w", pady=2)
+        sp_interval = ttk.Spinbox(
+            fallback_box,
+            from_=5,
+            to=3600,
+            increment=1,
+            textvariable=self.var_fallback_check_interval_s,
+            width=10,
+        )
+        sp_interval.grid(row=1, column=1, sticky="w", pady=2)
+        add_tooltip(sp_interval, "How often to test the primary hub. Minimum 5 seconds.")
+
+        ttk.Label(fallback_box, text="Fail over after (failures):", style="Card.TLabel").grid(row=2, column=0, sticky="w", pady=2)
+        sp_fail = ttk.Spinbox(
+            fallback_box,
+            from_=1,
+            to=10,
+            increment=1,
+            textvariable=self.var_fallback_failover_after,
+            width=10,
+        )
+        sp_fail.grid(row=2, column=1, sticky="w", pady=2)
+        add_tooltip(sp_fail, "Consecutive failed checks before switching to the fallback HUB_URL.")
+
+        ttk.Label(fallback_box, text="Restore after (successes):", style="Card.TLabel").grid(row=3, column=0, sticky="w", pady=2)
+        sp_ok = ttk.Spinbox(
+            fallback_box,
+            from_=1,
+            to=10,
+            increment=1,
+            textvariable=self.var_fallback_restore_after,
+            width=10,
+        )
+        sp_ok.grid(row=3, column=1, sticky="w", pady=2)
+        add_tooltip(sp_ok, "Consecutive successful checks before switching back to the primary HUB_URL.")
+
+        def _reset_fallback_defaults():
+            self.var_fallback_check_interval_s.set("15")
+            self.var_fallback_failover_after.set("2")
+            self.var_fallback_restore_after.set("2")
+            try:
+                self._autosave_config()
+            except Exception:
+                pass
+
+        btn_reset = ttk.Button(fallback_box, text="Reset to defaults", command=_reset_fallback_defaults)
+        btn_reset.grid(row=4, column=0, sticky="w", pady=(10, 0))
+        add_tooltip(btn_reset, "Reset fallback tuning to the recommended defaults (15s / 2 failures / 2 successes).")
+
+
         ttk.Label(
             agent_log_tab,
             text=f"Agent log folder: {AGENT_LOG_DIR}",
@@ -1118,35 +1217,42 @@ class BeszelAgentManagerApp(tk.Tk):
             bottom.columnconfigure(i, weight=0)
 
         status_frame = ttk.Frame(outer, style="App.TFrame")
-        status_frame.grid(row=3, column=0, sticky="ew")
+        status_frame.grid(row=3, column=0, sticky="ew", pady=(4, 0))
         status_frame.columnconfigure(0, weight=1)
         status_frame.columnconfigure(1, weight=0)
-        status_frame.columnconfigure(2, weight=0)
 
-        self.label_app_version = ttk.Label(
-            status_frame,
+        # Compact status bar (single row)
+        left = ttk.Frame(status_frame, style="App.TFrame")
+        left.grid(row=0, column=0, sticky="w")
+        right = ttk.Frame(status_frame, style="App.TFrame")
+        right.grid(row=0, column=1, sticky="e")
+
+        # App version (clickable)
+
+        # App/version link (use tk.Label to avoid native ttk white background boxes)
+        self.label_app_version = tk.Label(
+            left,
             text=f"{PROJECT_NAME} v{APP_VERSION}",
-            style="Link.TLabel",
+            bg=self._base_bg,
+            fg="#2563eb",
+            font=("Segoe UI", 9, "underline"),
+            borderwidth=0,
+            highlightthickness=0,
         )
-        self.label_app_version.grid(row=0, column=0, sticky="w")
+        self.label_app_version.grid(row=0, column=1, sticky="w", padx=(0, 10))
         self.label_app_version.bind("<Button-1>", self._on_version_clicked)
-        self.label_app_version.bind(
-            "<Enter>", lambda e: self.label_app_version.configure(cursor="hand2")
-        )
-        self.label_app_version.bind(
-            "<Leave>", lambda e: self.label_app_version.configure(cursor="")
-        )
+        self.label_app_version.bind("<Enter>", lambda e: self.label_app_version.configure(cursor="hand2"))
+        self.label_app_version.bind("<Leave>", lambda e: self.label_app_version.configure(cursor=""))
 
-        self.label_status = ttk.Label(status_frame, text="Service status: Unknown")
-        self.label_status.grid(row=1, column=0, sticky="w")
+        # Inline status items
+        self.label_status = tk.Label(left, text="Service: Unknown", bg=self._base_bg, fg="#111827", font=("Segoe UI", 9), borderwidth=0, highlightthickness=0)
+        self.label_status.grid(row=0, column=2, sticky="w", padx=(0, 10))
 
-        self.label_version = ttk.Label(
-            status_frame, text="Agent version: Not installed"
-        )
-        self.label_version.grid(row=2, column=0, sticky="w")
+        self.label_version = tk.Label(left, text="Agent: Not installed", bg=self._base_bg, fg="#111827", font=("Segoe UI", 9), borderwidth=0, highlightthickness=0)
+        self.label_version.grid(row=0, column=3, sticky="w", padx=(0, 10))
 
-        hub_row = ttk.Frame(status_frame, style="App.TFrame")
-        hub_row.grid(row=3, column=0, sticky="w")
+        hub_row = ttk.Frame(left, style="App.TFrame")
+        hub_row.grid(row=0, column=4, sticky="w")
 
         self.hub_status_canvas = tk.Canvas(
             hub_row,
@@ -1161,48 +1267,43 @@ class BeszelAgentManagerApp(tk.Tk):
             1, 1, 9, 9, fill="#9ca3af", outline="#9ca3af"
         )
 
-        self.label_hub_status = ttk.Label(
-            hub_row,
-            text="Hub: Unknown",
-            style="Link.TLabel",
-        )
+        self.label_hub_status = tk.Label(hub_row, text="Hub: Unknown", bg=self._base_bg, fg="#2563eb", font=("Segoe UI", 9, "underline"), borderwidth=0, highlightthickness=0)
         self.label_hub_status.grid(row=0, column=1, sticky="w")
-        self.label_hub_status.bind("<Button-1>", self._on_hub_clicked)
-        self.label_hub_status.bind(
-            "<Enter>", lambda e: self.label_hub_status.configure(cursor="hand2")
-        )
-        self.label_hub_status.bind(
-            "<Leave>", lambda e: self.label_hub_status.configure(cursor="")
-        )
+        self.label_hub_status.bind("<Button-1>", self._on_hub_status_clicked)
+        self.label_hub_status.bind("<Enter>", lambda e: self.label_hub_status.configure(cursor="hand2"))
+        self.label_hub_status.bind("<Leave>", lambda e: self.label_hub_status.configure(cursor=""))
 
-        self.label_config_saved = ttk.Label(
-            status_frame, text="", foreground="green"
+        # Saved/Applied badge (more pronounced than the old tiny label)
+        self.label_config_saved = tk.Label(
+            right,
+            text="",
+            bg=self._base_bg,
+            fg="#166534",
+            padx=8,
+            pady=2,
+            borderwidth=0,
+            highlightthickness=0,
         )
-        self.label_config_saved.grid(row=4, column=0, sticky="w")
+        self.label_config_saved.grid(row=0, column=0, padx=(0, 10))
+        self.label_config_saved.grid_remove()
 
-        self.progress = ttk.Progressbar(
-            status_frame, mode="indeterminate", length=180
-        )
-        self.progress.grid(row=0, column=1, rowspan=5, sticky="e")
+        self.progress = ttk.Progressbar(right, mode="indeterminate", length=160)
+        self.progress.grid(row=0, column=0, sticky="e", padx=(0, 10))
         self.progress.grid_remove()
 
-        # Bottom-right hyperlinks (in the status bar)
-        link_about = ttk.Label(status_frame, text="About", style="Link.TLabel")
-        link_about.grid(row=0, column=1, padx=(4, 6), sticky="e")
-        link_about.bind(
-            "<Button-1>",
-            lambda e: self._open_url("https://github.com/MiranoVerhoef/BeszelAgentManager"),
-        )
+        # Bottom-right hyperlinks
+        link_about = tk.Label(right, text="About", bg=self._base_bg, fg="#2563eb", font=("Segoe UI", 9, "underline"), borderwidth=0, highlightthickness=0)
+        link_about.grid(row=0, column=1, padx=(0, 8), sticky="e")
+        link_about.bind("<Button-1>", lambda e: self._open_url("https://github.com/MiranoVerhoef/BeszelAgentManager"))
         link_about.bind("<Enter>", lambda e: link_about.configure(cursor="hand2"))
         link_about.bind("<Leave>", lambda e: link_about.configure(cursor=""))
 
-        link_about_beszel = ttk.Label(status_frame, text="About Beszel", style="Link.TLabel")
-        link_about_beszel.grid(row=0, column=2, padx=(0, 4), sticky="e")
+        link_about_beszel = tk.Label(right, text="About Beszel", bg=self._base_bg, fg="#2563eb", font=("Segoe UI", 9, "underline"), borderwidth=0, highlightthickness=0)
+        link_about_beszel.grid(row=0, column=2, sticky="e")
         link_about_beszel.bind("<Button-1>", lambda e: self._open_url("https://beszel.dev"))
         link_about_beszel.bind("<Enter>", lambda e: link_about_beszel.configure(cursor="hand2"))
         link_about_beszel.bind("<Leave>", lambda e: link_about_beszel.configure(cursor=""))
-
-        # Bottom action buttons (uniform width)
+# Bottom action buttons (uniform width)
         BTN_W = 24
 
         btn_install = ttk.Button(bottom, text="Install agent", width=BTN_W, command=self._on_install)
@@ -1679,6 +1780,9 @@ class BeszelAgentManagerApp(tk.Tk):
             hub_url_ip_fallback_enabled=bool(
                 getattr(self, "var_hub_url_ip_fallback_enabled", tk.BooleanVar(value=False)).get()
             ),
+            hub_url_ip_fallback_check_interval_seconds=self._safe_int(self.var_fallback_check_interval_s.get(), default=15, min_v=5, max_v=3600),
+            hub_url_ip_fallback_failures_to_failover=self._safe_int(self.var_fallback_failover_after.get(), default=2, min_v=1, max_v=10),
+            hub_url_ip_fallback_successes_to_restore=self._safe_int(self.var_fallback_restore_after.get(), default=2, min_v=1, max_v=10),
             listen=listen,
             data_dir=self.var_data_dir.get().strip(),
             docker_host=self.var_docker_host.get().strip(),
@@ -1712,7 +1816,7 @@ class BeszelAgentManagerApp(tk.Tk):
             first_run_done=c.first_run_done,
 
             manager_update_notify_enabled=self.var_mgr_update_notify.get(),
-            manager_update_check_interval_hours=int(self.var_mgr_update_interval_h.get() or 6),
+            manager_update_check_interval_hours=self._safe_int(self.var_mgr_update_interval_h.get(), default=6, min_v=1, max_v=168),
             manager_update_skip_version=getattr(c, "manager_update_skip_version", ""),
             manager_update_tray_badge_enabled=self.var_mgr_update_tray_badge.get(),
             manager_update_include_prereleases=self.var_mgr_update_include_pre.get(),
@@ -1788,6 +1892,23 @@ class BeszelAgentManagerApp(tk.Tk):
             log(f"Failed to remove lock file before admin relaunch: {exc}")
 
         sys.exit(0)
+
+
+    def _safe_int(self, raw: str, default: int = 0, min_v: int | None = None, max_v: int | None = None, **kwargs) -> int:
+        # Backwards/forwards compatibility for keyword names
+        if min_v is None and 'min_v' in kwargs:
+            min_v = kwargs.get('min_v')
+        if max_v is None and 'max_v' in kwargs:
+            max_v = kwargs.get('max_v')
+        try:
+            v = int(str(raw).strip())
+        except Exception:
+            return default
+        if min_v is not None and v < min_v:
+            return default
+        if max_v is not None and v > max_v:
+            return default
+        return v
 
     # ------------------------------------------------------------------ Task runner
 
@@ -2046,8 +2167,16 @@ class BeszelAgentManagerApp(tk.Tk):
         self._on_agent_versions()
 
     def _on_manager_versions(self):
-        """Open a version picker for BeszelAgentManager (manual downloads only)."""
-        self._open_manager_version_dialog()
+        """Open the GitHub releases page for manual manager downloads."""
+        try:
+            webbrowser.open("https://github.com/MiranoVerhoef/BeszelAgentManager/releases")
+        except Exception:
+            pass
+        messagebox.showinfo(
+            PROJECT_NAME,
+            "BeszelAgentManager updates are downloaded manually.\n\n"
+            "A browser window will open with the releases page.",
+        )
 
     def _on_manage_manager_version(self):
         """Single entry point for managing the manager version (manual downloads only)."""
@@ -2215,188 +2344,6 @@ class BeszelAgentManagerApp(tk.Tk):
         cbo.bind("<<ComboboxSelected>>", on_pick)
         load_releases()
 
-
-    def _open_manager_version_dialog(self) -> None:
-        """Manager version picker dialog (manual downloads only).
-
-        Provides:
-          - Optional inclusion of GitHub pre-releases (BETA)
-          - Buttons: Go to release page / Direct Download
-        """
-
-        win = tk.Toplevel(self)
-        win.title("Manage Manager Version")
-        win.geometry("660x450")
-        win.transient(self)
-        win.grab_set()
-
-        frm = ttk.Frame(win, padding=12)
-        frm.pack(fill="both", expand=True)
-        frm.columnconfigure(1, weight=1)
-        frm.rowconfigure(4, weight=1)
-
-        ttk.Label(frm, text=f"Installed: {APP_VERSION}").grid(row=0, column=0, columnspan=2, sticky="w")
-
-        # Keep the dialog toggle in sync with the global preference (bottom bar).
-        var_show_beta = tk.BooleanVar(value=bool(self.var_mgr_update_include_pre.get()))
-
-        chk = ttk.Checkbutton(frm, text="Show BETA (pre-releases)", variable=var_show_beta)
-        chk.grid(row=1, column=0, columnspan=2, sticky="w", pady=(8, 0))
-        add_tooltip(
-            chk,
-            "When enabled, the version list will also include GitHub pre-releases (BETA).",
-        )
-
-        ttk.Label(frm, text="Select version:").grid(row=2, column=0, sticky="w", pady=(10, 4))
-        var_sel = tk.StringVar()
-        cbo = ttk.Combobox(frm, textvariable=var_sel, state="readonly")
-        cbo.grid(row=2, column=1, sticky="ew", pady=(10, 4))
-
-        ttk.Separator(frm, orient="horizontal").grid(row=3, column=0, columnspan=2, sticky="ew", pady=8)
-
-        txt_notes = tk.Text(frm, wrap="word", height=12, state="disabled", font=("Consolas", 9))
-        txt_notes.grid(row=4, column=0, columnspan=2, sticky="nsew")
-
-        progress = ttk.Progressbar(frm, mode="indeterminate")
-        progress.grid(row=5, column=0, columnspan=2, sticky="ew", pady=(8, 0))
-        progress.grid_remove()
-
-        btns = ttk.Frame(frm)
-        btns.grid(row=6, column=0, columnspan=2, sticky="e", pady=(10, 0))
-
-        mapping: dict[str, dict] = {}
-
-        def set_text(content: str) -> None:
-            txt_notes.configure(state="normal")
-            txt_notes.delete("1.0", tk.END)
-            txt_notes.insert(tk.END, content)
-            txt_notes.configure(state="disabled")
-
-        def on_pick(_evt=None):
-            rel = mapping.get(var_sel.get())
-            if not rel:
-                set_text("")
-                return
-            body = str(rel.get("body") or "")
-            if not body:
-                body = "(No release notes.)"
-            lines = [ln.rstrip() for ln in body.splitlines()]
-            while lines and not lines[0]:
-                lines.pop(0)
-            while lines and not lines[-1]:
-                lines.pop()
-            if len(lines) > 40:
-                lines = lines[:40] + ["...", "(truncated)"]
-            set_text("\n".join(lines))
-
-        def load_releases():
-            # Persist the preference so the main UI + next checks use the same setting.
-            try:
-                self.var_mgr_update_include_pre.set(bool(var_show_beta.get()))
-            except Exception:
-                pass
-
-            progress.grid()
-            progress.start(10)
-
-            state = {"error": None, "releases": None}
-
-            def worker():
-                try:
-                    state["releases"] = fetch_stable_releases(
-                        limit=50,
-                        include_prereleases=bool(var_show_beta.get()),
-                    )
-                except Exception as exc:
-                    state["error"] = exc
-                    log(f"Failed to fetch manager versions: {exc}\n{traceback.format_exc()}")
-
-                def done():
-                    try:
-                        progress.stop()
-                        progress.grid_remove()
-                    except Exception:
-                        pass
-
-                    if state["error"]:
-                        messagebox.showerror(PROJECT_NAME, f"Failed to fetch versions:\n{state['error']}")
-                        return
-
-                    rels = state["releases"] or []
-                    mapping.clear()
-                    values: list[str] = []
-
-                    for r in rels:
-                        v = str(r.get("version") or "")
-                        tag = str(r.get("tag") or "")
-                        if not v:
-                            continue
-                        label = f"{v} ({tag})" if tag and tag != v else v
-                        if bool(r.get("prerelease")):
-                            label += " [BETA]"
-                        values.append(label)
-                        mapping[label] = r
-
-                    cbo["values"] = values
-                    if not values:
-                        var_sel.set("")
-                        set_text("(No versions found.)")
-                        return
-
-                    # Prefer installed version if present in list, else first (newest)
-                    pick = None
-                    for label, r in mapping.items():
-                        if str(r.get("version") or "") == APP_VERSION:
-                            pick = label
-                            break
-                    if not pick:
-                        pick = values[0]
-                    var_sel.set(pick)
-                    on_pick()
-
-                self.after(0, done)
-
-            threading.Thread(target=worker, daemon=True).start()
-
-        def _open_url(url: str) -> None:
-            if not url:
-                return
-            try:
-                webbrowser.open(url)
-            except Exception:
-                pass
-
-        def go_release():
-            rel = mapping.get(var_sel.get())
-            if not rel:
-                messagebox.showinfo(PROJECT_NAME, "Select a version first.")
-                return
-            url = str(rel.get("html_url") or "").strip()
-            if not url:
-                # Fallback: repository releases page
-                url = "https://github.com/MiranoVerhoef/BeszelAgentManager/releases"
-            _open_url(url)
-
-        def direct_download():
-            rel = mapping.get(var_sel.get())
-            if not rel:
-                messagebox.showinfo(PROJECT_NAME, "Select a version first.")
-                return
-            url = str(rel.get("download_url") or "").strip()
-            if not url:
-                # If the expected asset is missing, fall back to release page.
-                url = str(rel.get("html_url") or "").strip() or "https://github.com/MiranoVerhoef/BeszelAgentManager/releases"
-            _open_url(url)
-
-        ttk.Button(btns, text="Refresh", command=load_releases).grid(row=0, column=0, padx=(0, 8))
-        ttk.Button(btns, text="Go to release", command=go_release).grid(row=0, column=1, padx=(0, 8))
-        ttk.Button(btns, text="Direct Download", command=direct_download).grid(row=0, column=2, padx=(0, 8))
-        ttk.Button(btns, text="Close", command=win.destroy).grid(row=0, column=3)
-
-        cbo.bind("<<ComboboxSelected>>", on_pick)
-        chk.configure(command=load_releases)
-        load_releases()
-
     def _install_selected_agent_release(self, release: dict, force: bool) -> None:
         """Install a specific agent release (version picker dialog)."""
         version = str(release.get("version") or "").strip()
@@ -2450,7 +2397,7 @@ class BeszelAgentManagerApp(tk.Tk):
 
         def worker_check():
             try:
-                state["release"] = fetch_latest_release(include_prereleases=self.var_mgr_update_include_pre.get())
+                state["release"] = fetch_latest_release(include_prereleases=False)
             except Exception as exc:
                 state["error"] = exc
                 log(f"Manager download check failed: {exc}\n{traceback.format_exc()}")
@@ -2532,8 +2479,7 @@ class BeszelAgentManagerApp(tk.Tk):
                 if prev_fp and cur_fp and prev_fp == cur_fp:
                     self.label_status.config(text="No changes to apply")
                     try:
-                        self.label_config_saved.config(text="No changes")
-                        self.after(2500, lambda: self.label_config_saved.config(text=""))
+                        self._flash_saved_badge("No changes", kind="info")
                     except Exception:
                         pass
                     return
@@ -2550,7 +2496,8 @@ class BeszelAgentManagerApp(tk.Tk):
         )
 
         def task():
-            apply_configuration_only(cfg)
+            from .agent_manager import apply_service_env_only as _apply_service_env_only
+            _apply_service_env_only(cfg)
             try:
                 from datetime import datetime
 
@@ -2565,8 +2512,7 @@ class BeszelAgentManagerApp(tk.Tk):
         def on_success():
             try:
                 self.label_status.config(text="Configuration applied")
-                self.label_config_saved.config(text="Applied")
-                self.after(2500, lambda: self.label_config_saved.config(text=""))
+                self._flash_saved_badge("Applied", kind="info")
             except Exception:
                 pass
 
@@ -2622,6 +2568,15 @@ class BeszelAgentManagerApp(tk.Tk):
                 self._dns_fallback_original = ""
                 self._apply_hub_url_override_async(primary, reason="dns-fallback-disabled")
             log("Hub URL IP Fallback disabled")
+            try:
+                self._flash_saved_badge("Saved", kind="success")
+            except Exception:
+                pass
+            try:
+                messagebox.showinfo(PROJECT_NAME, "Hub URL IP Fallback disabled.")
+            except Exception:
+                pass
+
             return
 
         # ------------------------------------------------------------------ Enable
@@ -2644,6 +2599,15 @@ class BeszelAgentManagerApp(tk.Tk):
         self.config_obj = cfg
         self._update_hub_fallback_toggle_ui()
         log("Hub URL IP Fallback enabled")
+        try:
+            self._flash_saved_badge("Saved", kind="success")
+        except Exception:
+            pass
+        try:
+            messagebox.showinfo(PROJECT_NAME, "Hub URL IP Fallback enabled.")
+        except Exception:
+            pass
+
 
     def _update_listen_toggle_button(self) -> None:
         """Update the Enable/Disable button based on whether LISTEN is set."""
@@ -2684,7 +2648,8 @@ class BeszelAgentManagerApp(tk.Tk):
             )
 
             def task_disable():
-                apply_configuration_only(cfg)
+                from .agent_manager import apply_service_env_only as _apply_service_env_only
+                _apply_service_env_only(cfg)
                 # Rule name is fixed; removing it is safest.
                 remove_firewall_rule()
                 cfg.save()
@@ -2711,7 +2676,8 @@ class BeszelAgentManagerApp(tk.Tk):
         )
 
         def task_enable():
-            apply_configuration_only(cfg)
+            from .agent_manager import apply_service_env_only as _apply_service_env_only
+            _apply_service_env_only(cfg)
             ensure_firewall_rule(int(cfg.listen))
             cfg.save()
             self.config_obj = cfg
@@ -2957,6 +2923,14 @@ class BeszelAgentManagerApp(tk.Tk):
             url = "https://" + url
         self._open_url(url)
 
+
+    def _on_hub_status_clicked(self, _event=None):
+        """Click handler for the Hub status link in the status bar."""
+        try:
+            self._open_hub_url()
+        except Exception as exc:
+            log(f"Failed to open hub URL: {exc}")
+
     def _on_hub_clicked(self, _event=None):
         self._open_hub_url()
 
@@ -3005,6 +2979,29 @@ class BeszelAgentManagerApp(tk.Tk):
         except Exception:
             return ""
 
+    
+    def _safe_int(self, s: str, default: int, min_v: int, max_v: int) -> int:
+        try:
+            v = int(str(s).strip())
+        except Exception:
+            v = default
+        if v < min_v:
+            v = min_v
+        if v > max_v:
+            v = max_v
+        return v
+
+    def _get_fallback_check_interval_ms(self) -> int:
+        # Prefer UI var, fallback to config default.
+        try:
+            s = self.var_fallback_check_interval_s.get()
+        except Exception:
+            s = ""
+        if not str(s).strip():
+            s = str(getattr(self.config_obj, "hub_url_ip_fallback_check_interval_seconds", 15))
+        interval_s = self._safe_int(s, default=15, min_v=5, max_v=3600)
+        return interval_s * 1000
+
     def _write_dns_fallback_state(self, state: dict) -> None:
         try:
             from .constants import DATA_DIR
@@ -3018,7 +3015,11 @@ class BeszelAgentManagerApp(tk.Tk):
             pass
 
     def _start_hub_dns_fallback_loop(self) -> None:
-        """If HUB URL DNS resolution fails, switch service HUB_URL to fallback and switch back on recovery."""
+        """Monitor primary HUB_URL reachability and switch service HUB_URL to fallback when needed.
+
+        This is *not* only DNS-based anymore: we treat the hub as failed when it cannot be reached
+        (TCP connect) even if DNS still resolves (e.g. proxy down).
+        """
 
         def tick():
             try:
@@ -3026,23 +3027,22 @@ class BeszelAgentManagerApp(tk.Tk):
             except Exception:
                 pass
             try:
-                # Run once per minute
-                self.after(60 * 1000, tick)
+                # Check frequently so failover feels responsive.
+                self.after(self._get_fallback_check_interval_ms(), tick)
             except Exception:
                 pass
 
         # small delay so config vars are fully ready
         try:
-            self.after(10 * 1000, tick)
+            self.after(5 * 1000, tick)
         except Exception:
             pass
 
     def _dns_fallback_check_once(self) -> None:
         import socket
-        import datetime
+        from urllib.parse import urlparse
 
         # Feature enable flag
-        enabled = False
         try:
             enabled = bool(getattr(self, "var_hub_url_ip_fallback_enabled", None).get())
         except Exception:
@@ -3056,69 +3056,121 @@ class BeszelAgentManagerApp(tk.Tk):
         if not fallback and self.config_obj:
             fallback = (getattr(self.config_obj, "hub_url_ip_fallback", "") or "").strip()
 
-        host = self._extract_host_from_url(primary)
-        has_fallback = bool(fallback)
-
-        state = {
-            "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
-            "enabled": bool(enabled),
-            "primary": primary,
-            "fallback": fallback if has_fallback else "",
-            "active": self._dns_fallback_active,
-            "original": self._dns_fallback_original,
-            "success_streak": int(self._dns_fallback_success_streak),
-        }
-        self._write_dns_fallback_state(state)
-
-        # If disabled, ensure we are not left in fallback mode.
-        if not enabled:
-            if self._dns_fallback_active:
-                self._dns_fallback_active = False
+        # Detect enable/disable toggles and react immediately.
+        if self._dns_fallback_last_enabled is None or bool(enabled) != bool(self._dns_fallback_last_enabled):
+            self._dns_fallback_last_enabled = bool(enabled)
+            if enabled:
+                log("Hub URL IP Fallback enabled")
+                self._dns_fallback_fail_streak = 0
                 self._dns_fallback_success_streak = 0
-                self._dns_fallback_original = ""
-                if host:
-                    log("Hub URL IP Fallback disabled. Switching Beszel Agent HUB_URL back to primary.")
-                self._apply_hub_url_override_async(primary, reason="dns-fallback-disabled")
+            else:
+                log("Hub URL IP Fallback disabled")
+                # Any active override should be reverted immediately.
+                if self._dns_fallback_active:
+                    self._dns_fallback_active = False
+                    self._dns_fallback_fail_streak = 0
+                    self._dns_fallback_success_streak = 0
+                    self._apply_hub_url_override_async(primary, reason="fallback_disabled")
+                self._write_dns_fallback_state(False, reason="disabled")
+                return
+
+        # Nothing to do if feature is off or fallback is empty.
+        if not enabled or not fallback or not primary:
             return
 
-        if not host or not has_fallback:
-            return
+        # Normalize URL for parsing.
+        test_url = primary
+        if not test_url.startswith("http://") and not test_url.startswith("https://"):
+            test_url = "https://" + test_url
 
-        # Check DNS resolution (not HTTP reachability).
+        p = urlparse(test_url)
+        host = p.hostname or ""
+        port = p.port or (443 if p.scheme == "https" else 80)
+
+        # 1) DNS check
         dns_ok = True
         try:
-            socket.getaddrinfo(host, None)
+            socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
         except Exception:
             dns_ok = False
 
-        if not self._dns_fallback_active:
-            if not dns_ok:
-                msg = f"Hub DNS resolve failed for {host}. Switching Beszel Agent HUB_URL to fallback."
-                if msg != self._dns_fallback_last_log:
-                    log(msg)
-                    self._dns_fallback_last_log = msg
-                self._dns_fallback_original = primary
-                self._dns_fallback_success_streak = 0
-                self._dns_fallback_active = True
-                self._apply_hub_url_override_async(fallback, reason="dns-fallback")
-            return
-
-        # Active fallback: look for recovery (5 consecutive good resolves, once per minute)
+        # 2) Reachability check (TCP connect)
+        reachable_ok = False
         if dns_ok:
+            try:
+                s = socket.create_connection((host, port), timeout=3.0)
+                try:
+                    s.close()
+                except Exception:
+                    pass
+                reachable_ok = True
+            except Exception:
+                reachable_ok = False
+
+        # 3) HTTP probe check (HEAD to primary HUB URL)
+        http_ok = False
+        http_code = None
+        if dns_ok and reachable_ok:
+            try:
+                import urllib.request
+                import ssl
+
+                req = urllib.request.Request(test_url, method="HEAD")
+                ctx = ssl.create_default_context()
+                with urllib.request.urlopen(req, timeout=4, context=ctx) as resp:
+                    try:
+                        http_code = int(getattr(resp, "status", 200))
+                    except Exception:
+                        http_code = 200
+                # Consider reachable if the endpoint responds sensibly.
+                # Treat 2xx/3xx as OK; also accept 401/403 (protected endpoints).
+                http_ok = (200 <= (http_code or 0) < 400) or (http_code in (401, 403))
+            except Exception as exc:
+                # urllib raises HTTPError for non-2xx responses; grab status code if present.
+                try:
+                    http_code = int(getattr(exc, "code", None))
+                except Exception:
+                    http_code = None
+                # If the server responds with 404/5xx/etc, treat as unhealthy.
+                http_ok = False
+
+        ok = bool(dns_ok and reachable_ok and http_ok)
+        FAIL_THRESHOLD = self._safe_int(getattr(self, 'var_fallback_failover_after', None).get() if getattr(self, 'var_fallback_failover_after', None) else str(getattr(self.config_obj, 'hub_url_ip_fallback_failures_to_failover', 2)), default=2, min_v=1, max_v=10)
+        SUCCESS_THRESHOLD = self._safe_int(getattr(self, 'var_fallback_restore_after', None).get() if getattr(self, 'var_fallback_restore_after', None) else str(getattr(self.config_obj, 'hub_url_ip_fallback_successes_to_restore', 2)), default=2, min_v=1, max_v=10)
+
+        if ok:
+            self._dns_fallback_fail_streak = 0
             self._dns_fallback_success_streak += 1
-            if self._dns_fallback_success_streak in (1, 5):
-                log(
-                    f"Hub DNS resolve recovered for {host} ({self._dns_fallback_success_streak}/5)."
-                )
-            if self._dns_fallback_success_streak >= 5:
-                original = self._dns_fallback_original or primary
-                log("Hub DNS is stable again. Switching Beszel Agent HUB_URL back to primary.")
+
+            if self._dns_fallback_active and self._dns_fallback_success_streak >= SUCCESS_THRESHOLD:
                 self._dns_fallback_active = False
                 self._dns_fallback_success_streak = 0
-                self._apply_hub_url_override_async(original, reason="dns-recover")
-        else:
-            # still broken
-            self._dns_fallback_success_streak = 0
+                log("DNS fallback: primary hub recovered; switching back to primary HUB_URL")
+                self._apply_hub_url_override_async(primary, reason="primary_recovered")
+                self._write_dns_fallback_state(False, reason="primary_recovered")
+            return
+
+        self._dns_fallback_success_streak = 0
+        self._dns_fallback_fail_streak += 1
+
+        if self._dns_fallback_fail_streak in (1, FAIL_THRESHOLD):
+            if not dns_ok:
+                log(f"DNS fallback: DNS resolve failed for hub host '{host}' ({self._dns_fallback_fail_streak}/{FAIL_THRESHOLD})")
+            elif not reachable_ok:
+                log(f"DNS fallback: hub unreachable at {host}:{port} ({self._dns_fallback_fail_streak}/{FAIL_THRESHOLD})")
+            else:
+                # TCP reachable but HTTP probe failed (often proxy up but hub down / wrong route)
+                if http_code is not None:
+                    log(f"DNS fallback: hub HTTP probe failed with {http_code} at {host}:{port} ({self._dns_fallback_fail_streak}/{FAIL_THRESHOLD})")
+                else:
+                    log(f"DNS fallback: hub HTTP probe failed at {host}:{port} ({self._dns_fallback_fail_streak}/{FAIL_THRESHOLD})")
+
+        if (not self._dns_fallback_active) and self._dns_fallback_fail_streak >= FAIL_THRESHOLD:
+            self._dns_fallback_active = True
+            self._dns_fallback_fail_streak = 0
+            log("DNS fallback: switching service HUB_URL to fallback (primary unreachable)")
+            self._apply_hub_url_override_async(fallback, reason="primary_unreachable")
+            self._write_dns_fallback_state(True, reason="primary_unreachable")
 
     def _apply_hub_url_override_async(self, new_hub_url: str, reason: str = "") -> None:
         """Apply service HUB_URL change in the background (no UI blocking)."""
@@ -3126,7 +3178,7 @@ class BeszelAgentManagerApp(tk.Tk):
         def worker():
             try:
                 from .bootstrap import is_admin
-                from .agent_manager import apply_configuration_only
+                from .agent_manager import apply_service_env_only
                 from .config import AgentConfig
 
                 if not is_admin():
@@ -3136,8 +3188,10 @@ class BeszelAgentManagerApp(tk.Tk):
                 cfg = AgentConfig.load()
                 cfg.hub_url = (new_hub_url or "").strip()
                 # Do not persist this override to config; it is service-only.
-                log(f"DNS fallback: applying HUB_URL override ({reason}).")
-                apply_configuration_only(cfg)
+                log(f"DNS fallback: applying HUB_URL override to: {cfg.hub_url} (reason={reason})")
+                from .agent_manager import apply_service_env_only as _apply_service_env_only
+                _apply_service_env_only(cfg)
+                log(f"DNS fallback: HUB_URL override applied (reason={reason})")
             except Exception as exc:
                 log(f"DNS fallback: failed to apply HUB_URL override: {exc}")
 
@@ -3229,9 +3283,9 @@ class BeszelAgentManagerApp(tk.Tk):
 
     def _update_status(self):
         status = get_service_status()
-        self.label_status.config(text=f"Service status: {status}")
+        self.label_status.config(text=f"Service: {status}")
         version = get_agent_version()
-        self.label_version.config(text=f"Agent version: {version}")
+        self.label_version.config(text=f"Agent: {version}")
 
         hub = check_hub_status(
             self.var_hub_url.get().strip()

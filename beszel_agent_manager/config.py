@@ -14,6 +14,12 @@ class AgentConfig:
     hub_url_ip_fallback: str = ""
     # Enable/disable automatic switching to hub_url_ip_fallback when DNS fails.
     hub_url_ip_fallback_enabled: bool = False
+    # How often (seconds) the manager checks primary hub reachability for failover.
+    hub_url_ip_fallback_check_interval_seconds: int = 15
+    # Consecutive failures needed before switching to fallback.
+    hub_url_ip_fallback_failures_to_failover: int = 2
+    # Consecutive successes needed before switching back to primary.
+    hub_url_ip_fallback_successes_to_restore: int = 2
     listen: int | None = None
 
     data_dir: str = ""
