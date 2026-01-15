@@ -503,9 +503,19 @@ def _build_env_from_config(cfg: AgentConfig, *, include_process_env: bool = Fals
     set_if(cfg.system_name, "SYSTEM_NAME")
     set_if(cfg.skip_gpu, "SKIP_GPU")
 
+    # v0.18.0+ envs
+    nvml = getattr(cfg, "nvml", None)
+    smart_interval = getattr(cfg, "smart_interval", None)
+    set_if(nvml, "NVML")
+    set_if(smart_interval, "SMART_INTERVAL")
+
     # v0.17.0+ envs
+    nvml = getattr(cfg, "nvml", None)
+    smart_interval = getattr(cfg, "smart_interval", None)
     disk_usage_cache = getattr(cfg, "disk_usage_cache", None)
     skip_systemd = getattr(cfg, "skip_systemd", None)
+    set_if(nvml, "NVML")
+    set_if(smart_interval, "SMART_INTERVAL")
     set_if(disk_usage_cache, "DISK_USAGE_CACHE")
     set_if(skip_systemd, "SKIP_SYSTEMD")
 
@@ -577,21 +587,6 @@ def install_or_update_agent_and_service(cfg: AgentConfig) -> None:
         log("Periodic restart disabled, removing restart task if present")
         delete_periodic_restart_task()
 
-
-
-def apply_service_env_only(cfg: AgentConfig) -> None:
-    """Update only the Windows service environment for the agent and restart it.
-
-    This is intended for fast operations like HUB_URL fallback switching.
-    It does NOT touch scheduled tasks, firewall rules, or any other manager-side settings.
-    """
-    exe_path = _agent_exe_path()
-    if not exe_path.exists():
-        raise RuntimeError("Agent is not installed yet.")
-
-    env = _build_env_from_config(cfg, include_process_env=False)
-    log("DNS fallback: updating Windows service environment (env-only)")
-    create_or_update_service(env)
 
 def apply_configuration_only(cfg: AgentConfig) -> None:
     """

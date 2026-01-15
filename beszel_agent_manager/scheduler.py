@@ -11,8 +11,12 @@ from .constants import (
     AGENT_LOG_ROTATE_TASK_NAME,
     MANAGER_EXE_PATH,
     AUTO_RESTART_TASK_NAME,
+
 )
 from .util import log
+
+# Internal: avoid spamming logs when task is already absent
+_restart_task_missing_logged = False
 
 if os.name == "nt":
     CREATE_NO_WINDOW = subprocess.CREATE_NO_WINDOW
@@ -322,6 +326,7 @@ def ensure_periodic_restart_task(hours_interval: int) -> None:
 
 
 def delete_periodic_restart_task() -> None:
+    global _restart_task_missing_logged
     cmd = ["schtasks", "/Delete", "/TN", AUTO_RESTART_TASK_NAME, "/F"]
     kwargs = {"check": False, "capture_output": True, "text": True}
     if CREATE_NO_WINDOW:
@@ -330,10 +335,28 @@ def delete_periodic_restart_task() -> None:
     if cp.returncode == 0:
         log(f"Deleted scheduled task {AUTO_RESTART_TASK_NAME}.")
     else:
-        stderr = (cp.stderr or "").lower()
-        if "cannot find the file" in stderr or "does not exist" in stderr:
-            log(f"Scheduled task {AUTO_RESTART_TASK_NAME} not found; nothing to delete.")
+        # schtasks is localized; treat "not found" as a harmless no-op and avoid log spam.
+        combined = f"{cp.stdout or ''}\\n{cp.stderr or ''}".lower()
+
+        not_found_markers = (
+            "cannot find the file",
+            "does not exist",
+            "cannot find",
+            "not found",
+            # Dutch (NL)
+            "kan het opgegeven bestand niet vinden",
+            "het systeem kan het opgegeven bestand niet vinden",
+            "kan het opgegeven pad niet vinden",
+            "het systeem kan het opgegeven pad niet vinden",
+            "bestaat niet",
+        )
+
+        if any(m in combined for m in not_found_markers):
+            if not _restart_task_missing_logged:
+                log(f"Scheduled task {AUTO_RESTART_TASK_NAME} not found; nothing to delete.")
         else:
-            log(f"Failed to delete scheduled task {AUTO_RESTART_TASK_NAME}: {cp.stderr.strip()}")
+            err = (cp.stderr or cp.stdout or "").strip()
+            log(f"Failed to delete scheduled task {AUTO_RESTART_TASK_NAME}: {err}")
+
 
 
