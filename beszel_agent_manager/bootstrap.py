@@ -76,6 +76,100 @@ def _run_hidden(cmd, check: bool = False, capture_output: bool = False):
 # Program Files self-install / ACL
 # ---------------------------------------------------------------------------
 
+
+
+def _is_pid_running(pid: int) -> bool:
+    """Return True if PID appears to be running (Windows)."""
+    if os.name != "nt":
+        return False
+    try:
+        # tasklist output is localized, so just check if PID appears in output lines.
+        r = subprocess.run(
+            ["tasklist", "/FI", f"PID eq {pid}"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        out = (r.stdout or "") + (r.stderr or "")
+        return str(pid) in out
+    except Exception:
+        return False
+
+
+def _try_close_existing_instance() -> bool:
+    """Best-effort close/terminate an existing running instance using LOCK_PATH PID."""
+    if os.name != "nt":
+        return False
+
+    pid = None
+    try:
+        if LOCK_PATH.exists():
+            raw = (LOCK_PATH.read_text(encoding="utf-8") or "").strip()
+            if raw.isdigit():
+                pid = int(raw)
+    except Exception:
+        pid = None
+
+    if not pid or pid == os.getpid():
+        return False
+
+    if not _is_pid_running(pid):
+        return False
+
+    # 1) Try a normal terminate first
+    try:
+        subprocess.run(
+            ["taskkill", "/PID", str(pid), "/T"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except Exception:
+        pass
+
+    # Give it a moment
+    try:
+        import time
+        time.sleep(1.0)
+    except Exception:
+        pass
+
+    if not _is_pid_running(pid):
+        return True
+
+    # 2) Force kill as last resort
+    try:
+        subprocess.run(
+            ["taskkill", "/F", "/PID", str(pid), "/T"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except Exception:
+        pass
+
+    try:
+        import time
+        time.sleep(1.0)
+    except Exception:
+        pass
+
+    return not _is_pid_running(pid)
+
+
+def _msg_retry_exit(message: str, title: str = PROJECT_NAME) -> bool:
+    """Return True if user selects Retry, False if Exit."""
+    if os.name != "nt":
+        return False
+    MB_RETRYCANCEL = 0x00000005
+    MB_ICONWARNING = 0x00000030
+    try:
+        rc = ctypes.windll.user32.MessageBoxW(None, message, title, MB_RETRYCANCEL | MB_ICONWARNING)
+        # IDRETRY == 4
+        return rc == 4
+    except Exception:
+        return False
 def _adjust_acl(path: Path) -> None:
     """
     Grant 'Users' Modify rights on the given directory (and children) so the
@@ -111,20 +205,43 @@ def _copy_to_program_files(exe_path: Path) -> Path:
     Copy the current executable into
     C:\\Program Files\\<PROJECT_NAME>\\<PROJECT_NAME>.exe
     and return the new path.
+
+    If the target is locked (another instance running), we try to close it and show
+    a Retry/Exit prompt instead of crashing.
     """
     target_dir = Path(PROGRAM_FILES) / PROJECT_NAME
     target_dir.mkdir(parents=True, exist_ok=True)
 
     target_exe = target_dir / f"{PROJECT_NAME}.exe"
-    if exe_path.resolve() != target_exe.resolve():
-        shutil.copy2(exe_path, target_exe)
-        log(f"Copied manager executable to {target_exe}")
-    else:
+    if exe_path.resolve() == target_exe.resolve():
         log("Executable is already in Program Files; skipping copy.")
+        return target_exe
 
-    return target_exe
+    # Best-effort: if another instance is running, try to close it before copying.
+    _try_close_existing_instance()
 
+    while True:
+        try:
+            shutil.copy2(exe_path, target_exe)
+            log(f"Copied manager executable to {target_exe}")
+            return target_exe
+        except PermissionError as exc:
+            # WinError 32 = file in use
+            winerr = getattr(exc, "winerror", None)
+            if os.name == "nt" and winerr == 32:
+                # Try to close again (maybe a new instance started)
+                _try_close_existing_instance()
 
+                msg = (
+                    "Another BeszelAgentManager is running and preventing the update. "
+                    "Close it and try again.\n\n"
+                    f"{exc}"
+                )
+                retry = _msg_retry_exit(msg)
+                if retry:
+                    continue
+                raise
+            raise
 def _schedule_delete_file(path: Path) -> None:
     """Best-effort delete of a file after this process exits.
 

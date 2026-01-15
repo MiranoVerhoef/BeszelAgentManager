@@ -15,6 +15,7 @@ from .constants import (
     MANAGER_UPDATE_SCRIPT,
     MANAGER_UPDATES_DIR,
     PROJECT_NAME,
+    APP_VERSION,
     MANAGER_PREVIOUS_EXE_PATH,
     LOG_PATH,
 )
@@ -296,7 +297,9 @@ param(
   [string]$Prev,
   [string]$Args,
   [string]$LogFile,
-  [string]$HandshakePath
+  [string]$HandshakePath,
+  [string]$FromVer,
+  [string]$ToVer
 )
 
 $ErrorActionPreference = 'Stop'
@@ -499,6 +502,9 @@ def start_update(
     args = args or []
     pid = int(current_pid or os.getpid())
 
+    target = str(release.get('tag_name') or release.get('name') or 'unknown')
+    log(f"Manager update requested: {APP_VERSION} -> {target}")
+
     src = stage_download(release, force=force)
     dst = _installed_manager_path()
 
@@ -531,7 +537,7 @@ def start_update(
             f"-NoProfile -ExecutionPolicy Bypass -File \"{script}\" "
             f"-PidToWait {pid} -Src \"{src}\" -Dst \"{dst}\" "
             f"-Prev \"{prev}\" -Args \"{args_str}\" -LogFile \"{logfile}\" "
-            f"-HandshakePath \"{hpath}\""
+            f"-HandshakePath \"{hpath}\" -FromVer \"{APP_VERSION}\" -ToVer \"{target}\""
         )
         rc = ctypes.windll.shell32.ShellExecuteW(None, "runas", ps, params, None, 0)
         if rc <= 32:
