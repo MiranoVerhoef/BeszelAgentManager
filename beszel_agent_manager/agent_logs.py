@@ -10,9 +10,6 @@ from .util import log
 from .windows_service import rotate_service_logs
 
 
-# NSSM rotation typically produces files like:
-#   beszel-agent-YYYYMMDDTHHMMSS.log
-#   beszel-agent-YYYYMMDDTHHMMSS.mmm.log
 _ROTATED_RE = re.compile(
     r"^beszel-agent-(\d{8})T(\d{6})(?:\.(\d{3}))?\.log$",
     re.IGNORECASE,
@@ -27,7 +24,6 @@ def ensure_agent_log_dir() -> None:
 
 
 def list_agent_log_files() -> list[Path]:
-    """Return available agent log files (daily logs + current)."""
     ensure_agent_log_dir()
     files: list[Path] = []
     if AGENT_LOG_CURRENT_PATH.exists():
@@ -36,7 +32,6 @@ def list_agent_log_files() -> list[Path]:
     for p in sorted(AGENT_LOG_DIR.glob("*.txt"), reverse=True):
         files.append(p)
 
-    # Also show any raw NSSM rotated files, just in case.
     for p in sorted(AGENT_LOG_DIR.glob("beszel-agent-*.log"), reverse=True):
         if p not in files:
             files.append(p)
@@ -68,12 +63,6 @@ def _unique_daily_path(day: datetime.date) -> Path:
 
 
 def rotate_agent_logs_and_rename(timeout_seconds: int = 12) -> None:
-    """Rotate the agent stdout/stderr log and rename the rotated file to YYYY-MM-DD.txt.
-
-    Uses `nssm rotate <service>` under the hood. Note that NSSM performs the
-    rotation after it reads the next line from the managed application, so if
-    the agent is completely silent, rotation can be delayed.
-    """
     ensure_agent_log_dir()
 
     before = {p.name for p in AGENT_LOG_DIR.iterdir() if p.is_file()}
@@ -93,8 +82,6 @@ def rotate_agent_logs_and_rename(timeout_seconds: int = 12) -> None:
         time.sleep(0.5)
 
     if newest is None:
-        # NSSM may not finalize the rotate until the managed app writes another line.
-        # If the agent is silent, users perceive rotation as "not working".
         log(
             "Agent log rotation requested, but no rotated file appeared yet. "
             "Falling back to manual rotate (copy current -> YYYY-MM-DD.txt and truncate current)."
@@ -105,7 +92,6 @@ def rotate_agent_logs_and_rename(timeout_seconds: int = 12) -> None:
                 target = _unique_daily_path(day)
                 content = AGENT_LOG_CURRENT_PATH.read_text(encoding="utf-8", errors="replace")
                 target.write_text(content, encoding="utf-8")
-                # Truncate current capture file so new logs start fresh.
                 AGENT_LOG_CURRENT_PATH.write_text("", encoding="utf-8")
                 log(f"Manual agent log rotate -> {target} (truncated {AGENT_LOG_CURRENT_PATH.name})")
             else:

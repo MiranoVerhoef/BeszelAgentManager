@@ -14,25 +14,16 @@ else:
 
 
 def ensure_data_dir() -> None:
-    """
-    Ensure the data directory and log file exist.
-
-    Any PermissionError is treated as non-fatal: logging will just fall back
-    to printing to stdout instead of crashing the whole app.
-    """
     try:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
     except PermissionError:
-        # Can't create data dir; nothing we can do, but don't crash.
         return
     except OSError:
-        # Some other filesystem error; also non-fatal.
         return
 
     try:
         LOG_PATH.touch(exist_ok=True)
     except PermissionError:
-        # No permission to create/touch the log file; silently ignore.
         pass
     except OSError:
         pass
@@ -40,7 +31,6 @@ def ensure_data_dir() -> None:
 
 def log(message: str) -> None:
     ensure_data_dir()
-    # Automatic daily rotation of manager.log
     try:
         rotate_if_needed(force=False)
     except Exception:
@@ -51,7 +41,6 @@ def log(message: str) -> None:
         with LOG_PATH.open("a", encoding="utf-8") as f:
             f.write(line + "\n")
     except OSError:
-        # Fall back to stdout if we can't write the log file.
         print(line)
 
 
@@ -62,7 +51,6 @@ def set_debug_logging(enabled: bool) -> None:
 
 
 def run(cmd, check: bool = True) -> subprocess.CompletedProcess:
-    """Wrapper around subprocess.run used everywhere (sc, netsh, nssm, PowerShell)."""
     line = " ".join(str(c) for c in cmd)
     kwargs = {
         "capture_output": True,
@@ -91,18 +79,12 @@ def run(cmd, check: bool = True) -> subprocess.CompletedProcess:
 
 
 def try_write_event_log(message: str, *, event_id: int = 2600, level: str = "INFORMATION") -> None:
-    """Best-effort write to Windows Application event log.
-
-    Uses `eventcreate.exe` because it works without pre-registering an event source.
-    This is best-effort and never raises.
-    """
     if os.name != "nt":
         return
     try:
         lvl = (level or "INFORMATION").upper()
         if lvl not in ("INFORMATION", "WARNING", "ERROR"):
             lvl = "INFORMATION"
-        # eventcreate requires an integer 1..1000 for /ID
         eid = int(event_id)
         if eid < 1:
             eid = 1

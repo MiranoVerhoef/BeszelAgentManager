@@ -45,8 +45,6 @@ def _ps_escape_single(s: str) -> str:
 
 
 def _ps_run(command: str, timeout: int = 60) -> subprocess.CompletedProcess:
-    """Run PowerShell without showing a window."""
-    # Force TLS 1.2 for older PowerShell/.NET defaults
     command = "try{[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12}catch{}; " + command
     ps = _powershell_exe()
     cmd = [ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command]
@@ -61,17 +59,8 @@ def _ps_run(command: str, timeout: int = 60) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, **kwargs)
 
 
-# ---------------------------------------------------------------------------
-# Version helpers
-# ---------------------------------------------------------------------------
 
 def _normalize_version(ver: str | None) -> str | None:
-    """
-    Extract a clean semantic version like 0.17.0 from various strings:
-    - 'v0.17.0'
-    - 'beszel-agent version 0.17.0'
-    - '0.17.0 (windows/amd64)'
-    """
     if not ver:
         return None
 
@@ -95,19 +84,8 @@ def _version_tuple(v: str) -> tuple[int, int, int]:
         return 0, 0, 0
 
 
-# ---------------------------------------------------------------------------
-# GitHub helpers
-# ---------------------------------------------------------------------------
 
 def _fetch_latest_agent_release() -> Tuple[Optional[str], Optional[str]]:
-    """
-    Query GitHub for the latest Beszel release and return (version, body).
-
-    version: normalized version like '0.17.0'
-    body:    release body (changelog text)
-
-    Returns (None, None) on error.
-    """
     url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
     headers = {
         "User-Agent": PROJECT_NAME,
@@ -133,7 +111,6 @@ def _fetch_latest_agent_release() -> Tuple[Optional[str], Optional[str]]:
     except Exception as exc:
         log(f"Failed to fetch latest Beszel release from GitHub: {exc}")
 
-    # PowerShell fallback (uses Windows trust store)
     try:
         parts = [f"'{_ps_escape_single(k)}'='{_ps_escape_single(v)}'" for k, v in headers.items()]
         hdr = "@{" + ";".join(parts) + "}"
@@ -158,15 +135,6 @@ def _fetch_latest_agent_release() -> Tuple[Optional[str], Optional[str]]:
 
 
 def fetch_agent_stable_releases(limit: int = 50) -> list[dict]:
-    """Fetch stable (non-draft, non-prerelease) Beszel releases from GitHub.
-
-    Returns a list of dicts containing:
-      - version
-      - tag
-      - body
-      - download_url (windows/amd64 zip)
-      - published_at
-    """
     url = f"https://api.github.com/repos/{GITHUB_REPO}/releases?per_page={limit}"
     headers = {
         "User-Agent": PROJECT_NAME,
@@ -202,7 +170,6 @@ def fetch_agent_stable_releases(limit: int = 50) -> list[dict]:
         out.sort(key=lambda x: _version_tuple(x["version"]), reverse=True)
         return out
 
-    # Try urllib first
     try:
         req = urllib.request.Request(url, headers=headers)
         ctx = ssl.create_default_context()
@@ -216,7 +183,6 @@ def fetch_agent_stable_releases(limit: int = 50) -> list[dict]:
     except Exception as exc:
         log(f"Failed to fetch Beszel releases from GitHub: {exc}")
 
-    # PowerShell fallback
     try:
         parts = [f"'{_ps_escape_single(k)}'='{_ps_escape_single(v)}'" for k, v in headers.items()]
         hdr = "@{" + ";".join(parts) + "}"
@@ -235,12 +201,6 @@ def fetch_agent_stable_releases(limit: int = 50) -> list[dict]:
 
 
 def _parse_download_version() -> str:
-    """
-    Decide which version of the Beszel agent to download.
-
-    - First try GitHub "latest release" (primary path)
-    - If that fails, fall back to a hard-coded version (current fallback: 0.16.1)
-    """
     latest, _body = _fetch_latest_agent_release()
     if latest:
         return latest
@@ -250,9 +210,6 @@ def _parse_download_version() -> str:
     return fallback
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
 
 def _ensure_agent_dir() -> Path:
     AGENT_DIR.mkdir(parents=True, exist_ok=True)
@@ -264,17 +221,12 @@ def _agent_exe_path() -> Path:
 
 
 def _try_apply_staged_agent_update() -> bool:
-    """If a staged agent exe exists (beszel-agent.new.exe), attempt to replace the live binary.
-
-    Returns True if the staged binary was applied.
-    """
     try:
         exe_path = _agent_exe_path()
         staged = AGENT_STAGED_EXE_PATH
         if not staged.exists():
             return False
 
-        # Best effort: stop service to release lock
         try:
             stop_service(timeout_seconds=30)
         except Exception:
@@ -298,7 +250,6 @@ def _try_apply_staged_agent_update() -> bool:
 
 
 def _schedule_agent_replace_on_reboot(src: Path, dst: Path) -> None:
-    """Best-effort: schedule a file replace on reboot using MoveFileEx."""
     if os.name != "nt":
         return
     try:
@@ -314,16 +265,9 @@ def _schedule_agent_replace_on_reboot(src: Path, dst: Path) -> None:
 
 
 def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -> None:
-    """
-    Download the agent zip for the given version and extract the exe.
-
-    Also logs the version + optional changelog ("What's changed") to manager.log.
-    """
     agent_dir = _ensure_agent_dir()
     exe_path = _agent_exe_path()
 
-    # Download and extract into ProgramData, then MOVE the final exe into Program Files.
-    # This prevents leaving duplicate extracted copies behind and avoids partial writes.
     tmp_dir = DATA_DIR / "tmp_agent"
     zip_path = tmp_dir / "beszel-agent.zip"
     extract_dir = tmp_dir / "extract"
@@ -339,19 +283,16 @@ def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -
         zip_path = agent_dir / "beszel-agent.zip"
         extract_dir = agent_dir
 
-    # Best-effort: stop service to release file lock before replacing.
     try:
         stop_service(timeout_seconds=30)
     except Exception:
         pass
 
-    # Remove existing exe to avoid permission problems
     if exe_path.exists():
         try:
             os.chmod(exe_path, 0o666)
             exe_path.unlink()
         except PermissionError as exc:
-            # Can't replace now; we'll stage and try apply later.
             log(f"Agent executable is in use; will stage update instead: {exc}")
         except Exception as exc:
             log(f"Warning: could not remove existing agent exe before update: {exc}")
@@ -376,7 +317,6 @@ def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -
         if cp.returncode != 0:
             raise RuntimeError(f"Download failed: {cp.stderr.strip()}") from exc
     except Exception as exc:
-        # Try PowerShell once as a last resort
         log(f"Download failed: {exc}. Retrying via PowerShell...")
         u = _ps_escape_single(url)
         outp = _ps_escape_single(str(zip_path))
@@ -403,7 +343,6 @@ def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -
         except Exception as exc:
             log(f"Failed to remove agent zip: {exc}")
 
-    # Find the exe inside the extracted tree and MOVE it into place
     extracted_exe: Optional[Path] = None
     try:
         for p in extract_dir.rglob(AGENT_EXE_NAME):
@@ -428,7 +367,6 @@ def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -
                         pass
                 shutil.move(str(extracted_exe), str(exe_path))
             except Exception as exc:
-                # Couldn't replace live binary (likely locked). Stage update and optionally schedule on reboot.
                 staged = AGENT_STAGED_EXE_PATH
                 try:
                     if staged.exists():
@@ -442,7 +380,6 @@ def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -
                     "It will be applied automatically when possible (or after reboot)."
                 )
     finally:
-        # Clean up temp extraction folder if we used ProgramData tmp
         try:
             if tmp_dir != agent_dir and tmp_dir.exists():
                 shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -471,8 +408,6 @@ def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -
 
 
 def _build_env_from_config(cfg: AgentConfig, *, include_process_env: bool = False) -> dict:
-    """Build environment variables for the Beszel agent."""
-
     env = os.environ.copy() if include_process_env else {}
 
     def set_if(value: str | None, key: str):
@@ -483,6 +418,9 @@ def _build_env_from_config(cfg: AgentConfig, *, include_process_env: bool = Fals
     set_if(cfg.token, "TOKEN")
     set_if(cfg.hub_url, "HUB_URL")
 
+    if not bool(getattr(cfg, "env_enabled", True)):
+        return env
+
     set_if(cfg.data_dir, "DATA_DIR")
     set_if(cfg.docker_host, "DOCKER_HOST")
     set_if(cfg.exclude_containers, "EXCLUDE_CONTAINERS")
@@ -492,10 +430,16 @@ def _build_env_from_config(cfg: AgentConfig, *, include_process_env: bool = Fals
     set_if(cfg.intel_gpu_device, "INTEL_GPU_DEVICE")
     set_if(cfg.key_file, "KEY_FILE")
     set_if(cfg.token_file, "TOKEN_FILE")
-    set_if(cfg.lhm, "LHM")
-    set_if(cfg.log_level, "LOG_LEVEL")
-    set_if(cfg.mem_calc, "MEM_CALC")
+    set_if(cfg.labels, "LABELS")
+    set_if(cfg.nic, "NIC")
     set_if(cfg.network, "NETWORK")
+    set_if(cfg.no_hardware, "NO_HARDWARE")
+    set_if(cfg.no_process, "NO_PROCESS")
+    set_if(cfg.no_storage, "NO_STORAGE")
+    set_if(cfg.sys_info, "SYS_INFO")
+    set_if(cfg.use_sudo, "USE_SUDO")
+    set_if(cfg.wait_at_start, "WAIT_AT_START")
+
     set_if(cfg.nics, "NICS")
     set_if(cfg.sensors, "SENSORS")
     set_if(cfg.primary_sensor, "PRIMARY_SENSOR")
@@ -505,28 +449,12 @@ def _build_env_from_config(cfg: AgentConfig, *, include_process_env: bool = Fals
     set_if(cfg.system_name, "SYSTEM_NAME")
     set_if(cfg.skip_gpu, "SKIP_GPU")
 
-    # v0.18.0+ envs
-    nvml = getattr(cfg, "nvml", None)
-    smart_interval = getattr(cfg, "smart_interval", None)
-    set_if(nvml, "NVML")
-    set_if(smart_interval, "SMART_INTERVAL")
-
-    # v0.17.0+ envs
-    nvml = getattr(cfg, "nvml", None)
-    smart_interval = getattr(cfg, "smart_interval", None)
-    disk_usage_cache = getattr(cfg, "disk_usage_cache", None)
-    skip_systemd = getattr(cfg, "skip_systemd", None)
-    set_if(nvml, "NVML")
-    set_if(smart_interval, "SMART_INTERVAL")
-    set_if(disk_usage_cache, "DISK_USAGE_CACHE")
-    set_if(skip_systemd, "SKIP_SYSTEMD")
-
-    # LISTEN is optional; if omitted, the agent uses its own default.
-    if cfg.listen is not None:
-        env["LISTEN"] = str(cfg.listen)
+    set_if(getattr(cfg, "nvml", None), "NVML")
+    set_if(getattr(cfg, "smart_interval", None), "SMART_INTERVAL")
+    set_if(getattr(cfg, "disk_usage_cache", None), "DISK_USAGE_CACHE")
+    set_if(getattr(cfg, "skip_systemd", None), "SKIP_SYSTEMD")
 
     return env
-
 
 def _run_agent_once(cfg: AgentConfig, args: list[str]) -> subprocess.CompletedProcess:
     exe_path = _agent_exe_path()
@@ -547,14 +475,8 @@ def _run_agent_once(cfg: AgentConfig, args: list[str]) -> subprocess.CompletedPr
     )
 
 
-# ---------------------------------------------------------------------------
-# Public API used by GUI
-# ---------------------------------------------------------------------------
 
 def install_or_update_agent_and_service(cfg: AgentConfig) -> None:
-    """
-    Install or update the agent binary and configure the Windows service + scheduler.
-    """
     version, changelog = _fetch_latest_agent_release()
     if not version:
         version = _parse_download_version()
@@ -563,13 +485,11 @@ def install_or_update_agent_and_service(cfg: AgentConfig) -> None:
     log(f"Starting agent install/update to version {version}")
     _download_and_extract_agent(version, changelog=changelog)
 
-    # Only set Beszel agent env vars for the service (do NOT include process env)
     env = _build_env_from_config(cfg, include_process_env=False)
     log("Configuring Windows service for Beszel agent")
 
     create_or_update_service(env)
 
-    # Ensure daily agent log rotation task exists
     ensure_agent_log_rotate_task()
 
     if cfg.auto_update_enabled:
@@ -591,20 +511,15 @@ def install_or_update_agent_and_service(cfg: AgentConfig) -> None:
 
 
 def apply_configuration_only(cfg: AgentConfig) -> None:
-    """
-    Apply configuration/env/service settings without re-downloading the agent.
-    """
     exe_path = _agent_exe_path()
     if not exe_path.exists():
         raise RuntimeError("Agent is not installed yet.")
 
-    # Only set Beszel agent env vars for the service (do NOT include process env)
     env = _build_env_from_config(cfg, include_process_env=False)
     log("Updating Windows service configuration for Beszel agent")
 
     create_or_update_service(env)
 
-    # Ensure daily agent log rotation task exists
     ensure_agent_log_rotate_task()
 
     if cfg.auto_update_enabled:
@@ -626,9 +541,6 @@ def apply_configuration_only(cfg: AgentConfig) -> None:
 
 
 def update_agent_only(version: str | None = None, changelog: str | None = None) -> None:
-    """
-    Update only the agent binary in AGENT_DIR, without touching service/scheduler.
-    """
     if not version:
         version, changelog = _fetch_latest_agent_release()
         if not version:
@@ -640,13 +552,6 @@ def update_agent_only(version: str | None = None, changelog: str | None = None) 
 
 
 def get_agent_version() -> str:
-    """
-    Ask the agent itself for its version, if installed.
-    Returns:
-        - "Not installed"
-        - "Unknown"
-        - or a normalized version string like "0.17.0"
-    """
     exe_path = _agent_exe_path()
     if not exe_path.exists():
         return "Not installed"

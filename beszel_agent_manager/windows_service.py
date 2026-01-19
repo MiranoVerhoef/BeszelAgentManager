@@ -30,7 +30,6 @@ class ServiceError(RuntimeError):
     pass
 
 
-# Previous releases used the manager name as the Windows service name.
 LEGACY_AGENT_SERVICE_NAME = PROJECT_NAME
 
 
@@ -44,7 +43,6 @@ def _service_exists(name: str) -> bool:
 
 
 def _resolve_service_name() -> str:
-    """Return the current service name (new preferred name, else legacy)."""
     if _service_exists(AGENT_SERVICE_NAME):
         return AGENT_SERVICE_NAME
     if LEGACY_AGENT_SERVICE_NAME and _service_exists(LEGACY_AGENT_SERVICE_NAME):
@@ -103,18 +101,15 @@ def _find_nssm() -> str:
 
 
 def _configure_agent_logging(nssm: str) -> None:
-    """Configure NSSM stdout/stderr redirection for the agent service."""
     try:
         AGENT_LOG_DIR.mkdir(parents=True, exist_ok=True)
     except Exception as exc:
         log(f"Failed to create agent log dir {AGENT_LOG_DIR}: {exc}")
         return
 
-    # Redirect both stdout and stderr to a single file.
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppStdout', str(AGENT_LOG_CURRENT_PATH)], check=False)
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppStderr', str(AGENT_LOG_CURRENT_PATH)], check=False)
 
-    # Enable on-demand rotation (nssm rotate) and timestamp prefixing.
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppRotation', '1'], check=False)
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppRotateOnline', '1'], check=False)
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppTimestampLog', '1'], check=False)
@@ -125,7 +120,6 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
         raise ServiceError(f'Agent executable not found: {AGENT_EXE_PATH}')
     nssm = _find_nssm()
 
-    # Migrate legacy service name -> current name.
     if LEGACY_AGENT_SERVICE_NAME != AGENT_SERVICE_NAME and _service_exists(LEGACY_AGENT_SERVICE_NAME):
         run([nssm, 'stop', LEGACY_AGENT_SERVICE_NAME], check=False)
         run([nssm, 'remove', LEGACY_AGENT_SERVICE_NAME, 'confirm'], check=False)
@@ -134,7 +128,6 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
     AGENT_DIR.mkdir(parents=True, exist_ok=True)
     run([nssm, 'install', AGENT_SERVICE_NAME, str(AGENT_EXE_PATH)], check=False)
     run([nssm, 'set', AGENT_SERVICE_NAME, 'DisplayName', AGENT_DISPLAY_NAME], check=False)
-    # Service description shown in services.msc
     run(
         [
             nssm,
@@ -147,33 +140,26 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
     )
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppDirectory', str(AGENT_DIR)], check=False)
 
-    # Make service stops more reliable (reduces STOP_PENDING hangs).
-    # These are NSSM shutdown settings (milliseconds between stop methods).
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodConsole', '1500'], check=False)
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodWindow', '1500'], check=False)
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodThreads', '1500'], check=False)
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppKillProcessTree', '1'], check=False)
 
     _configure_agent_logging(nssm)
-    # Only set Beszel variables as *extra* env vars.
     env_pairs = [f"{k}={v}" for k, v in env_vars.items() if v]
 
-    # Clear stored environment settings.
     run([nssm, 'reset', AGENT_SERVICE_NAME, 'AppEnvironment'], check=False)
     run([nssm, 'reset', AGENT_SERVICE_NAME, 'AppEnvironmentExtra'], check=False)
 
-    # Only set extras if we actually have any.
     if env_pairs:
         run([nssm, 'set', AGENT_SERVICE_NAME, 'AppEnvironmentExtra', *env_pairs], check=False)
     run([nssm, 'set', AGENT_SERVICE_NAME, 'Start', 'SERVICE_AUTO_START'], check=False)
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppRestartDelay', '5000'], check=False)
 
-    # Restart via SCM so we can detect/handle STOP_PENDING hangs.
     restart_service(timeout_seconds=15)
 
 
 def rotate_service_logs() -> None:
-    """Trigger on-demand rotation of the agent service stdout/stderr logs."""
     try:
         nssm = _find_nssm()
     except Exception as exc:
@@ -214,7 +200,6 @@ def start_service() -> None:
 
 
 def _query_service_state_and_pid() -> tuple[str, int]:
-    """Return (STATE, PID) using `sc queryex`."""
     try:
         cp = run(['sc', 'queryex', _resolve_service_name()], check=False)
     except FileNotFoundError:
@@ -264,10 +249,6 @@ def _force_kill_service_process() -> None:
 
 
 def stop_service(timeout_seconds: int = 15) -> bool:
-    """Stop service; if it doesn't stop within timeout, force-kill it.
-
-    Returns True if a force-kill was performed.
-    """
     forced = False
     svc = _resolve_service_name()
     state, _ = _query_service_state_and_pid()
@@ -280,8 +261,6 @@ def stop_service(timeout_seconds: int = 15) -> bool:
     run(['sc', 'stop', svc], check=False)
     log('Service stop requested.')
 
-    # NSSM sometimes responds better to its own stop command than SCM alone.
-    # If the service immediately enters STOP_PENDING, try a direct NSSM stop once.
     try:
         time.sleep(1)
         state2, _ = _query_service_state_and_pid()
@@ -304,10 +283,6 @@ def stop_service(timeout_seconds: int = 15) -> bool:
 
 
 def restart_service(timeout_seconds: int = 15) -> bool:
-    """Restart service; force-kills it if stop/start gets stuck.
-
-    Returns True if a force-kill was performed.
-    """
     forced = stop_service(timeout_seconds=timeout_seconds)
     start_service()
 
@@ -334,7 +309,6 @@ def delete_service() -> None:
         stop_service(timeout_seconds=15)
     except Exception:
         pass
-    # Remove preferred name first, then legacy if present.
     run([nssm, 'remove', AGENT_SERVICE_NAME, 'confirm'], check=False)
     if LEGACY_AGENT_SERVICE_NAME != AGENT_SERVICE_NAME:
         run([nssm, 'remove', LEGACY_AGENT_SERVICE_NAME, 'confirm'], check=False)
@@ -344,7 +318,6 @@ def delete_service() -> None:
 
 
 def get_service_diagnostics() -> str:
-    """Return a multi-line diagnostics dump for support bundles/UI."""
     lines: list[str] = []
     try:
         cp = run(['sc', 'queryex', _resolve_service_name()], check=False)
@@ -355,7 +328,6 @@ def get_service_diagnostics() -> str:
 
     try:
         nssm = _find_nssm()
-        # Grab a few useful settings
         lines.append('=== nssm get (selected) ===')
         svc = _resolve_service_name()
         for key in ['DisplayName', 'Description', 'Application', 'AppDirectory', 'AppStdout', 'AppStderr', 'AppEnvironment', 'AppEnvironmentExtra', 'Start', 'AppRestartDelay', 'AppStopMethodConsole', 'AppStopMethodWindow', 'AppStopMethodThreads', 'AppKillProcessTree']:
@@ -381,31 +353,19 @@ def ensure_firewall_rule(port: int) -> None:
 
 
 def open_nssm_edit() -> None:
-    """Open the NSSM GUI editor for the Beszel Agent service."""
     nssm = _find_nssm()
     svc = _resolve_service_name()
     try:
-        # On some systems, launching NSSM directly with CREATE_NO_WINDOW can
-        # prevent the GUI editor from appearing. Prefer PowerShell Start-Process
-        # with a hidden window; it reliably opens the NSSM GUI without flashing
-        # a console.
         if os.name == 'nt':
             def _ps_single(s: str) -> str:
                 return s.replace("'", "''")
 
-            # Be explicit about quoting the service name for NSSM, because it
-            # contains a space. Some environments end up effectively executing
-            # `nssm.exe edit Beszel Agent` (two args) instead of a single
-            # `"Beszel Agent"` argument. Passing an argument that already
-            # includes quotes forces the final command line to be:
-            #   nssm.exe edit "Beszel Agent"
             quoted_svc = '"' + str(svc) + '"'
             ps = (
                 "Start-Process -FilePath '{nssm}' -ArgumentList @('edit','{qsvc}')"
             ).format(nssm=_ps_single(str(nssm)), qsvc=_ps_single(quoted_svc))
             log(f"Opening NSSM editor: {nssm} edit \"{svc}\"")
 
-            # Hide the PowerShell window itself.
             creationflags = 0x08000000  # CREATE_NO_WINDOW
             subprocess.Popen(
                 ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-Command', ps],
@@ -414,7 +374,6 @@ def open_nssm_edit() -> None:
             )
             return
 
-        # Non-Windows fallback (shouldn't normally happen)
         subprocess.Popen([str(nssm), 'edit', str(svc)], close_fds=True)
     except Exception as exc:
         raise ServiceError(f"Failed to open NSSM editor: {exc}") from exc

@@ -16,20 +16,12 @@ VALUE_NAME = PROJECT_NAME
 
 
 def _get_exe_path() -> Path:
-    """
-    Return the path to the currently running executable/script.
-    Works both for PyInstaller bundles and normal python.
-    """
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve()
     return Path(sys.argv[0]).resolve()
 
 
 def _open_run_key_writable():
-    """
-    Open (or create) HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run
-    with write access.
-    """
     try:
         return winreg.OpenKey(
             winreg.HKEY_CURRENT_USER,
@@ -42,12 +34,6 @@ def _open_run_key_writable():
 
 
 def get_autostart_state() -> tuple[bool, bool]:
-    """
-    Returns (enabled, start_hidden) for the BeszelAgentManager autostart entry.
-
-    enabled      -> whether a Run entry exists for this app
-    start_hidden -> True if the stored command line contains '--hidden'
-    """
     if os.name != "nt":
         return False, False
 
@@ -71,20 +57,11 @@ def get_autostart_state() -> tuple[bool, bool]:
 
 
 def is_autostart_enabled() -> bool:
-    """
-    Backwards-compatible helper: just returns whether a Run entry exists.
-    """
     enabled, _ = get_autostart_state()
     return enabled
 
 
 def set_autostart(enabled: bool, start_hidden: bool) -> None:
-    """
-    Create/update/remove the autostart (Run) entry.
-
-    If start_hidden is True, ' --hidden' is appended to the command line so
-    the manager knows that *this particular run* should start tray-only.
-    """
     if os.name != "nt":
         return
 

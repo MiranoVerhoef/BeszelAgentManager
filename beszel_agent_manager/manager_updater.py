@@ -23,7 +23,6 @@ from .util import log
 
 
 def _new_handshake_token() -> str:
-    """Generate a short token used to confirm the new binary started."""
     try:
         return os.urandom(8).hex()
     except Exception:
@@ -68,7 +67,6 @@ def _ps_run(command: str, timeout: int = 60) -> subprocess.CompletedProcess:
 def _http_get_json(url: str, headers: Optional[Dict[str, str]] = None, timeout: int = 15) -> dict:
     headers = headers or {}
 
-    # Try urllib first
     try:
         import urllib.request
 
@@ -81,7 +79,6 @@ def _http_get_json(url: str, headers: Optional[Dict[str, str]] = None, timeout: 
     except Exception as exc:
         log(f"GitHub request failed: {exc}. Falling back to PowerShell.")
 
-    # PowerShell fallback (Windows cert store)
     hdr = "@{}"
     if headers:
         parts = [f"'{_ps_escape_single(k)}'='{_ps_escape_single(v)}'" for k, v in headers.items()]
@@ -99,7 +96,6 @@ def _download_file(url: str, dest: Path, headers: Optional[Dict[str, str]] = Non
     headers = headers or {}
     dest.parent.mkdir(parents=True, exist_ok=True)
 
-    # Try urllib first
     try:
         import urllib.request
 
@@ -126,20 +122,12 @@ def _download_file(url: str, dest: Path, headers: Optional[Dict[str, str]] = Non
 
 
 def fetch_latest_release(*, include_prereleases: bool = False) -> Optional[dict]:
-    """Fetch the latest manager release.
-
-    By default this returns the latest *stable* release.
-    When include_prereleases=True, it will consider GitHub pre-releases as well
-    (and pick the highest semantic version that has the expected asset).
-    """
-
     if not include_prereleases:
         url = f"https://api.github.com/repos/{MANAGER_REPO}/releases/latest"
         headers = {"User-Agent": PROJECT_NAME, "Accept": "application/vnd.github+json"}
         data = _http_get_json(url, headers=headers, timeout=20)
 
         if data.get("draft") or data.get("prerelease"):
-            # Should not happen for /latest, but keep it safe.
             return None
 
         tag = str(data.get("tag_name") or "").strip()
@@ -205,7 +193,6 @@ def fetch_stable_releases(limit: int = 50, *, include_prereleases: bool = False)
             }
         )
 
-    # Sort newest-first by version tuple
     releases.sort(key=lambda x: _version_tuple(x["version"]), reverse=True)
     return releases
 
@@ -223,7 +210,6 @@ def stage_download(release: dict, force: bool = False) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     dest = out_dir / MANAGER_ASSET_NAME
 
-    # Force re-download if requested.
     if force and dest.exists():
         try:
             dest.unlink()
@@ -233,14 +219,12 @@ def stage_download(release: dict, force: bool = False) -> Path:
     log(f"Downloading manager {version} from {download_url}")
     _download_file(download_url, dest, headers={"User-Agent": PROJECT_NAME}, timeout=120)
 
-    # Basic sanity checks to avoid replacing the installed EXE with a bad download (HTML, ZIP, etc.).
     try:
         size = dest.stat().st_size
         log(f"Downloaded manager asset size: {size} bytes -> {dest}")
         with dest.open("rb") as f:
             sig = f.read(4)
         if sig[:2] != b"MZ":
-            # Common failure mode: GitHub returns HTML/API error page or a ZIP.
             raise RuntimeError(
                 f"Downloaded file does not look like a Windows EXE (signature={sig!r}). "
                 "Check your GitHub release asset name and the downloaded content."
@@ -248,8 +232,6 @@ def stage_download(release: dict, force: bool = False) -> Path:
         if size < 1_000_000:
             raise RuntimeError(f"Downloaded EXE is unexpectedly small ({size} bytes). Aborting update.")
 
-        # Extra guardrail: prevent deploying a PyInstaller build that is missing the embedded Python DLL.
-        # When this happens, users see: "Failed to load Python DLL ... python3xx.dll".
         pat = re.compile(br"python3\d\d\.dll", re.IGNORECASE)
         found = False
         tail = b""
@@ -269,7 +251,6 @@ def stage_download(release: dict, force: bool = False) -> Path:
                 "This usually means the release asset is not a valid PyInstaller onefile build (or is corrupted)."
             )
     except Exception as exc:
-        # Leave the staged file for inspection but refuse to proceed.
         log(f"Manager download validation failed: {exc}")
         raise
     return dest
@@ -282,7 +263,6 @@ def _installed_manager_path() -> Path:
 
 def _write_update_script(pid: int, src_exe: Path, dst_exe: Path, args: List[str], handshake_path: Path) -> Path:
     MANAGER_UPDATE_SCRIPT.parent.mkdir(parents=True, exist_ok=True)
-    # Build argument string for Start-Process
     arg_str = " ".join([f'"{a}"' for a in args])
 
     prev = str(MANAGER_PREVIOUS_EXE_PATH)
@@ -317,18 +297,15 @@ try {{
   Unblock-File -LiteralPath $Src -ErrorAction SilentlyContinue
 }} catch {{}}
 
-# wait for current process to exit
 try {{
   while (Get-Process -Id $PidToWait -ErrorAction SilentlyContinue) {{
     Start-Sleep -Milliseconds 500
   }}
 }} catch {{}}
 
-# ensure destination dir
 $dstDir = Split-Path -Parent $Dst
 New-Item -ItemType Directory -Force -Path $dstDir | Out-Null
 
-# backup current exe
 try {{
   if (Test-Path -LiteralPath $Dst) {{
     Copy-Item -Force -Path $Dst -Destination $Prev
@@ -338,7 +315,6 @@ try {{
   Write-Log "Backup failed: $($_.Exception.Message)"
 }}
 
-# copy with retry (exe can remain locked briefly)
 $copied = $false
 for ($i=0; $i -lt 60; $i++) {{
   try {{
@@ -360,10 +336,8 @@ try {{
   $d = (Get-Item -LiteralPath $Dst).Length
   Write-Log "Copy verification: srcSize=$s dstSize=$d"
 
-  # Remove Mark-of-the-Web if present (can block execution on some systems)
   try {{ Unblock-File -LiteralPath $Dst -ErrorAction SilentlyContinue }} catch {{ }}
 
-  # Basic sanity check: ensure this looks like a Windows PE executable ("MZ")
   $bytes = Get-Content -LiteralPath $Dst -Encoding Byte -TotalCount 2 -ErrorAction SilentlyContinue
   if ($bytes -and $bytes.Count -ge 2) {{
     if ($bytes[0] -ne 77 -or $bytes[1] -ne 90) {{
@@ -373,7 +347,6 @@ try {{
   }}
 }} catch {{
   Write-Log "Copy verification failed: $($_.Exception.Message)"
-  # Attempt immediate rollback to previous executable if available
   try {{
     if (Test-Path -LiteralPath $Prev) {{
       Copy-Item -Force -Path $Prev -Destination $Dst
@@ -419,7 +392,6 @@ function Find-ManagerByPath() {{
 
 $p = Start-Manager
 if (-not $p) {{
-  # Fallback: cmd start (best-effort)
   try {{
     cmd /c start "" "$Dst" $Args | Out-Null
     Write-Log "Fallback cmd start invoked"
@@ -428,7 +400,6 @@ if (-not $p) {{
   }}
 }}
 
-# Wait up to 30 seconds for the handshake marker.
 $maxSeconds = 30
 $ok = $false
 $pid = $null
@@ -448,7 +419,6 @@ for ($i=0; $i -lt ($maxSeconds*2); $i++) {{
     }}
   }} catch {{}}
 
-  # If the process died early, stop waiting.
   try {{
     if ($pid) {{
       if (-not (Get-Process -Id $pid -ErrorAction SilentlyContinue)) {{ break }}
@@ -463,7 +433,6 @@ if ($ok) {{
 }} else {{
   Write-Log "Update handshake not received within $maxSeconds seconds; treating update as failed."
 
-  # Best-effort: terminate the newly started manager if it exists.
   try {{
     if ($pid) {{
       Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
@@ -508,9 +477,6 @@ def start_update(
     src = stage_download(release, force=force)
     dst = _installed_manager_path()
 
-    # Handshake: the new binary writes a marker file as soon as it starts.
-    # This lets the update script detect broken builds that show a popup
-    # (e.g. missing python3xx.dll) but never actually run.
     token = _new_handshake_token()
     data_dir = Path(os.getenv("ProgramData", r"C:\\ProgramData")) / PROJECT_NAME
     handshake_path = data_dir / f"update-handshake-{token}.ok"
@@ -518,16 +484,13 @@ def start_update(
 
     _write_update_script(pid, src, dst, new_args, handshake_path)
 
-    # Launch elevated PowerShell to run the script
     script = str(MANAGER_UPDATE_SCRIPT)
     ps = _powershell_exe()
 
-    # Use ShellExecuteW runas for UAC prompt
     try:
         import ctypes
 
         args_str = " ".join(new_args)
-        # Keep it simple: our args are typically things like --hidden.
         args_str = args_str.replace('"', '')
 
         prev = str(MANAGER_PREVIOUS_EXE_PATH)
@@ -546,6 +509,5 @@ def start_update(
         log(f"Failed to start elevated update: {exc}")
         raise
 
-    # After triggering update, exit current process so the script can replace the exe.
     log("Manager update started; exiting to allow replacement.")
     sys.exit(0)
