@@ -1146,7 +1146,7 @@ class BeszelAgentManagerApp(tk.Tk):
         # App/version link (use tk.Label to avoid native ttk white background boxes)
         self.label_app_version = tk.Label(
             left,
-            text=f"{PROJECT_NAME} v{APP_VERSION}",
+            text=f"{PROJECT_NAME} {APP_VERSION}",
             bg=self._base_bg,
             fg="#2563eb",
             font=("Segoe UI", 9, "underline"),
