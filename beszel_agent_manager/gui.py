@@ -1146,7 +1146,7 @@ class BeszelAgentManagerApp(tk.Tk):
         # App/version link (use tk.Label to avoid native ttk white background boxes)
         self.label_app_version = tk.Label(
             left,
-            text=f"{PROJECT_NAME} {APP_VERSION}",
+            text=f"{PROJECT_NAME} v{APP_VERSION}",
             bg=self._base_bg,
             fg="#2563eb",
             font=("Segoe UI", 9, "underline"),
@@ -2896,7 +2896,7 @@ class BeszelAgentManagerApp(tk.Tk):
     def _on_version_clicked(self, _event=None):
         url = (
             "https://github.com/MiranoVerhoef/BeszelAgentManager/"
-            f"releases/tag/v{APP_VERSION}"
+            f"releases/tag/{APP_VERSION}"
         )
         self._open_url(url)
 
@@ -3141,7 +3141,7 @@ class BeszelAgentManagerApp(tk.Tk):
                     start = time.perf_counter()
                     safe_url = url.replace("'", "''")
                     ps = (
-                        "Invoke-WebRequest -UseBasicParsing -Method Head "
+                        "try{[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12}catch{}; Invoke-WebRequest -UseBasicParsing -Method Head "
                         f"-Uri '{safe_url}' -TimeoutSec 5 | Out-Null"
                     )
                     creationflags = 0

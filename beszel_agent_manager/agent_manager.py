@@ -46,6 +46,8 @@ def _ps_escape_single(s: str) -> str:
 
 def _ps_run(command: str, timeout: int = 60) -> subprocess.CompletedProcess:
     """Run PowerShell without showing a window."""
+    # Force TLS 1.2 for older PowerShell/.NET defaults
+    command = "try{[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12}catch{}; " + command
     ps = _powershell_exe()
     cmd = [ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command]
     kwargs = {
