@@ -23,19 +23,14 @@ from .windows_service import get_service_diagnostics
 
 
 def _redact_text(text: str) -> str:
-    """Best-effort redaction of sensitive values in logs."""
     try:
         import re
 
         t = text or ""
-        # KEY/TOKEN patterns
         t = re.sub(r"(?im)^(\s*KEY\s*=).*$", r"\1***redacted***", t)
         t = re.sub(r"(?im)^(\s*TOKEN\s*=).*$", r"\1***redacted***", t)
-        # Common CLI-style fragments
         t = re.sub(r"(?i)\b(KEY|TOKEN)\s*[:=]\s*[^\s\r\n]+", r"\1=***redacted***", t)
-        # SSH public keys
         t = re.sub(r"ssh-(rsa|ed25519)\s+[A-Za-z0-9+/=]+", "ssh-\\1 ***redacted***", t)
-        # UUID-like tokens
         t = re.sub(
             r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b",
             "***redacted***",
@@ -82,11 +77,9 @@ def _redacted_config_json() -> str:
         if not CONFIG_PATH.exists():
             return ""
         cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8", errors="replace"))
-        # Redact common secrets
         for k in ["key", "token", "KEY", "TOKEN"]:
             if k in cfg and cfg[k]:
                 cfg[k] = "***redacted***"
-        # Also redact any env tables that might contain secrets
         if isinstance(cfg.get("env_tables"), dict):
             for _name, table in cfg["env_tables"].items():
                 if isinstance(table, dict):
@@ -99,10 +92,6 @@ def _redacted_config_json() -> str:
 
 
 def create_support_bundle() -> Path:
-    """Create a zip support bundle with logs + diagnostics + system details.
-
-    Returns the resulting zip path.
-    """
     SUPPORT_BUNDLES_DIR.mkdir(parents=True, exist_ok=True)
 
     ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -112,10 +101,8 @@ def create_support_bundle() -> Path:
         root = Path(td)
         (root / "logs").mkdir(parents=True, exist_ok=True)
 
-        # Config
         (root / "config-redacted.json").write_text(_redacted_config_json(), encoding="utf-8")
 
-        # Agent update log (scheduled updates)
         try:
             upd = Path(os.getenv("ProgramData", r"C:\\ProgramData")) / PROJECT_NAME / "update.log"
             if upd.exists():
@@ -123,7 +110,6 @@ def create_support_bundle() -> Path:
         except Exception:
             pass
 
-        # Manager logs
         try:
             if LOG_PATH.exists():
                 _copy_redacted(LOG_PATH, root / "logs" / LOG_PATH.name)
@@ -139,7 +125,6 @@ def create_support_bundle() -> Path:
         except Exception:
             pass
 
-        # Agent logs
         try:
             if AGENT_LOG_DIR.exists():
                 agent_out = root / "agent_logs"
@@ -153,7 +138,6 @@ def create_support_bundle() -> Path:
         except Exception:
             pass
 
-        # DNS fallback state (non-sensitive)
         try:
             state = Path(os.getenv("ProgramData", r"C:\\ProgramData")) / PROJECT_NAME / "dns-fallback-state.json"
             if state.exists():
@@ -161,10 +145,8 @@ def create_support_bundle() -> Path:
         except Exception:
             pass
 
-        # Service diagnostics
         (root / "service-diagnostics.txt").write_text(get_service_diagnostics(), encoding="utf-8")
 
-        # Scheduled tasks
         tasks = []
         if AUTO_UPDATE_TASK_NAME:
             tasks.append(AUTO_UPDATE_TASK_NAME)
@@ -178,7 +160,6 @@ def create_support_bundle() -> Path:
                 lines.append("")
             (root / "scheduled-tasks.txt").write_text("\n".join(lines), encoding="utf-8")
 
-        # Firewall rule
         if os.name == "nt":
             fw = _run_capture([
                 "netsh",
@@ -190,7 +171,6 @@ def create_support_bundle() -> Path:
             ])
             (root / "firewall-rule.txt").write_text(fw, encoding="utf-8")
 
-        # System details (diagnostics-friendly)
         sys_lines: list[str] = []
         sys_lines.append("=== os.environ (selected) ===")
         for k in ["COMPUTERNAME", "USERNAME", "OS", "PROCESSOR_ARCHITECTURE", "ProgramFiles", "ProgramData"]:
@@ -198,12 +178,9 @@ def create_support_bundle() -> Path:
         sys_lines.append("")
         if os.name == "nt":
             sys_lines.append("=== systeminfo (trimmed) ===")
-            # systeminfo can be huge; keep last 2000 lines if needed
             sys_lines.append(_run_capture(["cmd", "/c", "systeminfo"], timeout=60))
             sys_lines.append("")
             sys_lines.append("=== disk space ===")
-            # WMIC is removed/disabled on newer Windows builds (including Server 2025).
-            # Use CIM via PowerShell instead.
             sys_lines.append(
                 _run_capture(
                     [
@@ -226,7 +203,6 @@ def create_support_bundle() -> Path:
             ], timeout=30))
         (root / "system-details.txt").write_text("\n".join(sys_lines), encoding="utf-8")
 
-        # Create zip
         with zipfile.ZipFile(out_zip, "w", compression=zipfile.ZIP_DEFLATED) as zf:
             for p in root.rglob("*"):
                 if p.is_file():

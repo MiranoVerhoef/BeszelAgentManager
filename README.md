@@ -1,87 +1,52 @@
-# BeszelAgentManager
+# BeszelAgentManager 2.0.0
 
-BeszelAgentManager is a Windows app that makes it easy to **install, configure, update, and manage the Beszel agent**.
+BeszelAgentManager is a Windows GUI helper that installs and manages the Beszel agent.
 
-Vibe Coding is used.
-
-## What it does
-
-- Installs the Beszel agent to:  
-  `C:\Program Files\Beszel-Agent\beszel-agent.exe`
-
-- Runs the agent as a Windows Service (via NSSM):
+- Installs agent to: `C:\\Program Files\\Beszel-Agent\\beszel-agent.exe`
+- Creates/updates an NSSM-based Windows service:
   - Service name: `BeszelAgentManager`
-  - Display name (Services.msc): **Beszel Agent**
-  - Downloads NSSM automatically if needed
+  - Display name: `BeszelAgentManager`
+- Automatically downloads NSSM if it is not present
+- Configures `KEY`, `TOKEN`, `HUB_URL`, `LISTEN` and advanced environment variables
+- Opens Windows Firewall for the listen port
+- Optional automatic updates via Scheduled Tasks
+- Logging tab with debug logging option
+- Option to start BeszelAgentManager with Windows (tray always available)
+- Tray menu with:
+  - Open BeszelAgentManager
+  - **Open hub URL** (uses the configured HUB URL)
+  - Start/Stop/Restart service
+  - Update agent now
+  - Exit
+- Service control buttons on the main Connection tab
+- Shows the detected agent version in the status bar
+- Shows the BeszelAgentManager version (`1.1.0`) in the GUI and in the EXE metadata
+- Separate "Install agent" and "Update agent" actions
+- On startup, automatically requests administrator rights and can move itself to
+  `C:\\Program Files\\BeszelAgentManager` for a clean installation location
+- Creates a Start Menu shortcut under the Windows app list, and removes it on uninstall
+- Requests a Windows Defender exclusion for `C:\\Program Files\\BeszelAgentManager`
+- Enforces a single running instance of the manager with an option to kill the old instance
+- Uninstall button to remove service, firewall rule, task, agent files and the Start Menu shortcut
+- "About" button for the manager (credit: Verhoef)
+- "About Beszel" button with links to the upstream project and website
+- Status bar now also shows best-effort **Hub** connectivity status (`Reachable` / `Unreachable` / `Not configured`)
 
-- Lets you configure the agent connection:
-  - `KEY`, `TOKEN`, `HUB_URL`
-  - Optional `LISTEN` (can be enabled/disabled)
-  - Optional extra Beszel environment variables (advanced)
+Credit: Verhoef
 
-- Firewall support:
-  - Can add/remove the Windows Firewall rule for the listen port when enabled
+## Prerequisites
 
-- Updates & version management:
-  - **Update agent / Update manager**: checks GitHub and updates if a newer version exists
-  - **Manage Agent Version… / Manage Manager Version…**: choose a specific version to install (upgrade or rollback), or force reinstall
-
-- Logging built into the UI:
-  - Manager log viewer + debug logging toggle
-  - Agent log viewer + daily agent logs
-
-- Tray support:
-  - Optional “start with Windows” (tray always available)
-  - Tray menu for quick actions (open app, open hub URL, service actions, update, exit)
-
-- Safety and quality-of-life:
-  - Requests Administrator rights when required (service/firewall/tasks)
-  - Can relocate itself to `C:\Program Files\BeszelAgentManager` for a clean install location
-  - Creates a Start Menu shortcut (removes it on uninstall)
-  - Requests Windows Defender exclusion for `C:\Program Files\BeszelAgentManager`
-  - Enforces a single running instance (with an option to close the old one)
-  - Uninstall removes service, firewall rule, tasks, agent files, and Start Menu shortcut
-
-## Logs
-
-- Manager logs:  
-  `C:\ProgramData\BeszelAgentManager\manager.log`
-
-- Agent logs (viewable in the app):  
-  `C:\ProgramData\BeszelAgentManager\agent_logs\`  
-  Includes daily rotated logs (`YYYY-MM-DD.txt`) plus the latest log.
-
-## Using the app
-
-1. Run `BeszelAgentManager.exe` (accept the UAC prompt if requested).
-2. On the **Connection** tab, fill in:
-   - **Key** (`KEY`)
-   - **Token** (`TOKEN`) (optional)
-   - **Hub URL** (`HUB_URL`)
-   - **Listen port** (optional; you can enable/disable it)
-3. Use the bottom buttons:
-   - **Install agent**: installs the agent + service and applies configured settings
-   - **Update agent**: updates the agent if a newer version exists
-   - **Manage Agent Version…**: pick a specific version (rollback/upgrade) or force reinstall
-   - **Update manager**: updates BeszelAgentManager if a newer version exists
-   - **Manage Manager Version…**: pick a specific version (rollback/upgrade) or force reinstall
-   - **Apply settings**: reapplies configuration without reinstalling everything
-   - **Uninstall agent**: removes everything created by the manager
-
-The status bar shows:
-- Your detected agent version (when available)
-- Hub reachability status (**Reachable / Unreachable / Not configured**) based on the configured `HUB_URL`
-
-## Build from source (for developers)
-
-Prerequisites:
-- Windows 10/11 (64-bit)
-- Python 3.10+
+- Windows 10/11 64-bit
+- Python 3.10+ (for building)
 - Python packages: `pyinstaller`, `requests`
-- Optional (tray icon): `pystray`, `Pillow`
+- Optional (for tray icon): `pystray`, `Pillow`
 
-Recommended build with spec:
+## Build with the .spec (recommended for 1.1.0)
+
+From the project root (where `BeszelAgentManager.spec` lives):
+
 ```powershell
+cd C:\Projects\BeszelAgentManager-1.1.0
 python -m venv .venv
 .\.venv\Scripts\activate
 pip install pyinstaller requests
@@ -90,12 +55,22 @@ pip install pystray pillow
 pyinstaller BeszelAgentManager.spec
 ```
 
-Output:
+This will produce:
+
 ```text
 dist\BeszelAgentManager.exe
 ```
 
-Manual one-liner build (alternative):
+The resulting EXE will have:
+
+- Embedded icon
+- Version resource (`1.1.0`, ProductName = BeszelAgentManager, Company = Verhoef)
+- No console window
+
+## Manual one-liner build (alternative)
+
+If you prefer not to use the spec file, you can also run:
+
 ```powershell
 pyinstaller --onefile --noconsole ^
   --icon=BeszelAgentManager_icon.ico ^
@@ -105,7 +80,50 @@ pyinstaller --onefile --noconsole ^
   -n BeszelAgentManager beszel_agent_manager\main.py
 ```
 
-## Credits
+The EXE will be created at `dist\BeszelAgentManager.exe`.
 
-- BeszelAgentManager: Verhoef  
-- Beszel (upstream): https://beszel.dev
+## Usage
+
+1. Run `BeszelAgentManager.exe` (accept the UAC prompt if requested).
+
+2. On the *Connection* tab fill in:
+
+   - **Key**: public key from your Beszel hub (`KEY`)
+   - **Token**: optional registration token (`TOKEN`)
+   - **Hub URL**: URL of your hub / monitoring instance (`HUB_URL`)
+   - **Listen (port)**: listen port, default `45876`
+
+   In the *Automatic updates* section you can enable a scheduled task for `beszel-agent update`.
+
+   In the *Manager startup* section you can enable **Start BeszelAgentManager with Windows**
+   so the GUI and tray icon are always available.
+
+   In the *Service control* section you can Start, Stop or Restart the `BeszelAgentManager`
+   service from the main window.
+
+3. On the *Advanced env* tab you can set all additional environment variables used by the agent.
+
+4. On the *Logging* tab:
+
+   - Enable **debug logging** if you want detailed command output in the log.
+   - Use **Open log folder** to inspect `manager.log` under `C:\\ProgramData\\BeszelAgentManager`.
+
+5. Use the buttons at the bottom:
+
+   - **Install agent**: downloads the agent, creates/updates the service and firewall rule,
+     configures the scheduled task (if enabled) and ensures a Start Menu shortcut exists.
+   - **Update agent**: re-downloads the agent binary and restarts the service.
+   - **Apply settings**: reapplies configuration (environment variables, firewall, scheduled task)
+     without re-downloading the agent, and also ensures the Start Menu shortcut exists.
+   - **Uninstall agent**: removes the service, firewall rule, scheduled task, agent files and
+     the Start Menu shortcut.
+
+The agent version detected from the binary (or from the download URL as a fallback) is shown in
+the status bar, next to the BeszelAgentManager version (`1.1.0`).
+
+The status bar also shows a simple hub connectivity status based on the configured `HUB_URL`
+(`Reachable`, `Unreachable` or `Not configured`). This is a best-effort HTTP check and does not
+guarantee that this specific agent is registered in the hub, only that the hub URL is reachable.
+
+Run the built EXE as Administrator (or accept its UAC prompt) so it can create services,
+firewall rules, scheduled tasks, the Start Menu entry and the Defender exclusion.

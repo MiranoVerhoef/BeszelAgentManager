@@ -30,14 +30,9 @@ def _archive_path_for_date(d: datetime.date) -> Path:
 
 
 def rotate_if_needed(force: bool = False) -> Path | None:
-    """Rotate manager.log into manager-YYYY-MM-DD.txt when the date changes.
-
-    Returns the archive path if rotation happened.
-    """
     today = datetime.date.today()
     last = _read_last_date()
 
-    # First run: establish baseline
     if last is None:
         _write_last_date(today)
         return None
@@ -45,17 +40,14 @@ def rotate_if_needed(force: bool = False) -> Path | None:
     if not force and last == today:
         return None
 
-    # Rotate existing log to archive for the *previous* recorded date
     try:
         if LOG_PATH.exists() and LOG_PATH.stat().st_size > 0:
             archive = _archive_path_for_date(last)
-            # Avoid overwriting: append if already exists
             content = LOG_PATH.read_text(encoding="utf-8", errors="replace")
             if archive.exists():
                 archive.write_text(archive.read_text(encoding="utf-8", errors="replace") + content, encoding="utf-8")
             else:
                 archive.write_text(content, encoding="utf-8")
-            # Truncate current log
             LOG_PATH.write_text("", encoding="utf-8")
         else:
             archive = None

@@ -67,29 +67,17 @@ from .defender import (
 )
 from .bootstrap import is_admin
 
-# Legacy directory from very early versions (cleanup on uninstall/self-delete)
 LEGACY_AGENT_DIR = Path(r"C:\Beszel-Agent")
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _resource_path(relative: str) -> str:
-    """
-    Return absolute path to a bundled resource when frozen with PyInstaller,
-    or the source path when running from source.
-    """
     if hasattr(sys, "_MEIPASS"):
         return str(Path(sys._MEIPASS) / relative)
     return str(Path(__file__).resolve().parent.parent / relative)
 
 
 class ToolTip:
-    """
-    Simple tooltip helper for ttk widgets.
-    """
-
     def __init__(self, widget, text: str) -> None:
         self.widget = widget
         self.text = text
@@ -130,12 +118,6 @@ def add_tooltip(widget, text: str):
 
 
 def _normalize_version(ver: str | None) -> str | None:
-    """
-    Same semantics as agent_manager._normalize_version, but local to the GUI:
-    extract a clean semantic version like 0.17.0 from strings such as:
-    - 'v0.17.0'
-    - '0.17.0 (windows/amd64)'
-    """
     if not ver:
         return None
     ver = ver.strip()
@@ -148,13 +130,6 @@ def _normalize_version(ver: str | None) -> str | None:
 
 
 def _fetch_latest_agent_release() -> tuple[str | None, str | None]:
-    """
-    GUI-side helper: query GitHub for latest Beszel release so we can show
-    installed vs latest + "what's changed" in a popup.
-
-    version: normalized version like '0.17.0'
-    body:    release body text
-    """
     try:
         import urllib.request
 
@@ -180,15 +155,11 @@ def _fetch_latest_agent_release() -> tuple[str | None, str | None]:
         return None, None
 
 
-# ---------------------------------------------------------------------------
-# Main application
-# ---------------------------------------------------------------------------
 
 class BeszelAgentManagerApp(tk.Tk):
     def __init__(self, start_hidden: bool = False) -> None:
         super().__init__()
 
-        # Start hidden; we'll decide whether to show after config is loaded
         self.withdraw()
 
         self.title(f"{PROJECT_NAME} v{APP_VERSION}")
@@ -247,7 +218,6 @@ class BeszelAgentManagerApp(tk.Tk):
 
         style.configure("TSeparator", background=border_color)
 
-        # State
         self.config_obj = AgentConfig.load()
         self._first_run = not getattr(self.config_obj, "first_run_done", False)
         if self._first_run:
@@ -263,33 +233,26 @@ class BeszelAgentManagerApp(tk.Tk):
         self._hub_ping_last_error = ""
         self._hub_ping_last_error_ts = 0.0
 
-        # HUB URL DNS fallback state
         self._dns_fallback_active = False
         self._dns_fallback_original = ""
         self._dns_fallback_success_streak = 0
         self._dns_fallback_last_log = ""
 
-        # Build and load variables, then UI
         self._build_vars()
         self._build_ui(accent_color=accent)
 
-        # Ensure the window is large enough to fit newly added UI sections.
-        # (Some layouts can increase required height, and a fixed geometry may clip controls.)
         self._ensure_window_fits_content()
 
         self._update_status()
         self._init_tray()
 
-        # Automatic daily manager log rotation (checks periodically; also rotates on next start)
         self._start_manager_log_rotation_loop()
 
-        # Apply current autostart state
         set_autostart(
             self.var_autostart.get(),
             start_hidden=not self.var_start_visible.get(),
         )
 
-        # Decide visibility
         hide = (
             start_hidden
             and self.var_autostart.get()
@@ -305,17 +268,12 @@ class BeszelAgentManagerApp(tk.Tk):
 
 
     def _ensure_window_fits_content(self) -> None:
-        """Grow the window (if needed) to fit the requested UI size.
-
-        Keeps the existing size if it is already large enough.
-        """
         try:
             self.update_idletasks()
 
             req_w = int(self.winfo_reqwidth())
             req_h = int(self.winfo_reqheight())
 
-            # Current geometry (WxH+X+Y)
             geo = self.wm_geometry()
             cur_w, cur_h = 1000, 700
             try:
@@ -324,14 +282,12 @@ class BeszelAgentManagerApp(tk.Tk):
             except Exception:
                 pass
 
-            # Cap to screen size with a small margin.
             scr_w = max(800, int(self.winfo_screenwidth()) - 40)
             scr_h = max(600, int(self.winfo_screenheight()) - 80)
 
             new_w = min(scr_w, max(cur_w, req_w))
             new_h = min(scr_h, max(cur_h, req_h))
 
-            # Ensure minsize also fits the requested layout.
             min_w = max(920, req_w)
             min_h = max(600, req_h)
             self.minsize(min(min_w, scr_w), min(min_h, scr_h))
@@ -339,11 +295,9 @@ class BeszelAgentManagerApp(tk.Tk):
             if new_w != cur_w or new_h != cur_h:
                 self.geometry(f"{new_w}x{new_h}")
         except Exception:
-            # Never block startup over autosize.
             return
 
     def _current_relaunch_args(self) -> list[str]:
-        """Args to relaunch the manager in the same visible/hidden state."""
         try:
             hidden = not bool(self.winfo_viewable())
         except Exception:
@@ -351,21 +305,17 @@ class BeszelAgentManagerApp(tk.Tk):
         return ["--hidden"] if hidden else []
 
     def _start_manager_log_rotation_loop(self) -> None:
-        """Periodically rotate manager.log into daily snapshots."""
-
         def tick():
             try:
                 archive = rotate_manager_logs_if_needed(force=False)
                 if archive:
                     log(f"Automatic manager log rotate -> {archive}")
-                    # refresh dropdown if user is on logging tab
                     try:
                         self._refresh_manager_log_files_and_view(select_latest=True)
                     except Exception:
                         pass
             except Exception as exc:
                 log(f"Automatic manager log rotate failed: {exc}")
-            # Every 5 minutes
             try:
                 self.after(5 * 60 * 1000, tick)
             except Exception:
@@ -376,14 +326,11 @@ class BeszelAgentManagerApp(tk.Tk):
         except Exception:
             pass
 
-    # Manager in-place updating is intentionally disabled (manual downloads only).
 
-    # ------------------------------------------------------------------ Vars / autosave
 
     def _build_vars(self):
         c = self.config_obj
 
-        # Core connection settings
         self.var_key = tk.StringVar(value=c.key)
         self.var_token = tk.StringVar(value=c.token)
         self.var_hub_url = tk.StringVar(value=c.hub_url)
@@ -391,10 +338,8 @@ class BeszelAgentManagerApp(tk.Tk):
         self.var_hub_url_ip_fallback_enabled = tk.BooleanVar(
             value=bool(getattr(c, "hub_url_ip_fallback_enabled", False))
         )
-        # LISTEN is optional; when blank the agent uses its default (45876)
         self.var_listen = tk.StringVar(value=str(c.listen) if c.listen else "")
 
-        # Advanced env vars
         self.var_data_dir = tk.StringVar(value=c.data_dir)
         self.var_docker_host = tk.StringVar(value=c.docker_host)
         self.var_exclude_containers = tk.StringVar(value=c.exclude_containers)
@@ -417,11 +362,9 @@ class BeszelAgentManagerApp(tk.Tk):
         self.var_system_name = tk.StringVar(value=c.system_name)
         self.var_skip_gpu = tk.StringVar(value=c.skip_gpu)
 
-        # New env vars (v0.18.0)
         self.var_nvml = tk.StringVar(value=getattr(c, "nvml", ""))
         self.var_smart_interval = tk.StringVar(value=getattr(c, "smart_interval", ""))
 
-        # New env vars (v0.17.0)
         self.var_disk_usage_cache = tk.StringVar(
             value=getattr(c, "disk_usage_cache", "")
         )
@@ -429,19 +372,14 @@ class BeszelAgentManagerApp(tk.Tk):
             value=getattr(c, "skip_systemd", "")
         )
 
-        # Auto update
         self.var_auto_update = tk.BooleanVar(value=c.auto_update_enabled)
         self.var_update_interval = tk.IntVar(value=c.update_interval_days or 1)
 
-        # Periodic service restart
         self.var_auto_restart = tk.BooleanVar(value=getattr(c, "auto_restart_enabled", False))
         self.var_auto_restart_hours = tk.IntVar(value=int(getattr(c, "auto_restart_interval_hours", 24) or 24))
 
-        # Logging & startup
         self.var_debug_logging = tk.BooleanVar(value=c.debug_logging)
 
-        # Manager update notification settings (manager in-place update is disabled, but we still
-        # persist notification preferences safely to avoid autosave/apply errors).
         self.var_mgr_update_notify = tk.BooleanVar(
             value=bool(getattr(c, "manager_update_notify_enabled", True))
         )
@@ -450,7 +388,6 @@ class BeszelAgentManagerApp(tk.Tk):
         )
 
 
-        # Manager update UI options (some builds reference these in _build_config)
         self.var_mgr_update_tray_badge = tk.BooleanVar(
             value=bool(getattr(c, "manager_update_tray_badge_enabled", True))
         )
@@ -458,14 +395,12 @@ class BeszelAgentManagerApp(tk.Tk):
             value=bool(getattr(c, "manager_update_include_prereleases", False))
         )
 
-        # Read back actual Run-key
         enabled, start_hidden_flag = get_autostart_state()
         self.var_autostart = tk.BooleanVar(value=enabled)
         self.var_start_visible = tk.BooleanVar(
             value=enabled and not start_hidden_flag
         )
 
-        # Env table definitions
         self.env_definitions = [
             ("DATA_DIR", self.var_data_dir, "Custom data directory used by the agent (DATA_DIR)."),
             ("DOCKER_HOST", self.var_docker_host, "Docker host to connect to."),
@@ -498,14 +433,15 @@ class BeszelAgentManagerApp(tk.Tk):
             name for (name, var, _tip) in self.env_definitions if var.get().strip()
         ]
 
-        self.var_env_enabled = tk.BooleanVar(value=self._any_env_nonempty())
+        self.var_env_enabled = tk.BooleanVar(
+            value=bool(getattr(self.config_obj, "env_enabled", self._any_env_nonempty()))
+        )
 
         self._env_entries: list[ttk.Entry] = []
         self._env_delete_buttons: list[ttk.Button] = []
         self._env_edit_buttons: list[ttk.Button] = []
         self._env_editing: set[str] = set()
 
-        # Agent log viewer state
         self.var_agent_log_choice = tk.StringVar(value="")
         self._agent_log_paths: list[Path] = []
 
@@ -548,10 +484,8 @@ class BeszelAgentManagerApp(tk.Tk):
         for v in autosave_vars:
             v.trace_add("write", self._on_var_changed)
 
-        # Agent log view state
         self.var_agent_log_file = tk.StringVar(value="")
 
-        # Log filter state
         self.var_manager_log_filter = tk.StringVar(value="All")
         self.var_agent_log_filter = tk.StringVar(value="All")
 
@@ -607,7 +541,6 @@ class BeszelAgentManagerApp(tk.Tk):
         except Exception as exc:
             log(f"Autosave failed: {exc}")
 
-    # ------------------------------------------------------------------ UI construction
 
     def _build_ui(self, accent_color: str):
         self.columnconfigure(0, weight=1)
@@ -618,7 +551,6 @@ class BeszelAgentManagerApp(tk.Tk):
         outer.columnconfigure(0, weight=1)
         outer.rowconfigure(1, weight=1)
 
-        # Header
         header = ttk.Frame(outer, style="Header.TFrame", padding=(0, 0, 0, 10))
         header.grid(row=0, column=0, sticky="ew")
         header.columnconfigure(0, weight=1)
@@ -653,7 +585,6 @@ class BeszelAgentManagerApp(tk.Tk):
         title_lbl.grid(row=0, column=0, sticky="w")
         subtitle_lbl.grid(row=1, column=0, sticky="w", pady=(0, 2))
 
-        # Main card
         card = ttk.Frame(outer, style="Card.TFrame")
         card.grid(row=1, column=0, sticky="nsew")
         card.columnconfigure(0, weight=1)
@@ -665,11 +596,9 @@ class BeszelAgentManagerApp(tk.Tk):
         inner.rowconfigure(0, weight=1)
 
         notebook = ttk.Notebook(inner)
-        # Keep a reference so we can determine the active tab for auto-refresh.
         self.notebook = notebook
         notebook.grid(row=0, column=0, sticky="nsew")
 
-        # ------------------------------------------------------------------ Connection tab
         conn = ttk.Frame(notebook, padding=10, style="Card.TFrame")
         conn.columnconfigure(1, weight=1)
         conn.columnconfigure(2, weight=0)
@@ -715,7 +644,6 @@ class BeszelAgentManagerApp(tk.Tk):
             allow_empty=True,
         )
 
-        # Dynamic HUB URL fallback toggle
         self.btn_hub_fallback_toggle = ttk.Button(
             conn,
             text="Enable",
@@ -729,7 +657,6 @@ class BeszelAgentManagerApp(tk.Tk):
             "When disabled, the agent will always use the main Hub URL.",
         )
         self._update_hub_fallback_toggle_ui()
-        # Keep button text in sync with the enabled flag
         try:
             self.var_hub_url_ip_fallback_enabled.trace_add(
                 "write", lambda *_: self._update_hub_fallback_toggle_ui()
@@ -746,7 +673,6 @@ class BeszelAgentManagerApp(tk.Tk):
             allow_empty=True,
         )
 
-        # Dynamic LISTEN firewall toggle
         self.btn_listen_toggle = ttk.Button(
             conn,
             text="Enable",
@@ -760,7 +686,6 @@ class BeszelAgentManagerApp(tk.Tk):
             "Disable: clear LISTEN, apply settings, and remove the firewall rule.",
         )
 
-        # Keep button text in sync with the LISTEN field
         try:
             self.var_listen.trace_add("write", lambda *_: self._update_listen_toggle_button())
         except Exception:
@@ -884,7 +809,6 @@ class BeszelAgentManagerApp(tk.Tk):
             row=0, column=2, sticky="w"
         )
 
-        # ------------------------------------------------------------------ Environment Tables tab
         env_tab = ttk.Frame(notebook, padding=10, style="Card.TFrame")
         env_tab.columnconfigure(1, weight=1)
         env_tab.rowconfigure(2, weight=1)
@@ -930,15 +854,12 @@ class BeszelAgentManagerApp(tk.Tk):
 
         self._rebuild_env_rows()
 
-        # ------------------------------------------------------------------ Logging tab
         log_tab = ttk.Frame(notebook, padding=10, style="Card.TFrame")
         log_tab.columnconfigure(0, weight=1)
         log_tab.columnconfigure(1, weight=0)
-        # Keep the controls row visible; only the log text area should expand.
         log_tab.rowconfigure(4, weight=1)
         notebook.add(log_tab, text="Logging")
 
-        # Top actions row: debug toggle (left) + support bundle (right)
         top_actions = ttk.Frame(log_tab, style="Card.TFrame")
         top_actions.grid(row=0, column=0, columnspan=2, sticky="ew")
         top_actions.columnconfigure(0, weight=1)
@@ -968,10 +889,8 @@ class BeszelAgentManagerApp(tk.Tk):
             style="Card.TLabel",
         ).grid(row=2, column=0, columnspan=2, sticky="w")
 
-        # Manager log controls (dropdown + rotate/refresh + support bundle)
         mgr_controls = ttk.Frame(log_tab, style="Card.TFrame")
         mgr_controls.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(8, 0))
-        # Make sure controls remain visible even on narrower windows.
         mgr_controls.columnconfigure(1, weight=1)
 
         ttk.Label(mgr_controls, text="File:", style="Card.TLabel").grid(row=0, column=0, sticky="w")
@@ -997,7 +916,6 @@ class BeszelAgentManagerApp(tk.Tk):
         self.manager_log_filter_combo.grid(row=0, column=3, sticky="e", padx=(6, 6))
         self.manager_log_filter_combo.bind("<<ComboboxSelected>>", lambda _e: self._refresh_log_view())
 
-        # Row 0: file + refresh/rotate
         ttk.Button(mgr_controls, text="Refresh", command=self._refresh_manager_log_files_and_view).grid(
             row=0, column=4, sticky="e"
         )
@@ -1005,12 +923,10 @@ class BeszelAgentManagerApp(tk.Tk):
             row=0, column=5, sticky="e", padx=(6, 0)
         )
 
-        # Row 1: secondary actions (kept visible on smaller widths)
         mgr_controls.rowconfigure(1, weight=0)
         ttk.Button(mgr_controls, text="Open folder", command=lambda: self._open_path(str(DATA_DIR))).grid(
             row=1, column=4, sticky="e", pady=(6, 0)
         )
-        # (Export Support Bundle button is placed on the top row next to debug checkbox.)
 
         log_frame = ttk.Frame(log_tab, style="Card.TFrame", padding=(4, 4, 4, 4))
         log_frame.grid(row=4, column=0, columnspan=2, sticky="nsew", pady=(8, 0))
@@ -1034,7 +950,6 @@ class BeszelAgentManagerApp(tk.Tk):
 
         self._refresh_manager_log_files_and_view(select_latest=True)
 
-        # ------------------------------------------------------------------ Agent Logging tab
         agent_log_tab = ttk.Frame(notebook, padding=10, style="Card.TFrame")
         agent_log_tab.columnconfigure(0, weight=1)
         agent_log_tab.rowconfigure(4, weight=1)
@@ -1119,13 +1034,11 @@ class BeszelAgentManagerApp(tk.Tk):
         self._agent_log_files_map: dict[str, Path] = {}
         self._refresh_agent_log_files_and_view(select_latest=True)
 
-        # ------------------------------------------------------------------ Bottom section
         outer.rowconfigure(2, weight=0)
         outer.rowconfigure(3, weight=0)
 
         bottom = ttk.Frame(outer, style="App.TFrame")
         bottom.grid(row=2, column=0, sticky="ew", pady=(10, 4))
-        # Column 0 acts as a flexible spacer so the action buttons align nicely.
         bottom.columnconfigure(0, weight=1)
         for i in range(1, 12):
             bottom.columnconfigure(i, weight=0)
@@ -1135,15 +1048,12 @@ class BeszelAgentManagerApp(tk.Tk):
         status_frame.columnconfigure(0, weight=1)
         status_frame.columnconfigure(1, weight=0)
 
-        # Compact status bar (single row)
         left = ttk.Frame(status_frame, style="App.TFrame")
         left.grid(row=0, column=0, sticky="w")
         right = ttk.Frame(status_frame, style="App.TFrame")
         right.grid(row=0, column=1, sticky="e")
 
-        # App version (clickable)
 
-        # App/version link (use tk.Label to avoid native ttk white background boxes)
         self.label_app_version = tk.Label(
             left,
             text=f"{PROJECT_NAME} v{APP_VERSION}",
@@ -1158,7 +1068,6 @@ class BeszelAgentManagerApp(tk.Tk):
         self.label_app_version.bind("<Enter>", lambda e: self.label_app_version.configure(cursor="hand2"))
         self.label_app_version.bind("<Leave>", lambda e: self.label_app_version.configure(cursor=""))
 
-        # Inline status items
         self.label_status = tk.Label(left, text="Service: Unknown", bg=self._base_bg, fg="#111827", font=("Segoe UI", 9), borderwidth=0, highlightthickness=0)
         self.label_status.grid(row=0, column=2, sticky="w", padx=(0, 10))
 
@@ -1187,7 +1096,6 @@ class BeszelAgentManagerApp(tk.Tk):
         self.label_hub_status.bind("<Enter>", lambda e: self.label_hub_status.configure(cursor="hand2"))
         self.label_hub_status.bind("<Leave>", lambda e: self.label_hub_status.configure(cursor=""))
 
-        # Saved/Applied badge (more pronounced than the old tiny label)
         self.label_config_saved = tk.Label(
             right,
             text="",
@@ -1205,7 +1113,6 @@ class BeszelAgentManagerApp(tk.Tk):
         self.progress.grid(row=0, column=0, sticky="e", padx=(0, 10))
         self.progress.grid_remove()
 
-        # Bottom-right hyperlinks
         link_about = tk.Label(right, text="About", bg=self._base_bg, fg="#2563eb", font=("Segoe UI", 9, "underline"), borderwidth=0, highlightthickness=0)
         link_about.grid(row=0, column=1, padx=(0, 8), sticky="e")
         link_about.bind("<Button-1>", lambda e: self._open_url("https://github.com/MiranoVerhoef/BeszelAgentManager"))
@@ -1217,13 +1124,11 @@ class BeszelAgentManagerApp(tk.Tk):
         link_about_beszel.bind("<Button-1>", lambda e: self._open_url("https://beszel.dev"))
         link_about_beszel.bind("<Enter>", lambda e: link_about_beszel.configure(cursor="hand2"))
         link_about_beszel.bind("<Leave>", lambda e: link_about_beszel.configure(cursor=""))
-# Bottom action buttons (uniform width)
         BTN_W = 24
 
         btn_install = ttk.Button(bottom, text="Install agent", width=BTN_W, command=self._on_install)
         btn_install.grid(row=0, column=1, padx=4, pady=4, sticky="e")
 
-        # Agent: quick update button (row 0) + manage version button (row 1)
         btn_update_agent = ttk.Button(bottom, text="Update agent", width=BTN_W, command=self._on_update_agent)
         btn_update_agent.grid(row=0, column=2, padx=4, pady=4, sticky="e")
         add_tooltip(btn_update_agent, "Check GitHub and update the Beszel agent if a newer version is available.")
@@ -1232,7 +1137,6 @@ class BeszelAgentManagerApp(tk.Tk):
         btn_manage_agent.grid(row=1, column=2, padx=4, pady=(0, 4), sticky="e")
         add_tooltip(btn_manage_agent, "Pick a version to install/rollback, or force reinstall the latest agent.")
 
-        # Manager: quick update button (row 0) + manage version button (row 1)
         btn_update_manager = ttk.Button(bottom, text="Download manager", width=BTN_W, command=self._on_download_manager)
         btn_update_manager.grid(row=0, column=3, padx=4, pady=4, sticky="e")
         add_tooltip(btn_update_manager, "Check GitHub and open the download link for the latest BeszelAgentManager release.")
@@ -1249,17 +1153,11 @@ class BeszelAgentManagerApp(tk.Tk):
 
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-        # Auto-refresh log viewers every 10 seconds (only refresh the active tab).
         self._auto_log_refresh_ticks = 0
         self.after(10_000, self._auto_refresh_logs)
 
 
     def _auto_refresh_logs(self):
-        """Auto-refresh log viewers every 10 seconds.
-
-        To avoid heavy I/O, we refresh only the currently visible tab, and refresh the
-        file dropdown lists roughly every minute.
-        """
         try:
             self._auto_log_refresh_ticks = getattr(self, "_auto_log_refresh_ticks", 0) + 1
 
@@ -1275,23 +1173,17 @@ class BeszelAgentManagerApp(tk.Tk):
 
             refresh_lists = (self._auto_log_refresh_ticks % 6 == 0)  # ~every 60 seconds
 
-            # Refresh both manager and agent viewers so whichever tab the user switches to
-            # has up-to-date content. Only the active tab will be visible, but this avoids
-            # "stale" logs when toggling between tabs.
 
-            # Manager logs
             if refresh_lists:
                 self._refresh_manager_log_files_and_view(select_latest=False)
             else:
                 self._refresh_log_view()
 
-            # Agent logs
             if refresh_lists:
                 self._refresh_agent_log_files_and_view(select_latest=False)
             else:
                 self._refresh_agent_log_view()
         except Exception:
-            # Never let the UI crash because of auto-refresh.
             pass
         finally:
             try:
@@ -1299,7 +1191,6 @@ class BeszelAgentManagerApp(tk.Tk):
             except Exception:
                 pass
 
-    # ------------------------------------------------------------------ Locked entry + dialog
 
     def _make_locked_entry_with_dialog(
         self,
@@ -1317,12 +1208,10 @@ class BeszelAgentManagerApp(tk.Tk):
         entry = ttk.Entry(parent, textvariable=var, state="readonly")
         entry.grid(row=row, column=1, sticky="ew", pady=2)
 
-        # Locked by default; "Change" simply unlocks the field inline.
         btn = ttk.Button(parent, text="Change")
         btn.grid(row=row, column=2, sticky="w", padx=(4, 0), pady=2)
 
         def toggle_inline_edit():
-            # Unlock -> normal, Lock -> readonly
             if str(entry.cget("state")) == "readonly":
                 entry.configure(state="normal")
                 btn.configure(text="Lock")
@@ -1333,7 +1222,6 @@ class BeszelAgentManagerApp(tk.Tk):
                     pass
                 return
 
-            # Locking: validate integers if requested.
             val = str(var.get()).strip()
             if is_int:
                 if allow_empty and not val:
@@ -1344,7 +1232,6 @@ class BeszelAgentManagerApp(tk.Tk):
                     iv = int(val)
                     if not (1 <= iv <= 65535) and label.lower().startswith("listen"):
                         raise ValueError
-                    # Normalize to int-like string (keeps things consistent)
                     var.set(str(iv))
                 except Exception:
                     messagebox.showerror(
@@ -1364,7 +1251,6 @@ class BeszelAgentManagerApp(tk.Tk):
         add_tooltip(entry, tooltip)
         add_tooltip(btn, "Unlock to edit, then click again to lock.")
 
-    # ------------------------------------------------------------------ Env helpers
 
     def _available_env_names(self) -> list[str]:
         return [
@@ -1393,7 +1279,6 @@ class BeszelAgentManagerApp(tk.Tk):
                     lbl.grid(row=row, column=0, sticky="w", pady=1)
                     add_tooltip(lbl, tip)
 
-                    # Locked by default; unlock per-row using the Edit button.
                     state = "disabled" if not enabled else ("normal" if name in self._env_editing else "readonly")
                     ent = ttk.Entry(self.env_rows_frame, textvariable=var, state=state)
                     ent.grid(row=row, column=1, sticky="ew", pady=1)
@@ -1401,7 +1286,6 @@ class BeszelAgentManagerApp(tk.Tk):
 
                     def _toggle_edit(nm=name, entry=ent):
                         if nm not in self._env_editing:
-                            # Enter edit mode (requires admin because we auto-apply on save)
                             if not self._require_admin():
                                 return
                             self._env_editing.add(nm)
@@ -1409,7 +1293,6 @@ class BeszelAgentManagerApp(tk.Tk):
                             entry.focus_set()
                             entry.icursor("end")
                         else:
-                            # Save + lock + apply
                             self._env_editing.discard(nm)
                             entry.configure(state="readonly")
                             self._on_apply()
@@ -1461,8 +1344,6 @@ class BeszelAgentManagerApp(tk.Tk):
     def _update_env_enabled_state(self):
         enabled = self.var_env_enabled.get()
 
-        # Respect per-row locking: when enabled, rows are readonly unless the user
-        # explicitly clicked Edit for that row.
         for name, ent in zip(self.active_env_names, self._env_entries):
             if not enabled:
                 ent.configure(state="disabled")
@@ -1496,11 +1377,9 @@ class BeszelAgentManagerApp(tk.Tk):
             self.active_env_names.remove(name)
         self._rebuild_env_rows()
 
-    # ------------------------------------------------------------------ Log viewer
 
 
     def _filter_log_text_by_type(self, content: str, type_filter: str) -> str:
-        """Filter log content by a simple event/type level."""
         tf = (type_filter or "All").strip().lower()
         if tf in ("all", "*"):
             return content
@@ -1519,7 +1398,6 @@ class BeszelAgentManagerApp(tk.Tk):
         def classify(s: str) -> str:
             u = (" " + (s or "").upper() + " ")
 
-            # Explicit levels (agent logs often contain ' INFO', 'WARN', etc.)
             if " ERROR" in u or " ERROR:" in u or " EXCEPTION" in u or " TRACEBACK" in u or " TASK FAILED" in u or " AUTOSAVE FAILED" in u:
                 return "error"
             if " WARN" in u or " WARNING" in u:
@@ -1529,7 +1407,6 @@ class BeszelAgentManagerApp(tk.Tk):
             if " INFO" in u:
                 return "info"
 
-            # Heuristics for manager log lines that have no explicit level
             if " FAILED" in u or "HTTP ERROR" in u:
                 return "error"
             if " TIMED OUT" in u or " TIMEOUT" in u or " STOP_PENDING" in u:
@@ -1544,17 +1421,14 @@ class BeszelAgentManagerApp(tk.Tk):
                 if kw in u:
                     return "task"
 
-            # Default unlabeled lines to info so filters behave intuitively
             return "info"
 
 
         for line in lines:
             c = classify(line)
 
-            # Keep traceback context for error filter
             if want == "error":
                 if include_trace:
-                    # Stop including once we hit the next event line
                     if is_new_event_line(line) and not line.lstrip().startswith("Traceback") and "  File " not in line:
                         include_trace = False
                     else:
@@ -1563,10 +1437,8 @@ class BeszelAgentManagerApp(tk.Tk):
 
                 if c == "error":
                     out.append(line)
-                    # enable traceback context if next lines follow
                     include_trace = True
                     continue
-                # also include python stack lines if they appear
                 if line.lstrip().startswith("Traceback") or line.lstrip().startswith("File ") or "  File " in line:
                     out.append(line)
                     continue
@@ -1584,7 +1456,6 @@ class BeszelAgentManagerApp(tk.Tk):
         return "\n".join(out) + ("\n" if out else "")
 
     def _refresh_log_view(self):
-        # Manager log viewer (supports selecting archived logs) + type filter
         p = None
         try:
             label = getattr(self, "var_manager_log_file", None)
@@ -1611,7 +1482,6 @@ class BeszelAgentManagerApp(tk.Tk):
         self.log_text.configure(state="disabled")
         self.log_text.see(tk.END)
     def _refresh_manager_log_files_and_view(self, select_latest: bool = False):
-        """Refresh dropdown list of manager log files and update the view."""
         try:
             files = list_manager_log_files()
         except Exception as exc:
@@ -1649,7 +1519,6 @@ class BeszelAgentManagerApp(tk.Tk):
         self.log_text.see(tk.END)
 
     def _on_rotate_manager_logs(self):
-        # Manual snapshot + truncate
         try:
             archive = rotate_manager_logs_if_needed(force=True)
             if archive:
@@ -1667,10 +1536,8 @@ class BeszelAgentManagerApp(tk.Tk):
             log(f"Failed to create support bundle: {exc}")
             messagebox.showerror(PROJECT_NAME, f"Failed to create support bundle:\n{exc}")
 
-    # ------------------------------------------------------------------ Agent log viewer
 
     def _refresh_agent_log_files_and_view(self, select_latest: bool = False):
-        """Refresh the dropdown list of agent log files and update the view."""
         try:
             files = list_agent_log_files()
         except Exception as exc:
@@ -1710,7 +1577,6 @@ class BeszelAgentManagerApp(tk.Tk):
         self.agent_log_text.see(tk.END)
 
     def _refresh_agent_log_view(self):
-        # Agent log viewer (supports selecting archived logs) + type filter
         p = None
         try:
             label = getattr(self, "var_agent_log_file", None)
@@ -1742,12 +1608,10 @@ class BeszelAgentManagerApp(tk.Tk):
 
         def task():
             rotate_agent_logs_and_rename()
-            # Refresh UI after rotation
             self._refresh_agent_log_files_and_view(select_latest=False)
 
         self._run_task("Rotating agent logs...", task)
 
-    # ------------------------------------------------------------------ Misc helpers
 
     def _open_url(self, url: str):
         try:
@@ -1756,7 +1620,6 @@ class BeszelAgentManagerApp(tk.Tk):
             messagebox.showerror(PROJECT_NAME, f"Failed to open URL:\n{exc}")
 
     def _open_path(self, path: str) -> None:
-        """Open a file/folder path in Explorer (best-effort)."""
         try:
             if os.name == "nt":
                 os.startfile(path)  # type: ignore[attr-defined]
@@ -1765,12 +1628,10 @@ class BeszelAgentManagerApp(tk.Tk):
         except Exception as exc:
             messagebox.showerror(PROJECT_NAME, f"Failed to open path:\n{exc}")
 
-    # ------------------------------------------------------------------ Config builder
 
     def _build_config(self) -> AgentConfig:
         c = self.config_obj
 
-        # LISTEN is optional. If blank, the agent will use its own default.
         listen_raw = self.var_listen.get().strip()
         listen: int | None = None
         if listen_raw:
@@ -1834,7 +1695,6 @@ class BeszelAgentManagerApp(tk.Tk):
             manager_update_include_prereleases=self.var_mgr_update_include_pre.get(),
         )
 
-        # Attach extra env dynamically for older configs
         extra_disk_usage_cache = self.var_disk_usage_cache.get().strip()
         extra_skip_systemd = self.var_skip_systemd.get().strip()
         if extra_disk_usage_cache:
@@ -1844,7 +1704,6 @@ class BeszelAgentManagerApp(tk.Tk):
 
         return cfg
 
-    # ------------------------------------------------------------------ Admin / relaunch helpers
 
     def _relaunch_as_admin(self) -> bool:
         if os.name != "nt":
@@ -1905,7 +1764,6 @@ class BeszelAgentManagerApp(tk.Tk):
 
         sys.exit(0)
 
-    # ------------------------------------------------------------------ Task runner
 
     def _run_task(self, description: str, func, *, show_success_popup: bool = True, success_message: str | None = None, on_success=None):
         if self._task_running:
@@ -1952,7 +1810,6 @@ class BeszelAgentManagerApp(tk.Tk):
 
         threading.Thread(target=worker, daemon=True).start()
 
-    # ------------------------------------------------------------------ Install / update / apply / uninstall
 
     def _on_install(self):
         if not self._require_admin():
@@ -2032,7 +1889,6 @@ class BeszelAgentManagerApp(tk.Tk):
         current = get_agent_version()
         latest_version, changelog = _fetch_latest_agent_release()
 
-        # Build "What's changed" snippet from GitHub release body
         changelog_snippet = ""
         if changelog:
             lines = [ln.rstrip() for ln in changelog.splitlines()]
@@ -2048,8 +1904,6 @@ class BeszelAgentManagerApp(tk.Tk):
                 ]
             changelog_snippet = "\n\nWhat's changed:\n" + "\n".join(lines)
 
-        # If we know the latest version from GitHub AND the agent reports a version,
-        # and they are equal, we just inform the user and do nothing.
         if latest_version and current not in ("Not installed", "Unknown"):
             if current == latest_version:
                 info = (
@@ -2060,10 +1914,8 @@ class BeszelAgentManagerApp(tk.Tk):
                 messagebox.showinfo(PROJECT_NAME, info)
                 return
 
-        # For all other cases (older version or GitHub lookup failed), fall back to prompt
         msg = None
         if latest_version and current not in ("Not installed", "Unknown"):
-            # current != latest_version here
             msg = (
                 f"A new Beszel agent version is available.\n\n"
                 f"Installed: {current}\n"
@@ -2072,7 +1924,6 @@ class BeszelAgentManagerApp(tk.Tk):
                 "Do you want to update now?"
             )
         elif current not in ("Not installed", "Unknown"):
-            # Installed, but we couldn't determine latest from GitHub
             msg = (
                 f"Agent is currently at version {current}.\n\n"
                 "Could not determine the latest version from GitHub.\n"
@@ -2082,7 +1933,6 @@ class BeszelAgentManagerApp(tk.Tk):
         if msg is not None:
             if not messagebox.askyesno(PROJECT_NAME, msg):
                 return
-        # If current is "Not installed"/"Unknown", or GitHub failed, we just run the update task directly.
 
         def task():
             try:
@@ -2098,14 +1948,12 @@ class BeszelAgentManagerApp(tk.Tk):
         self._run_task("Updating agent binary...", task)
 
     def _on_force_update_agent(self):
-        """Force re-download and reinstall of the latest Beszel agent."""
         if not self._require_admin():
             return
 
         current = get_agent_version()
         latest_version, changelog = _fetch_latest_agent_release()
 
-        # Build "What's changed" snippet from GitHub release body
         changelog_snippet = ""
         if changelog:
             lines = [ln.rstrip() for ln in changelog.splitlines()]
@@ -2142,10 +1990,8 @@ class BeszelAgentManagerApp(tk.Tk):
 
         self._run_task("Force updating agent binary...", task)
 
-    # ------------------------------------------------------------------ Version pickers
 
     def _on_agent_versions(self):
-        """Open a dialog to install/rollback the Beszel agent to a selected stable version."""
         if not self._require_admin():
             return
 
@@ -2158,11 +2004,9 @@ class BeszelAgentManagerApp(tk.Tk):
         )
 
     def _on_manage_agent_version(self):
-        """Single entry point for managing the agent version (install/rollback/force reinstall)."""
         self._on_agent_versions()
 
     def _on_manager_versions(self):
-        """Open the GitHub releases page for manual manager downloads."""
         try:
             webbrowser.open("https://github.com/MiranoVerhoef/BeszelAgentManager/releases")
         except Exception:
@@ -2174,7 +2018,6 @@ class BeszelAgentManagerApp(tk.Tk):
         )
 
     def _on_manage_manager_version(self):
-        """Single entry point for managing the manager version (manual downloads only)."""
         self._on_manager_versions()
 
     def _open_version_dialog(
@@ -2200,7 +2043,6 @@ class BeszelAgentManagerApp(tk.Tk):
 
         ttk.Label(frm, text=f"Installed: {current_version}").grid(row=0, column=0, columnspan=2, sticky="w")
 
-        # (Manager updates are downloaded manually; this dialog is used for agent versions.)
 
         ttk.Label(frm, text="Select version:").grid(row=1, column=0, sticky="w", pady=(10, 4))
         var_sel = tk.StringVar()
@@ -2235,7 +2077,6 @@ class BeszelAgentManagerApp(tk.Tk):
             body = str(rel.get("body") or "")
             if not body:
                 body = "(No release notes.)"
-            # Keep dialog responsive: show a short snippet
             lines = [ln.rstrip() for ln in body.splitlines()]
             while lines and not lines[0]:
                 lines.pop(0)
@@ -2285,7 +2126,6 @@ class BeszelAgentManagerApp(tk.Tk):
                         set_text("(No versions found.)")
                         return
 
-                    # Prefer installed version if present in list, else first (newest)
                     pick = None
                     for label, r in mapping.items():
                         if str(r.get("version") or "") == current_version:
@@ -2323,7 +2163,6 @@ class BeszelAgentManagerApp(tk.Tk):
             if not messagebox.askyesno(PROJECT_NAME, f"Install {kind} version {v}?{warn}"):
                 return
 
-            # Close the dialog immediately so users get clear feedback that an install started.
             try:
                 win.destroy()
             except Exception:
@@ -2340,7 +2179,6 @@ class BeszelAgentManagerApp(tk.Tk):
         load_releases()
 
     def _install_selected_agent_release(self, release: dict, force: bool) -> None:
-        """Install a specific agent release (version picker dialog)."""
         version = str(release.get("version") or "").strip()
         changelog = str(release.get("body") or "")
 
@@ -2358,7 +2196,6 @@ class BeszelAgentManagerApp(tk.Tk):
         self._run_task(f"Installing agent {version}...", task)
 
     def _install_selected_manager_release(self, release: dict, force: bool) -> None:
-        """Manual downloads only: open the selected release in a browser."""
         v = str(release.get("version") or "").strip() or "?"
         tag = str(release.get("tag") or "").strip() or "?"
         dl = str(release.get("download_url") or "").strip()
@@ -2377,12 +2214,10 @@ class BeszelAgentManagerApp(tk.Tk):
         )
 
     def _on_download_manager(self):
-        """Check GitHub for the latest manager release and open the download link."""
         if self._task_running:
             messagebox.showinfo(PROJECT_NAME, "Another operation is already in progress.")
             return
 
-        # ------------------------------------------------------------------ Step 1: check latest release
         self._task_running = True
         self.label_status.config(text="Checking latest manager release...")
         self.progress.grid()
@@ -2420,7 +2255,6 @@ class BeszelAgentManagerApp(tk.Tk):
                 page = str(rel.get("html_url") or "").strip()
                 log(f"Manager download check: current={APP_VERSION} latest={latest} tag={tag} url={dl or page or '?'}")
 
-                # Build short release notes snippet
                 body = str(rel.get("body") or "")
                 snippet = ""
                 if body:
@@ -2457,11 +2291,9 @@ class BeszelAgentManagerApp(tk.Tk):
         threading.Thread(target=worker_check, daemon=True).start()
 
     def _on_force_update_manager(self):
-        """Deprecated: manager is downloaded manually."""
         self._on_download_manager()
 
     def _on_apply(self):
-        # If nothing relevant changed, don't restart the service.
         try:
             cfg = self._build_config()
         except Exception:
@@ -2532,7 +2364,6 @@ class BeszelAgentManagerApp(tk.Tk):
         )
 
     def _update_hub_fallback_toggle_ui(self) -> None:
-        """Update the Enable/Disable button for the Hub URL IP fallback feature."""
         btn = getattr(self, "btn_hub_fallback_toggle", None)
         if btn is None:
             return
@@ -2543,7 +2374,6 @@ class BeszelAgentManagerApp(tk.Tk):
         btn.configure(text=("Disable" if enabled else "Enable"))
 
     def _on_toggle_hub_url_fallback(self) -> None:
-        """Enable/disable the Hub URL IP fallback feature."""
         if not self._require_admin():
             return
 
@@ -2555,7 +2385,6 @@ class BeszelAgentManagerApp(tk.Tk):
         primary = (self.var_hub_url.get() or "").strip()
         fallback = (self.var_hub_url_ip_fallback.get() or "").strip()
 
-        # ------------------------------------------------------------------ Disable
         if enabled:
             if not messagebox.askyesno(
                 PROJECT_NAME,
@@ -2569,7 +2398,6 @@ class BeszelAgentManagerApp(tk.Tk):
             self.config_obj = cfg
             self._update_hub_fallback_toggle_ui()
 
-            # If we were actively on fallback, switch back to primary now.
             if self._dns_fallback_active:
                 self._dns_fallback_active = False
                 self._dns_fallback_success_streak = 0
@@ -2578,7 +2406,6 @@ class BeszelAgentManagerApp(tk.Tk):
             log("Hub URL IP Fallback disabled")
             return
 
-        # ------------------------------------------------------------------ Enable
         if not fallback:
             messagebox.showerror(
                 PROJECT_NAME,
@@ -2600,7 +2427,6 @@ class BeszelAgentManagerApp(tk.Tk):
         log("Hub URL IP Fallback enabled")
 
     def _update_listen_toggle_button(self) -> None:
-        """Update the Enable/Disable button based on whether LISTEN is set."""
         try:
             raw = self.var_listen.get().strip()
         except Exception:
@@ -2610,10 +2436,8 @@ class BeszelAgentManagerApp(tk.Tk):
         self.btn_listen_toggle.configure(text=("Disable" if raw else "Enable"))
 
     def _on_toggle_listen_firewall(self):
-        """Enable or disable LISTEN + Firewall rule depending on current state."""
         raw = self.var_listen.get().strip()
 
-        # ------------------------------------------------------------------ Disable
         if raw:
             if not self._require_admin():
                 return
@@ -2629,7 +2453,6 @@ class BeszelAgentManagerApp(tk.Tk):
             ):
                 return
 
-            # Clear LISTEN and apply configuration
             self.var_listen.set("")
             cfg = self._build_config()
             set_debug_logging(cfg.debug_logging)
@@ -2639,7 +2462,6 @@ class BeszelAgentManagerApp(tk.Tk):
 
             def task_disable():
                 apply_configuration_only(cfg)
-                # Rule name is fixed; removing it is safest.
                 remove_firewall_rule()
                 cfg.save()
                 self.config_obj = cfg
@@ -2647,11 +2469,9 @@ class BeszelAgentManagerApp(tk.Tk):
             self._run_task("Disabling listen port + firewall rule...", task_disable)
             return
 
-        # ------------------------------------------------------------------ Enable
         if not self._require_admin():
             return
 
-        # If LISTEN is empty, pick the agent default.
         if not raw:
             self.var_listen.set(str(DEFAULT_LISTEN_PORT))
 
@@ -2672,7 +2492,6 @@ class BeszelAgentManagerApp(tk.Tk):
 
         self._run_task("Enabling listen port + firewall rule...", task_enable)
 
-    # Backward-compat (older code paths may still call this)
     def _on_enable_listen_firewall(self):
         self._on_toggle_listen_firewall()
 
@@ -2740,9 +2559,6 @@ class BeszelAgentManagerApp(tk.Tk):
                 except Exception as exc:
                     log(f"Failed to remove agent dir {AGENT_DIR}: {exc}")
 
-                # Only attempt to remove ProgramData when we are NOT removing the manager.
-                # If we remove the manager, ProgramData cleanup is handled by the delayed
-                # self-delete script after this process exits (manager.log is open right now).
                 if not remove_self:
                     try:
                         if DATA_DIR.exists():
@@ -2800,7 +2616,6 @@ class BeszelAgentManagerApp(tk.Tk):
 
         threading.Thread(target=worker, daemon=True).start()
 
-    # ------------------------------------------------------------------ Service control
 
     def _on_start_service(self):
         if not self._require_admin():
@@ -2857,7 +2672,6 @@ class BeszelAgentManagerApp(tk.Tk):
             messagebox.showerror(PROJECT_NAME, f"Failed to open NSSM service editor:\n{exc}")
 
     def _notify_service_forced_kill(self, action: str) -> None:
-        """Inform the user that a force-kill was needed and offer diagnostics."""
         try:
             msg = (
                 f"Service {action} timed out (15s). It was force-killed.\n\n"
@@ -2870,7 +2684,6 @@ class BeszelAgentManagerApp(tk.Tk):
             log(f"Failed to show forced-kill diagnostics prompt: {exc}")
 
     def _show_text_window(self, title: str, text: str) -> None:
-        """Show a scrollable read-only text window."""
         win = tk.Toplevel(self)
         win.title(title)
         win.geometry("900x600")
@@ -2891,7 +2704,6 @@ class BeszelAgentManagerApp(tk.Tk):
         y.grid(row=0, column=1, sticky="ns")
         x.grid(row=1, column=0, sticky="ew")
 
-    # ------------------------------------------------------------------ Status / hub
 
     def _on_version_clicked(self, _event=None):
         url = (
@@ -2914,7 +2726,6 @@ class BeszelAgentManagerApp(tk.Tk):
 
 
     def _on_hub_status_clicked(self, _event=None):
-        """Click handler for Hub status label in the status bar."""
         try:
             self._open_hub_url()
         except Exception as exc:
@@ -2932,13 +2743,11 @@ class BeszelAgentManagerApp(tk.Tk):
         self.label_hub_status.config(text=text)
 
     def _log_hub_ping_error_throttled(self, message: str) -> None:
-        """Avoid spamming the log with repeated ping failures."""
         import time
 
         msg = (message or "").strip()
         now = time.time()
 
-        # Log if the error changed, or at most once every 5 minutes.
         if msg != self._hub_ping_last_error or (now - self._hub_ping_last_error_ts) > 300:
             log(msg)
             self._hub_ping_last_error = msg
@@ -2950,7 +2759,6 @@ class BeszelAgentManagerApp(tk.Tk):
         self._hub_ping_started = True
         self._ping_hub_once()
 
-    # ------------------------------------------------------------------ HUB URL DNS fallback
 
     def _extract_host_from_url(self, url: str) -> str:
         try:
@@ -2980,20 +2788,16 @@ class BeszelAgentManagerApp(tk.Tk):
             pass
 
     def _start_hub_dns_fallback_loop(self) -> None:
-        """If HUB URL DNS resolution fails, switch service HUB_URL to fallback and switch back on recovery."""
-
         def tick():
             try:
                 self._dns_fallback_check_once()
             except Exception:
                 pass
             try:
-                # Run once per minute
                 self.after(60 * 1000, tick)
             except Exception:
                 pass
 
-        # small delay so config vars are fully ready
         try:
             self.after(10 * 1000, tick)
         except Exception:
@@ -3003,14 +2807,12 @@ class BeszelAgentManagerApp(tk.Tk):
         import socket
         import datetime
 
-        # Feature enable flag
         enabled = False
         try:
             enabled = bool(getattr(self, "var_hub_url_ip_fallback_enabled", None).get())
         except Exception:
             enabled = bool(getattr(self.config_obj, "hub_url_ip_fallback_enabled", False))
 
-        # Pull from UI vars first; fallback to persisted config.
         primary = (self.var_hub_url.get() or "").strip()
         fallback = (self.var_hub_url_ip_fallback.get() or "").strip() if hasattr(self, "var_hub_url_ip_fallback") else ""
         if not primary and self.config_obj:
@@ -3032,7 +2834,6 @@ class BeszelAgentManagerApp(tk.Tk):
         }
         self._write_dns_fallback_state(state)
 
-        # If disabled, ensure we are not left in fallback mode.
         if not enabled:
             if self._dns_fallback_active:
                 self._dns_fallback_active = False
@@ -3046,7 +2847,6 @@ class BeszelAgentManagerApp(tk.Tk):
         if not host or not has_fallback:
             return
 
-        # Check DNS resolution (not HTTP reachability).
         dns_ok = True
         try:
             socket.getaddrinfo(host, None)
@@ -3065,7 +2865,6 @@ class BeszelAgentManagerApp(tk.Tk):
                 self._apply_hub_url_override_async(fallback, reason="dns-fallback")
             return
 
-        # Active fallback: look for recovery (5 consecutive good resolves, once per minute)
         if dns_ok:
             self._dns_fallback_success_streak += 1
             if self._dns_fallback_success_streak in (1, 5):
@@ -3079,12 +2878,9 @@ class BeszelAgentManagerApp(tk.Tk):
                 self._dns_fallback_success_streak = 0
                 self._apply_hub_url_override_async(original, reason="dns-recover")
         else:
-            # still broken
             self._dns_fallback_success_streak = 0
 
     def _apply_hub_url_override_async(self, new_hub_url: str, reason: str = "") -> None:
-        """Apply service HUB_URL change in the background (no UI blocking)."""
-
         def worker():
             try:
                 from .bootstrap import is_admin
@@ -3097,7 +2893,6 @@ class BeszelAgentManagerApp(tk.Tk):
 
                 cfg = AgentConfig.load()
                 cfg.hub_url = (new_hub_url or "").strip()
-                # Do not persist this override to config; it is service-only.
                 log(f"DNS fallback: applying HUB_URL override ({reason}).")
                 apply_configuration_only(cfg)
             except Exception as exc:
@@ -3135,8 +2930,6 @@ class BeszelAgentManagerApp(tk.Tk):
                 ping_ms = int((time.perf_counter() - start) * 1000)
                 reachable = True
             except ssl.SSLCertVerificationError as exc:
-                # PyInstaller/Python sometimes can't locate the system CA store on Windows.
-                # Fall back to PowerShell which uses Windows certificate store.
                 try:
                     start = time.perf_counter()
                     safe_url = url.replace("'", "''")
@@ -3204,7 +2997,6 @@ class BeszelAgentManagerApp(tk.Tk):
         if status in ("START_PENDING", "STOP_PENDING"):
             self.after(1000, self._update_status)
 
-    # ------------------------------------------------------------------ Window / tray / self-delete
 
     def _on_close(self):
         if self._tray_icon is not None:
@@ -3230,9 +3022,6 @@ class BeszelAgentManagerApp(tk.Tk):
             legacy_agent_dir = LEGACY_AGENT_DIR
 
             if os.name == "nt":
-                # Use a dedicated PowerShell cleanup script.
-                # This is more reliable than a long cmd /c one-liner and avoids failing
-                # to delete ProgramData while manager.log is still open.
                 try:
                     import tempfile
 
@@ -3240,7 +3029,6 @@ class BeszelAgentManagerApp(tk.Tk):
                     log_path = str(LOG_PATH)
 
                     def _psq(s: str) -> str:
-                        # Single-quote escape for PowerShell
                         return s.replace("'", "''")
 
                     script = f"""
@@ -3266,7 +3054,6 @@ function Log([string]$m) {{
 function FixAcl([string]$p) {{
   try {{
     if (-not $p -or -not (Test-Path -LiteralPath $p)) {{ return }}
-    # Take ownership and grant full control to Builtin Administrators + SYSTEM
     takeown /f "$p" /r /d y | Out-Null
     icacls "$p" /grant *S-1-5-32-544:(OI)(CI)F /T /C | Out-Null
     icacls "$p" /grant *S-1-5-18:(OI)(CI)F /T /C | Out-Null
@@ -3277,9 +3064,6 @@ Log "Cleanup: waiting for PID $PidToWait to exit"
 try {{ Wait-Process -Id $PidToWait -Timeout 60 }} catch {{ }}
 
 try {{
-  # Extra safety: make sure processes are not lingering
-  # Also stop/delete the agent service in case a previous uninstall step failed.
-  # Use sc.exe explicitly (PowerShell has an alias 'sc' for Set-Content).
   sc.exe stop "{PROJECT_NAME}" | Out-Null
   sc.exe delete "{PROJECT_NAME}" | Out-Null
   taskkill /IM "BeszelAgentManager.exe" /T /F | Out-Null
@@ -3297,7 +3081,6 @@ for ($i=0; $i -lt 120; $i++) {{
       if (Test-Path -LiteralPath $t) {{
         FixAcl $t
         Remove-Item -LiteralPath $t -Recurse -Force -ErrorAction SilentlyContinue
-        # If a directory still remains, try cmd rmdir as a fallback
         if (Test-Path -LiteralPath $t) {{
           cmd /c rmdir /s /q "\"$t\"" | Out-Null
         }}
@@ -3361,7 +3144,6 @@ try {{ $remaining | ForEach-Object {{ Log $_ }} }} catch {{ }}
             try:
                 self.destroy()
             finally:
-                # Ensure the process exits so the cleanup script can remove files.
                 os._exit(0)
 
     def _create_tray_image(self):
@@ -3378,7 +3160,6 @@ try {{ $remaining | ForEach-Object {{ Log $_ }} }} catch {{ }}
             dc.rectangle((1, 1, size - 2, size - 2))
             return img
 
-    # Tray icon badge support (manager auto-update) was removed in v2.7.0.
 
     def _tray_open(self, _icon, _item):
         self.after(0, lambda: [self.deiconify(), self.lift(), self.focus_force()])
@@ -3432,7 +3213,7 @@ try {{ $remaining | ForEach-Object {{ Log $_ }} }} catch {{ }}
         t.start()
         self._tray_icon = icon
 
-        
+
 
     def _update_tray_title(self, status: str):
         if self._tray_icon is None:

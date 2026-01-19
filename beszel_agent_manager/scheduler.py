@@ -15,7 +15,6 @@ from .constants import (
 )
 from .util import log
 
-# Internal: avoid spamming logs when task is already absent
 _restart_task_missing_logged = False
 
 if os.name == "nt":
@@ -25,11 +24,6 @@ else:
 
 
 def _resolve_task_executable() -> str:
-    """Return the executable to use in scheduled tasks.
-
-    - In a frozen (PyInstaller) build, sys.executable is the manager .exe.
-    - When running from source, fall back to Program Files install path if present.
-    """
     exe = sys.executable
     if getattr(sys, "frozen", False):
         return exe
@@ -116,7 +110,6 @@ function ForceKill() {{
 if (-not (Test-Path $logDir)) {{ New-Item -ItemType Directory -Path $logDir | Out-Null }}
 if (-not (Test-Path $agentPath)) {{ exit 0 }}
 
-# Simple lock to prevent overlapping runs
 try {{
   if (Test-Path $lockFile) {{
     $age = (Get-Item $lockFile).LastWriteTime
@@ -131,14 +124,12 @@ try {{
 try {{
   Log "Update task starting"
 
-  # Stop service without blocking forever
   try {{ Stop-Service -Name $serviceName -ErrorAction SilentlyContinue -NoWait }} catch {{ }}
   if (-not (WaitStopped 15)) {{
     ForceKill
     [void](WaitStopped 10)
   }}
 
-  # Run agent update with a hard timeout
   $p = Start-Process -FilePath $agentPath -ArgumentList 'update' -NoNewWindow -PassThru
   if (-not (Wait-Process -Id $p.Id -Timeout 600 -ErrorAction SilentlyContinue)) {{
     Log "Agent update timed out; killing PID $($p.Id)"
@@ -152,7 +143,6 @@ try {{
 }} catch {{
   Log "ERROR during update: $($_.Exception.Message)"
 }} finally {{
-  # Always try to start service back up
   try {{ Start-Service -Name $serviceName -ErrorAction SilentlyContinue }} catch {{ }}
   if (-not (WaitRunning 20)) {{
     Log "Service did not reach RUNNING after update"
@@ -169,9 +159,6 @@ try {{
 def create_or_update_update_task(days_interval: int) -> None:
     if days_interval < 1:
         days_interval = 1
-    # Prefer running the manager executable in CLI mode instead of a PowerShell
-    # script. This avoids stuck PowerShell tasks that can leave the service in
-    # STOP_PENDING (and the agent offline) on some systems.
     exe = _resolve_task_executable()
 
     if os.path.basename(exe).lower() in ("python.exe", "pythonw.exe"):
@@ -198,7 +185,6 @@ def create_or_update_update_task(days_interval: int) -> None:
 
 
 def ensure_update_task(days_interval: int) -> None:
-    """Back-compat wrapper (older code calls ensure_update_task)."""
     create_or_update_update_task(days_interval)
 
 
@@ -218,22 +204,11 @@ def delete_update_task() -> None:
             log(f"Failed to delete scheduled task {AUTO_UPDATE_TASK_NAME}: {cp.stderr.strip()}")
 
 
-# ---------------------------------------------------------------------------
-# Agent log rotation task (daily)
-# ---------------------------------------------------------------------------
 
 
 def create_or_update_agent_log_rotate_task(start_time: str = "00:05") -> None:
-    """Create a daily scheduled task that rotates the agent log.
-
-    This task runs the manager executable with --rotate-agent-logs.
-    It is created to run as SYSTEM with highest privileges.
-    """
     exe = _resolve_task_executable()
 
-    # /TR must be a single string; quote paths to handle spaces.
-    # When running from source, sys.executable is usually python.exe, so we must
-    # invoke our module explicitly.
     if os.path.basename(exe).lower() in ("python.exe", "pythonw.exe"):
         tr = f'"{exe}" -m beszel_agent_manager.main --rotate-agent-logs'
     else:
@@ -261,7 +236,6 @@ def create_or_update_agent_log_rotate_task(start_time: str = "00:05") -> None:
 
 
 def ensure_agent_log_rotate_task() -> None:
-    """Ensure the daily rotation task exists (default 00:05)."""
     create_or_update_agent_log_rotate_task("00:05")
 
 
@@ -281,13 +255,9 @@ def delete_agent_log_rotate_task() -> None:
             log(f"Failed to delete scheduled task {AGENT_LOG_ROTATE_TASK_NAME}: {cp.stderr.strip()}")
 
 
-# ---------------------------------------------------------------------------
-# Periodic service restart task (every N hours)
-# ---------------------------------------------------------------------------
 
 
 def create_or_update_periodic_restart_task(hours_interval: int, start_time: str = "00:10") -> None:
-    """Create/update a scheduled task that restarts the Beszel Agent service every N hours."""
     if hours_interval < 1:
         hours_interval = 1
     if hours_interval > 168:
@@ -335,7 +305,6 @@ def delete_periodic_restart_task() -> None:
     if cp.returncode == 0:
         log(f"Deleted scheduled task {AUTO_RESTART_TASK_NAME}.")
     else:
-        # schtasks is localized; treat "not found" as a harmless no-op and avoid log spam.
         combined = f"{cp.stdout or ''}\\n{cp.stderr or ''}".lower()
 
         not_found_markers = (
@@ -343,7 +312,6 @@ def delete_periodic_restart_task() -> None:
             "does not exist",
             "cannot find",
             "not found",
-            # Dutch (NL)
             "kan het opgegeven bestand niet vinden",
             "het systeem kan het opgegeven bestand niet vinden",
             "kan het opgegeven pad niet vinden",
@@ -357,6 +325,5 @@ def delete_periodic_restart_task() -> None:
         else:
             err = (cp.stderr or cp.stdout or "").strip()
             log(f"Failed to delete scheduled task {AUTO_RESTART_TASK_NAME}: {err}")
-
 
 

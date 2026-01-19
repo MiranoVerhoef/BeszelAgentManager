@@ -10,9 +10,7 @@ class AgentConfig:
     key: str = ""
     token: str = ""
     hub_url: str = ""
-    # Optional IP/URL fallback used if DNS resolution for hub_url fails.
     hub_url_ip_fallback: str = ""
-    # Enable/disable automatic switching to hub_url_ip_fallback when DNS fails.
     hub_url_ip_fallback_enabled: bool = False
     listen: int | None = None
 
@@ -42,6 +40,8 @@ class AgentConfig:
     disk_usage_cache: str = ""
     skip_systemd: str = ""
 
+    env_enabled: bool = False
+
     auto_update_enabled: bool = True
     update_interval_days: int = 1
     last_known_version: str = ""
@@ -51,38 +51,26 @@ class AgentConfig:
 
     debug_logging: bool = False
 
-    # Default behavior: start hidden when launched with Windows (tray only)
     start_hidden: bool = True
 
-    # Internal flag so the GUI shows only on the very first run
     first_run_done: bool = False
 
-    # Manager update notifications
     manager_update_notify_enabled: bool = True
     manager_update_check_interval_hours: int = 6
     manager_update_skip_version: str = ""
     manager_update_tray_badge_enabled: bool = True
-    # If enabled, manager update checks/version picker will include GitHub pre-releases.
     manager_update_include_prereleases: bool = False
 
-    # Tracks the last configuration that was applied to the Windows service (env/tasks).
-    # Used to avoid unnecessary Apply operations (service restarts) when nothing changed.
     last_applied_fingerprint: str = ""
     last_applied_at: str = ""
 
     def _apply_relevant_dict(self) -> dict:
-        """Subset of settings that require Apply settings (service + scheduled tasks).
-
-        Manager-only settings (UI, update notifications, etc.) are intentionally excluded.
-        """
         keys = [
-            # Core agent env
             "key",
             "token",
             "hub_url",
             "listen",
 
-            # Agent advanced env
             "data_dir",
             "docker_host",
             "exclude_containers",
@@ -109,11 +97,9 @@ class AgentConfig:
             "disk_usage_cache",
             "skip_systemd",
 
-            # Hub URL fallback toggles
             "hub_url_ip_fallback",
             "hub_url_ip_fallback_enabled",
 
-            # Scheduled tasks
             "auto_update_enabled",
             "update_interval_days",
             "auto_restart_enabled",
@@ -142,13 +128,24 @@ class AgentConfig:
                 for fld in dataclasses.fields(cls):
                     kwargs[fld.name] = raw.get(fld.name, fld.default)
 
-                # Backward-compat: if older configs had a fallback value set but no enable flag,
-                # default to enabled so behavior doesn't silently change after upgrade.
                 if (
                     "hub_url_ip_fallback_enabled" not in raw
                     and str(raw.get("hub_url_ip_fallback", "") or "").strip() != ""
                 ):
                     kwargs["hub_url_ip_fallback_enabled"] = True
+
+                if "env_enabled" not in raw:
+                    core = {"key", "token", "hub_url", "hub_url_ip_fallback", "hub_url_ip_fallback_enabled"}
+                    any_env = False
+                    for fld in dataclasses.fields(cls):
+                        if fld.name in core:
+                            continue
+                        v = raw.get(fld.name, "")
+                        if isinstance(v, str) and v.strip() != "":
+                            any_env = True
+                            break
+                    if any_env:
+                        kwargs["env_enabled"] = True
                 return cls(**kwargs)
             except Exception:
                 return cls()

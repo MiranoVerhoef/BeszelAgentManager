@@ -10,19 +10,11 @@ from typing import Optional
 from .constants import PROJECT_NAME, PROGRAM_FILES, DATA_DIR, LOCK_PATH
 from .util import log, ensure_data_dir
 
-# Flag file so we only run ACL changes once
 ACL_DONE_FLAG = DATA_DIR / "acl_done.flag"
 
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def is_admin() -> bool:
-    """
-    Return True if the current process has admin rights (on Windows).
-    On non-Windows platforms this always returns True.
-    """
     if os.name != "nt":
         return True
 
@@ -36,20 +28,12 @@ def is_admin() -> bool:
 
 
 def _get_current_exe() -> Optional[Path]:
-    """
-    Return the current executable path if running under PyInstaller,
-    otherwise None (when running from source).
-    """
     if not getattr(sys, "frozen", False):
         return None
     return Path(sys.executable).resolve()
 
 
 def _run_hidden(cmd, check: bool = False, capture_output: bool = False):
-    """
-    Run a console command in a *hidden* window on Windows.
-    On non-Windows it just runs normally.
-    """
     kwargs = {
         "shell": False,
         "stdout": subprocess.DEVNULL,
@@ -62,7 +46,6 @@ def _run_hidden(cmd, check: bool = False, capture_output: bool = False):
         kwargs["text"] = True
 
     if os.name == "nt":
-        # Hide the console window
         kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
     try:
@@ -72,18 +55,13 @@ def _run_hidden(cmd, check: bool = False, capture_output: bool = False):
         return None
 
 
-# ---------------------------------------------------------------------------
-# Program Files self-install / ACL
-# ---------------------------------------------------------------------------
 
 
 
 def _is_pid_running(pid: int) -> bool:
-    """Return True if PID appears to be running (Windows)."""
     if os.name != "nt":
         return False
     try:
-        # tasklist output is localized, so just check if PID appears in output lines.
         r = subprocess.run(
             ["tasklist", "/FI", f"PID eq {pid}"],
             stdout=subprocess.PIPE,
@@ -98,7 +76,6 @@ def _is_pid_running(pid: int) -> bool:
 
 
 def _try_close_existing_instance() -> bool:
-    """Best-effort close/terminate an existing running instance using LOCK_PATH PID."""
     if os.name != "nt":
         return False
 
@@ -117,7 +94,6 @@ def _try_close_existing_instance() -> bool:
     if not _is_pid_running(pid):
         return False
 
-    # 1) Try a normal terminate first
     try:
         subprocess.run(
             ["taskkill", "/PID", str(pid), "/T"],
@@ -128,7 +104,6 @@ def _try_close_existing_instance() -> bool:
     except Exception:
         pass
 
-    # Give it a moment
     try:
         import time
         time.sleep(1.0)
@@ -138,7 +113,6 @@ def _try_close_existing_instance() -> bool:
     if not _is_pid_running(pid):
         return True
 
-    # 2) Force kill as last resort
     try:
         subprocess.run(
             ["taskkill", "/F", "/PID", str(pid), "/T"],
@@ -159,23 +133,16 @@ def _try_close_existing_instance() -> bool:
 
 
 def _msg_retry_exit(message: str, title: str = PROJECT_NAME) -> bool:
-    """Return True if user selects Retry, False if Exit."""
     if os.name != "nt":
         return False
     MB_RETRYCANCEL = 0x00000005
     MB_ICONWARNING = 0x00000030
     try:
         rc = ctypes.windll.user32.MessageBoxW(None, message, title, MB_RETRYCANCEL | MB_ICONWARNING)
-        # IDRETRY == 4
         return rc == 4
     except Exception:
         return False
 def _adjust_acl(path: Path) -> None:
-    """
-    Grant 'Users' Modify rights on the given directory (and children) so the
-    non-admin GUI can read/write in Program Files / ProgramData later.
-    Only does anything on Windows, and runs icacls in a hidden console.
-    """
     if os.name != "nt":
         return
 
@@ -201,14 +168,6 @@ def _adjust_acl(path: Path) -> None:
 
 
 def _copy_to_program_files(exe_path: Path) -> Path:
-    """
-    Copy the current executable into
-    C:\\Program Files\\<PROJECT_NAME>\\<PROJECT_NAME>.exe
-    and return the new path.
-
-    If the target is locked (another instance running), we try to close it and show
-    a Retry/Exit prompt instead of crashing.
-    """
     target_dir = Path(PROGRAM_FILES) / PROJECT_NAME
     target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -217,7 +176,6 @@ def _copy_to_program_files(exe_path: Path) -> Path:
         log("Executable is already in Program Files; skipping copy.")
         return target_exe
 
-    # Best-effort: if another instance is running, try to close it before copying.
     _try_close_existing_instance()
 
     while True:
@@ -226,10 +184,8 @@ def _copy_to_program_files(exe_path: Path) -> Path:
             log(f"Copied manager executable to {target_exe}")
             return target_exe
         except PermissionError as exc:
-            # WinError 32 = file in use
             winerr = getattr(exc, "winerror", None)
             if os.name == "nt" and winerr == 32:
-                # Try to close again (maybe a new instance started)
                 _try_close_existing_instance()
 
                 msg = (
@@ -243,16 +199,9 @@ def _copy_to_program_files(exe_path: Path) -> Path:
                 raise
             raise
 def _schedule_delete_file(path: Path) -> None:
-    """Best-effort delete of a file after this process exits.
-
-    We can't truly "move" a running executable. Instead we copy it to Program Files,
-    then schedule deletion of the original file once the process exits.
-    """
     if os.name != "nt":
         return
     try:
-        # Fire-and-forget. The elevated bootstrap process must exit before the file can be deleted.
-        # Also retries a few times and attempts to remove the parent folder if it becomes empty.
         cmd_str = (
             f'cmd.exe /C "(timeout /T 3 /NOBREAK >NUL) & '
             f'(for /L %i in (1,1,30) do (del /F /Q "{path}" >NUL 2>&1 && goto :done) & '
@@ -267,9 +216,6 @@ def _schedule_delete_file(path: Path) -> None:
 
 
 def _run_elevated_again(exe_path: Path) -> None:
-    """
-    Relaunch this executable as administrator (UAC prompt).
-    """
     if os.name != "nt":
         return
 
@@ -293,10 +239,6 @@ def _run_elevated_again(exe_path: Path) -> None:
 
 
 def _ask_move_and_elevate(exe_path: Path) -> None:
-    """
-    Show a small Windows message box asking if we may move to Program Files and
-    run elevated once. If user clicks Yes, we relaunch as admin and exit.
-    """
     if os.name != "nt":
         return
 
@@ -327,21 +269,10 @@ def _ask_move_and_elevate(exe_path: Path) -> None:
     except Exception as exc:
         log(f"Failed to show elevation/move message box: {exc}")
 
-    # Always exit current non-elevated instance after asking.
     sys.exit(0)
 
 
 def ensure_elevated_and_location() -> None:
-    """
-    Windows-only bootstrap that ensures:
-      - The manager EXE lives under Program Files\\<PROJECT_NAME>
-      - One elevated run has set ACLs on Program Files and ProgramData
-      - ProgramData directory exists
-
-    On non-Windows or when running from source (python main.py), this is a no-op
-    except for making sure the data directory exists.
-    """
-    # Always ensure data dir exists
     ensure_data_dir()
 
     if os.name != "nt":
@@ -349,19 +280,16 @@ def ensure_elevated_and_location() -> None:
 
     exe_path = _get_current_exe()
     if exe_path is None:
-        # Running from source
         return
 
     target_dir = Path(PROGRAM_FILES) / PROJECT_NAME
     target_exe = target_dir / f"{PROJECT_NAME}.exe"
 
-    # If we're not in Program Files at all, we must first ask to elevate.
     if exe_path.resolve() != target_exe.resolve():
         if not is_admin():
             _ask_move_and_elevate(exe_path)
             return  # _ask_move_and_elevate exits
 
-        # Elevated and not yet in Program Files -> perform the move
         new_exe = _copy_to_program_files(exe_path)
 
         if not ACL_DONE_FLAG.exists():
@@ -374,18 +302,14 @@ def ensure_elevated_and_location() -> None:
             except Exception as exc:
                 log(f"Failed to write ACL flag: {exc}")
 
-        # Start non-elevated Program Files instance and exit.
         try:
             subprocess.Popen([str(new_exe)], shell=False)
             log(f"Started Program Files instance {new_exe} and exiting elevated instance.")
-            # Delete the original executable (best-effort) so behavior is closer to a true move.
             _schedule_delete_file(exe_path)
         except Exception as exc:
             log(f"Failed to start Program Files instance: {exc}")
         sys.exit(0)
 
-    # We *are* already in Program Files.
-    # If we are elevated, take the chance to adjust ACLs (once).
     if is_admin() and not ACL_DONE_FLAG.exists():
         _adjust_acl(target_dir)
         _adjust_acl(DATA_DIR.parent)
@@ -397,9 +321,6 @@ def ensure_elevated_and_location() -> None:
             log(f"Failed to write ACL flag: {exc}")
 
 
-# ---------------------------------------------------------------------------
-# Single-instance enforcement
-# ---------------------------------------------------------------------------
 
 def _pid_alive(pid: int) -> bool:
     if pid <= 0:
@@ -421,7 +342,6 @@ def _pid_alive(pid: int) -> bool:
             return False
     else:
         try:
-            # On POSIX, sending signal 0 just checks for existence.
             os.kill(pid, 0)
             return True
         except OSError:
@@ -429,13 +349,7 @@ def _pid_alive(pid: int) -> bool:
 
 
 def _ask_kill_existing(pid: int) -> bool:
-    """
-    Ask the user whether to kill the existing instance with the given PID.
-
-    Returns True if we should attempt to kill it, False if we should exit.
-    """
     if os.name != "nt":
-        # On non-Windows, just kill without asking.
         return True
 
     try:
@@ -463,13 +377,6 @@ def _ask_kill_existing(pid: int) -> bool:
 
 
 def ensure_single_instance() -> None:
-    """
-    Enforce single-instance behavior using a PID lock file at LOCK_PATH.
-
-    If a live PID is found in the lock file, the user is asked whether to kill
-    that instance. If they decline, this process exits. Stale locks are
-    replaced silently.
-    """
     try:
         LOCK_PATH.parent.mkdir(parents=True, exist_ok=True)
     except Exception as exc:
@@ -486,7 +393,6 @@ def ensure_single_instance() -> None:
             log(f"Failed to read existing lock file {LOCK_PATH}: {exc}")
 
     if existing_pid is not None and _pid_alive(existing_pid):
-        # Another instance is alive
         if _ask_kill_existing(existing_pid):
             try:
                 if os.name == "nt":
@@ -500,10 +406,8 @@ def ensure_single_instance() -> None:
             log(f"Existing instance PID {existing_pid} kept; exiting new instance.")
             sys.exit(0)
     elif existing_pid is not None:
-        # Lock existed but process is gone – stale lock
         log(f"Stale instance lock detected for PID {existing_pid}, replacing with {os.getpid()}.")
 
-    # Write our own PID
     try:
         LOCK_PATH.write_text(str(os.getpid()), encoding="utf-8")
         log(f"Instance lock set to PID {os.getpid()}")
