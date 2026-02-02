@@ -19,7 +19,7 @@ from .constants import (
     MANAGER_PREVIOUS_EXE_PATH,
     LOG_PATH,
 )
-from .util import log
+from .util import log, github_headers
 
 
 def _new_handshake_token() -> str:
@@ -124,7 +124,7 @@ def _download_file(url: str, dest: Path, headers: Optional[Dict[str, str]] = Non
 def fetch_latest_release(*, include_prereleases: bool = False) -> Optional[dict]:
     if not include_prereleases:
         url = f"https://api.github.com/repos/{MANAGER_REPO}/releases/latest"
-        headers = {"User-Agent": PROJECT_NAME, "Accept": "application/vnd.github+json"}
+        headers = github_headers()
         data = _http_get_json(url, headers=headers, timeout=20)
 
         if data.get("draft") or data.get("prerelease"):
@@ -158,7 +158,7 @@ def fetch_latest_release(*, include_prereleases: bool = False) -> Optional[dict]
 
 def fetch_stable_releases(limit: int = 50, *, include_prereleases: bool = False) -> List[dict]:
     url = f"https://api.github.com/repos/{MANAGER_REPO}/releases?per_page={limit}"
-    headers = {"User-Agent": PROJECT_NAME, "Accept": "application/vnd.github+json"}
+    headers = github_headers()
     data = _http_get_json(url, headers=headers, timeout=20)
 
     releases: List[dict] = []

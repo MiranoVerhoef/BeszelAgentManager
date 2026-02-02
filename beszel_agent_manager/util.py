@@ -2,10 +2,83 @@ from __future__ import annotations
 import datetime
 import subprocess
 import os
-from .constants import DATA_DIR, LOG_PATH
+from .constants import DATA_DIR, LOG_PATH, PROJECT_NAME
 from .manager_logs import rotate_if_needed
 
 DEBUG_LOGGING = False
+
+_GITHUB_TOKEN: str | None = None
+
+
+def set_github_token(token: str | None) -> None:
+    global _GITHUB_TOKEN
+    _GITHUB_TOKEN = (token or "").strip() or None
+
+
+def github_headers(extra: dict | None = None) -> dict:
+    h = {"User-Agent": PROJECT_NAME, "Accept": "application/vnd.github+json"}
+    if _GITHUB_TOKEN:
+        h["Authorization"] = f"Bearer {_GITHUB_TOKEN}"
+    if extra:
+        h.update(extra)
+    return h
+
+
+def dpapi_encrypt(plaintext: str) -> str:
+    if os.name != "nt":
+        return plaintext
+    import base64
+    import ctypes
+    from ctypes import wintypes
+
+    class DATA_BLOB(ctypes.Structure):
+        _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_byte))]
+
+    crypt32 = ctypes.windll.crypt32
+    kernel32 = ctypes.windll.kernel32
+
+    data = plaintext.encode("utf-8")
+    buf = (ctypes.c_byte * len(data)).from_buffer_copy(data)
+    in_blob = DATA_BLOB(len(data), ctypes.cast(buf, ctypes.POINTER(ctypes.c_byte)))
+    out_blob = DATA_BLOB()
+
+    if not crypt32.CryptProtectData(ctypes.byref(in_blob), None, None, None, None, 0, ctypes.byref(out_blob)):
+        raise ctypes.WinError()
+
+    try:
+        raw = ctypes.string_at(out_blob.pbData, out_blob.cbData)
+        return base64.b64encode(raw).decode("ascii")
+    finally:
+        kernel32.LocalFree(out_blob.pbData)
+
+
+def dpapi_decrypt(ciphertext_b64: str) -> str:
+    if os.name != "nt":
+        return ciphertext_b64
+    import base64
+    import ctypes
+    from ctypes import wintypes
+
+    class DATA_BLOB(ctypes.Structure):
+        _fields_ = [("cbData", wintypes.DWORD), ("pbData", ctypes.POINTER(ctypes.c_byte))]
+
+    crypt32 = ctypes.windll.crypt32
+    kernel32 = ctypes.windll.kernel32
+
+    raw = base64.b64decode(ciphertext_b64.encode("ascii"))
+    buf = (ctypes.c_byte * len(raw)).from_buffer_copy(raw)
+    in_blob = DATA_BLOB(len(raw), ctypes.cast(buf, ctypes.POINTER(ctypes.c_byte)))
+    out_blob = DATA_BLOB()
+
+    if not crypt32.CryptUnprotectData(ctypes.byref(in_blob), None, None, None, None, 0, ctypes.byref(out_blob)):
+        raise ctypes.WinError()
+
+    try:
+        data = ctypes.string_at(out_blob.pbData, out_blob.cbData)
+        return data.decode("utf-8", errors="ignore")
+    finally:
+        kernel32.LocalFree(out_blob.pbData)
+
 
 if os.name == "nt":
     CREATE_NO_WINDOW = subprocess.CREATE_NO_WINDOW

@@ -14,7 +14,7 @@ from typing import Optional, Tuple
 from .config import AgentConfig
 from .constants import AGENT_DIR, DATA_DIR, PROJECT_NAME, AGENT_STAGED_EXE_PATH
 from .scheduler import delete_update_task, ensure_agent_log_rotate_task
-from .util import log
+from .util import log, github_headers
 from .windows_service import create_or_update_service, get_service_status, stop_service
 
 from .scheduler import ensure_update_task, ensure_periodic_restart_task, delete_periodic_restart_task
@@ -87,10 +87,7 @@ def _version_tuple(v: str) -> tuple[int, int, int]:
 
 def _fetch_latest_agent_release() -> Tuple[Optional[str], Optional[str]]:
     url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-    headers = {
-        "User-Agent": PROJECT_NAME,
-        "Accept": "application/vnd.github+json",
-    }
+    headers = github_headers()
     try:
         req = urllib.request.Request(url, headers=headers)
         ctx = ssl.create_default_context()
@@ -136,11 +133,7 @@ def _fetch_latest_agent_release() -> Tuple[Optional[str], Optional[str]]:
 
 def fetch_agent_stable_releases(limit: int = 50) -> list[dict]:
     url = f"https://api.github.com/repos/{GITHUB_REPO}/releases?per_page={limit}"
-    headers = {
-        "User-Agent": PROJECT_NAME,
-        "Accept": "application/vnd.github+json",
-    }
-
+    headers = github_headers()
     def _extract_release_list(data) -> list[dict]:
         out: list[dict] = []
         for r in data if isinstance(data, list) else []:
@@ -410,49 +403,69 @@ def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -
 def _build_env_from_config(cfg: AgentConfig, *, include_process_env: bool = False) -> dict:
     env = os.environ.copy() if include_process_env else {}
 
-    def set_if(value: str | None, key: str):
-        if value:
-            env[key] = value
+    def set_if(value: object, key: str):
+        if value is None:
+            return
+        if isinstance(value, bool):
+            v = "1" if value else ""
+        else:
+            v = str(value).strip()
+        if v != "":
+            env[key] = v
 
     set_if(cfg.key, "KEY")
     set_if(cfg.token, "TOKEN")
     set_if(cfg.hub_url, "HUB_URL")
+    set_if(cfg.listen, "LISTEN")
 
-    if not bool(getattr(cfg, "env_enabled", True)):
+    mapping: dict[str, str] = {
+        "DATA_DIR": "data_dir",
+        "DOCKER_HOST": "docker_host",
+        "EXCLUDE_CONTAINERS": "exclude_containers",
+        "EXCLUDE_SMART": "exclude_smart",
+        "EXTRA_FILESYSTEMS": "extra_filesystems",
+        "FILESYSTEM": "filesystem",
+        "INTEL_GPU_DEVICE": "intel_gpu_device",
+        "NVML": "nvml",
+        "KEY_FILE": "key_file",
+        "TOKEN_FILE": "token_file",
+        "LHM": "lhm",
+        "LOG_LEVEL": "log_level",
+        "MEM_CALC": "mem_calc",
+        "NETWORK": "network",
+        "NICS": "nics",
+        "SENSORS": "sensors",
+        "PRIMARY_SENSOR": "primary_sensor",
+        "SYS_SENSORS": "sys_sensors",
+        "SERVICE_PATTERNS": "service_patterns",
+        "SMART_DEVICES": "smart_devices",
+        "SMART_INTERVAL": "smart_interval",
+        "SYSTEM_NAME": "system_name",
+        "SKIP_GPU": "skip_gpu",
+        "DISK_USAGE_CACHE": "disk_usage_cache",
+        "SKIP_SYSTEMD": "skip_systemd",
+    }
+
+    active = list(getattr(cfg, "env_active_names", []) or [])
+    if not active:
+        for env_name, attr in mapping.items():
+            v = getattr(cfg, attr, "")
+            if isinstance(v, str) and v.strip() != "":
+                active.append(env_name)
+
+    want_env = bool(getattr(cfg, "env_enabled", False))
+    if not want_env and active:
+        # If a user has active env rows configured, treat env as enabled.
+        want_env = True
+
+    if not want_env:
         return env
 
-    set_if(cfg.data_dir, "DATA_DIR")
-    set_if(cfg.docker_host, "DOCKER_HOST")
-    set_if(cfg.exclude_containers, "EXCLUDE_CONTAINERS")
-    set_if(cfg.exclude_smart, "EXCLUDE_SMART")
-    set_if(cfg.extra_filesystems, "EXTRA_FILESYSTEMS")
-    set_if(cfg.filesystem, "FILESYSTEM")
-    set_if(cfg.intel_gpu_device, "INTEL_GPU_DEVICE")
-    set_if(cfg.key_file, "KEY_FILE")
-    set_if(cfg.token_file, "TOKEN_FILE")
-    set_if(cfg.labels, "LABELS")
-    set_if(cfg.nic, "NIC")
-    set_if(cfg.network, "NETWORK")
-    set_if(cfg.no_hardware, "NO_HARDWARE")
-    set_if(cfg.no_process, "NO_PROCESS")
-    set_if(cfg.no_storage, "NO_STORAGE")
-    set_if(cfg.sys_info, "SYS_INFO")
-    set_if(cfg.use_sudo, "USE_SUDO")
-    set_if(cfg.wait_at_start, "WAIT_AT_START")
-
-    set_if(cfg.nics, "NICS")
-    set_if(cfg.sensors, "SENSORS")
-    set_if(cfg.primary_sensor, "PRIMARY_SENSOR")
-    set_if(cfg.sys_sensors, "SYS_SENSORS")
-    set_if(cfg.service_patterns, "SERVICE_PATTERNS")
-    set_if(cfg.smart_devices, "SMART_DEVICES")
-    set_if(cfg.system_name, "SYSTEM_NAME")
-    set_if(cfg.skip_gpu, "SKIP_GPU")
-
-    set_if(getattr(cfg, "nvml", None), "NVML")
-    set_if(getattr(cfg, "smart_interval", None), "SMART_INTERVAL")
-    set_if(getattr(cfg, "disk_usage_cache", None), "DISK_USAGE_CACHE")
-    set_if(getattr(cfg, "skip_systemd", None), "SKIP_SYSTEMD")
+    for env_name in active:
+        attr = mapping.get(env_name)
+        if not attr:
+            continue
+        set_if(getattr(cfg, attr, ""), env_name)
 
     return env
 
