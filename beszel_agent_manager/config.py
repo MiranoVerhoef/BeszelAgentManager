@@ -42,6 +42,8 @@ class AgentConfig:
 
     env_enabled: bool = False
 
+
+    env_active_names: list[str] = dataclasses.field(default_factory=list)
     auto_update_enabled: bool = True
     update_interval_days: int = 1
     last_known_version: str = ""
@@ -54,6 +56,8 @@ class AgentConfig:
     start_hidden: bool = True
 
     first_run_done: bool = False
+
+    github_token_enc: str = ""
 
     manager_update_notify_enabled: bool = True
     manager_update_check_interval_hours: int = 6
@@ -136,6 +140,8 @@ class AgentConfig:
 
                 if "env_enabled" not in raw:
                     core = {"key", "token", "hub_url", "hub_url_ip_fallback", "hub_url_ip_fallback_enabled"}
+                    if raw.get("env_active_names"):
+                        kwargs["env_enabled"] = True
                     any_env = False
                     for fld in dataclasses.fields(cls):
                         if fld.name in core:
@@ -146,6 +152,39 @@ class AgentConfig:
                             break
                     if any_env:
                         kwargs["env_enabled"] = True
+
+                if "env_active_names" not in raw:
+                    active: list[str] = []
+                    env_tables = raw.get("env_tables")
+                    if isinstance(env_tables, dict):
+                        for k, v in env_tables.items():
+                            if isinstance(k, str) and k in {f.name for f in dataclasses.fields(cls)}:
+                                if isinstance(v, str):
+                                    kwargs[k] = v
+                                active.append(k)
+                        if active:
+                            kwargs["env_enabled"] = True
+                    elif isinstance(env_tables, list):
+                        for item in env_tables:
+                            if isinstance(item, dict):
+                                k = item.get("name") or item.get("key")
+                                v = item.get("value")
+                                if isinstance(k, str) and k in {f.name for f in dataclasses.fields(cls)}:
+                                    if isinstance(v, str):
+                                        kwargs[k] = v
+                                    active.append(k)
+                        if active:
+                            kwargs["env_enabled"] = True
+
+                    if not active:
+                        core = {"key", "token", "hub_url", "hub_url_ip_fallback", "hub_url_ip_fallback_enabled", "env_enabled", "env_active_names"}
+                        for fld in dataclasses.fields(cls):
+                            if fld.name in core:
+                                continue
+                            v = raw.get(fld.name, "")
+                            if isinstance(v, str) and v.strip() != "":
+                                active.append(fld.name)
+                    kwargs["env_active_names"] = active
                 return cls(**kwargs)
             except Exception:
                 return cls()

@@ -5,7 +5,7 @@ import sys
 import threading
 import traceback
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 from pathlib import Path
 import subprocess
 import webbrowser
@@ -55,7 +55,7 @@ from .agent_logs import list_agent_log_files, rotate_agent_logs_and_rename
 from .manager_logs import list_manager_log_files, rotate_if_needed as rotate_manager_logs_if_needed
 from .support_bundle import create_support_bundle
 from .manager_updater import fetch_latest_release, is_update_available
-from .util import log, set_debug_logging, run
+from .util import log, set_debug_logging, run, dpapi_encrypt, dpapi_decrypt, set_github_token, github_headers
 from .autostart import (
     get_autostart_state,
     set_autostart,
@@ -136,10 +136,7 @@ def _fetch_latest_agent_release() -> tuple[str | None, str | None]:
         url = "https://api.github.com/repos/henrygd/beszel/releases/latest"
         req = urllib.request.Request(
             url,
-            headers={
-                "User-Agent": PROJECT_NAME,
-                "Accept": "application/vnd.github+json",
-            },
+            headers=github_headers(),
         )
         with urllib.request.urlopen(req, timeout=5) as resp:
             data = json.loads(resp.read().decode("utf-8", "replace"))
@@ -219,6 +216,16 @@ class BeszelAgentManagerApp(tk.Tk):
         style.configure("TSeparator", background=border_color)
 
         self.config_obj = AgentConfig.load()
+        try:
+            token = os.environ.get("GITHUB_TOKEN", "").strip()
+            if not token:
+                enc = getattr(self.config_obj, "github_token_enc", "") or ""
+                if enc:
+                    token = dpapi_decrypt(enc).strip()
+            if token:
+                set_github_token(token)
+        except Exception:
+            pass
         self._first_run = not getattr(self.config_obj, "first_run_done", False)
         if self._first_run:
             self.config_obj.first_run_done = True
@@ -429,9 +436,15 @@ class BeszelAgentManagerApp(tk.Tk):
             ("SKIP_SYSTEMD", self.var_skip_systemd, "Skip systemd integration (set to '1' to disable)."),
         ]
 
-        self.active_env_names: list[str] = [
-            name for (name, var, _tip) in self.env_definitions if var.get().strip()
-        ]
+        cfg_active = list(getattr(self.config_obj, "env_active_names", []) or [])
+        known = {n for (n, _v, _t) in self.env_definitions}
+        cfg_active = [n for n in cfg_active if n in known]
+        if cfg_active:
+            self.active_env_names: list[str] = cfg_active
+        else:
+            self.active_env_names = [
+                name for (name, var, _tip) in self.env_definitions if var.get().strip()
+            ]
 
         self.var_env_enabled = tk.BooleanVar(
             value=bool(getattr(self.config_obj, "env_enabled", self._any_env_nonempty()))
@@ -545,6 +558,8 @@ class BeszelAgentManagerApp(tk.Tk):
     def _build_ui(self, accent_color: str):
         self.columnconfigure(0, weight=1)
         self.rowconfigure(0, weight=1)
+
+        BTN_W = 24
 
         outer = ttk.Frame(self, padding=(16, 16, 16, 10), style="App.TFrame")
         outer.grid(row=0, column=0, sticky="nsew")
@@ -1037,6 +1052,28 @@ class BeszelAgentManagerApp(tk.Tk):
         outer.rowconfigure(2, weight=0)
         outer.rowconfigure(3, weight=0)
 
+        
+        extra_tab = ttk.Frame(notebook, padding=10, style="Card.TFrame")
+        extra_tab.columnconfigure(0, weight=1)
+        notebook.add(extra_tab, text="Extra")
+
+        gh_card = ttk.Frame(extra_tab, style="CardInner.TFrame", padding=12)
+        gh_card.grid(row=0, column=0, sticky="ew")
+        gh_card.columnconfigure(0, weight=1)
+
+        ttk.Label(gh_card, text="GitHub Authentication", style="Header.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            gh_card,
+            text="Set a GitHub token to avoid API rate limiting. Token is stored encrypted (DPAPI).\n"
+                 "Tip: If GITHUB_TOKEN is set as an environment variable, it overrides the saved token.",
+            style="Muted.TLabel",
+            justify="left",
+        ).grid(row=1, column=0, sticky="w", pady=(4, 10))
+
+        btn_github_auth_tab = ttk.Button(gh_card, text="GitHub Auth...", width=BTN_W, command=self._on_github_auth)
+        btn_github_auth_tab.grid(row=2, column=0, sticky="w")
+        add_tooltip(btn_github_auth_tab, "Save/clear GitHub token (stored encrypted).")
+
         bottom = ttk.Frame(outer, style="App.TFrame")
         bottom.grid(row=2, column=0, sticky="ew", pady=(10, 4))
         bottom.columnconfigure(0, weight=1)
@@ -1144,7 +1181,6 @@ class BeszelAgentManagerApp(tk.Tk):
         btn_manage_manager = ttk.Button(bottom, text="Manage Manager Version...", width=BTN_W, command=self._on_manage_manager_version)
         btn_manage_manager.grid(row=1, column=3, padx=4, pady=(0, 4), sticky="e")
         add_tooltip(btn_manage_manager, "Open the BeszelAgentManager releases page to download a specific version.")
-
         btn_apply = ttk.Button(bottom, text="Apply settings", width=BTN_W, command=self._on_apply)
         btn_apply.grid(row=0, column=4, padx=4, pady=4, sticky="e")
 
@@ -1367,6 +1403,7 @@ class BeszelAgentManagerApp(tk.Tk):
         if choice and choice not in self.active_env_names:
             self.active_env_names.append(choice)
             self._rebuild_env_rows()
+            self._autosave_config()
 
     def _on_env_delete(self, name: str):
         for n, var, _tip in self.env_definitions:
@@ -1376,6 +1413,7 @@ class BeszelAgentManagerApp(tk.Tk):
         if name in self.active_env_names:
             self.active_env_names.remove(name)
         self._rebuild_env_rows()
+        self._autosave_config()
 
 
 
@@ -1693,6 +1731,7 @@ class BeszelAgentManagerApp(tk.Tk):
             manager_update_skip_version=getattr(c, "manager_update_skip_version", ""),
             manager_update_tray_badge_enabled=self.var_mgr_update_tray_badge.get(),
             manager_update_include_prereleases=self.var_mgr_update_include_pre.get(),
+            github_token_enc=getattr(c, "github_token_enc", ""),
         )
 
         extra_disk_usage_cache = self.var_disk_usage_cache.get().strip()
@@ -2711,6 +2750,48 @@ class BeszelAgentManagerApp(tk.Tk):
             f"releases/tag/{APP_VERSION}"
         )
         self._open_url(url)
+
+    def _on_github_auth(self):
+        try:
+            env_token = os.environ.get("GITHUB_TOKEN", "").strip()
+            if env_token:
+                messagebox.showinfo(
+                    PROJECT_NAME,
+                    "GITHUB_TOKEN environment variable is set.\n\n"
+                    "This will override any saved token.\n"
+                    "Clear the environment variable if you want to use a saved token instead.",
+                )
+            token = simpledialog.askstring(
+                "GitHub Authentication",
+                "Enter a GitHub token (PAT) to avoid rate limiting.\n\n"
+                "Leave empty to clear the saved token.",
+                show="*",
+                parent=self,
+            )
+            if token is None:
+                return
+            token = (token or "").strip()
+            if not token:
+                if messagebox.askyesno("GitHub Authentication", "Clear the saved GitHub token?", parent=self):
+                    try:
+                        self.config_obj.github_token_enc = ""
+                        self.config_obj.save()
+                    except Exception:
+                        pass
+                    set_github_token(None)
+                return
+
+            enc = dpapi_encrypt(token)
+            try:
+                self.config_obj.github_token_enc = enc
+                self.config_obj.save()
+            except Exception:
+                pass
+            set_github_token(token)
+            messagebox.showinfo("GitHub Authentication", "Token saved securely.", parent=self)
+        except Exception as e:
+            messagebox.showerror("GitHub Authentication", str(e), parent=self)
+
 
     def _open_hub_url(self):
         url = self.var_hub_url.get().strip()
