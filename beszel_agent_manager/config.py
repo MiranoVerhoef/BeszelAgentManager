@@ -40,7 +40,7 @@ class AgentConfig:
     disk_usage_cache: str = ""
     skip_systemd: str = ""
 
-    env_enabled: bool = False
+    env_enabled: bool = True
 
 
     env_active_names: list[str] = dataclasses.field(default_factory=list)

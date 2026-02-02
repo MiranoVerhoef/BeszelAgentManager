@@ -446,9 +446,6 @@ class BeszelAgentManagerApp(tk.Tk):
                 name for (name, var, _tip) in self.env_definitions if var.get().strip()
             ]
 
-        self.var_env_enabled = tk.BooleanVar(
-            value=bool(getattr(self.config_obj, "env_enabled", self._any_env_nonempty()))
-        )
 
         self._env_entries: list[ttk.Entry] = []
         self._env_delete_buttons: list[ttk.Button] = []
@@ -829,17 +826,10 @@ class BeszelAgentManagerApp(tk.Tk):
         env_tab.rowconfigure(2, weight=1)
         notebook.add(env_tab, text="Environment Tables")
 
-        chk_env = ttk.Checkbutton(
-            env_tab,
-            text="Enable environment variables",
-            variable=self.var_env_enabled,
-            command=self._on_env_toggle,
+        ttk.Label(env_tab, text="Environment variables are always enabled.", style="Card.TLabel").grid(
+            row=0, column=0, columnspan=3, sticky="w", pady=(2, 2)
         )
-        chk_env.grid(row=0, column=0, columnspan=3, sticky="w")
-        add_tooltip(
-            chk_env,
-            "Enable or disable the advanced environment variable configuration.",
-        )
+
 
         ttk.Label(env_tab, text="Add environment:", style="Card.TLabel").grid(
             row=1, column=0, sticky="w", pady=(8, 2)
@@ -1302,7 +1292,6 @@ class BeszelAgentManagerApp(tk.Tk):
         self._env_delete_buttons.clear()
         self._env_edit_buttons.clear()
 
-        enabled = self.var_env_enabled.get()
         row = 0
         for name in self.active_env_names:
             for n, var, tip in self.env_definitions:
@@ -1315,7 +1304,7 @@ class BeszelAgentManagerApp(tk.Tk):
                     lbl.grid(row=row, column=0, sticky="w", pady=1)
                     add_tooltip(lbl, tip)
 
-                    state = "disabled" if not enabled else ("normal" if name in self._env_editing else "readonly")
+                    state = ("normal" if name in self._env_editing else "readonly")
                     ent = ttk.Entry(self.env_rows_frame, textvariable=var, state=state)
                     ent.grid(row=row, column=1, sticky="ew", pady=1)
                     add_tooltip(ent, tip)
@@ -1362,31 +1351,26 @@ class BeszelAgentManagerApp(tk.Tk):
 
     def _refresh_env_add_controls(self):
         names = self._available_env_names()
-        enabled = self.var_env_enabled.get()
-
         if names:
             self.env_combo.configure(
                 values=names,
-                state="readonly" if enabled else "disabled",
+                state="readonly",
             )
             if self.var_env_choice.get() not in names:
                 self.var_env_choice.set(names[0])
-            self.btn_env_add.configure(state="normal" if enabled else "disabled")
+            self.btn_env_add.configure(state="normal")
         else:
             self.env_combo.configure(values=[], state="disabled")
             self.var_env_choice.set("")
             self.btn_env_add.configure(state="disabled")
 
     def _update_env_enabled_state(self):
-        enabled = self.var_env_enabled.get()
+        self.var_env_enabled = tk.BooleanVar(value=True)
 
         for name, ent in zip(self.active_env_names, self._env_entries):
-            if not enabled:
-                ent.configure(state="disabled")
-            else:
-                ent.configure(state="normal" if name in self._env_editing else "readonly")
+            ent.configure(state="normal" if name in self._env_editing else "readonly")
         for btn in self._env_delete_buttons:
-            btn.configure(state="normal" if enabled else "disabled")
+            btn.configure(state="normal")
 
         self._refresh_env_add_controls()
 
