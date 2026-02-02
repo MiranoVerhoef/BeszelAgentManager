@@ -66,17 +66,35 @@ def _ps_run(command: str, timeout: int = 60) -> subprocess.CompletedProcess:
 
 def _http_get_json(url: str, headers: Optional[Dict[str, str]] = None, timeout: int = 15) -> dict:
     headers = headers or {}
+    auth_used = "Authorization" in headers
 
     try:
         import urllib.request
+        import urllib.error
 
         req = urllib.request.Request(url, headers=headers)
         ctx = ssl.create_default_context()
         with urllib.request.urlopen(req, timeout=timeout, context=ctx) as resp:
-            return json.loads(resp.read().decode("utf-8", "replace"))
+            raw = resp.read().decode("utf-8", "replace")
+            if auth_used:
+                remaining = resp.headers.get("X-RateLimit-Remaining", "?")
+                limit = resp.headers.get("X-RateLimit-Limit", "?")
+                log(f"GitHub Auth: token used successfully (rate_limit_remaining={remaining}/{limit})")
+            return json.loads(raw)
+    except urllib.error.HTTPError as exc:
+        if auth_used:
+            log(f"GitHub Auth: token used but request failed (http={exc.code})")
+        if exc.code == 403:
+            log(f"GitHub request failed: HTTP {exc.code} (possible rate limit). Falling back to PowerShell.")
+        else:
+            log(f"GitHub request failed: HTTP {exc.code}. Falling back to PowerShell.")
     except ssl.SSLCertVerificationError as exc:
+        if auth_used:
+            log("GitHub Auth: token present but SSL verification failed")
         log(f"GitHub request SSL verify failed: {exc}. Falling back to PowerShell.")
     except Exception as exc:
+        if auth_used:
+            log(f"GitHub Auth: token present but request failed ({exc})")
         log(f"GitHub request failed: {exc}. Falling back to PowerShell.")
 
     hdr = "@{}"
@@ -88,10 +106,12 @@ def _http_get_json(url: str, headers: Optional[Dict[str, str]] = None, timeout: 
     ps_cmd = f"$h={hdr}; (Invoke-WebRequest -UseBasicParsing -Headers $h -Uri '{u}').Content"
     cp = _ps_run(ps_cmd, timeout=timeout)
     if cp.returncode != 0:
+        if auth_used:
+            log("GitHub Auth: PowerShell fallback failed while using token")
         raise RuntimeError((cp.stderr or cp.stdout or "").strip())
+    if auth_used:
+        log("GitHub Auth: PowerShell fallback succeeded while using token")
     return json.loads((cp.stdout or "").encode("utf-8", "ignore").decode("utf-8", "replace"))
-
-
 def _download_file(url: str, dest: Path, headers: Optional[Dict[str, str]] = None, timeout: int = 60) -> None:
     headers = headers or {}
     dest.parent.mkdir(parents=True, exist_ok=True)

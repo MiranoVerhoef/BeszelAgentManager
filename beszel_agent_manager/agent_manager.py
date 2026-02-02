@@ -88,11 +88,17 @@ def _version_tuple(v: str) -> tuple[int, int, int]:
 def _fetch_latest_agent_release() -> Tuple[Optional[str], Optional[str]]:
     url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
     headers = github_headers()
+    auth_used = "Authorization" in headers
+    if auth_used:
+        log("GitHub Auth: using token for GitHub lookup")
     try:
         req = urllib.request.Request(url, headers=headers)
         ctx = ssl.create_default_context()
         with urllib.request.urlopen(req, timeout=8, context=ctx) as resp:
             data = json.loads(resp.read().decode("utf-8", "replace"))
+
+            if auth_used:
+                log("GitHub Auth: token lookup succeeded")
 
         tag = str(data.get("tag_name") or "").strip()
         version = _normalize_version(tag)
