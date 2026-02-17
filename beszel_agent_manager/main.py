@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .bootstrap import ensure_elevated_and_location, ensure_single_instance
 from .gui import main as gui_main
+from .config import AgentConfig
 from .agent_logs import rotate_agent_logs_and_rename
 from .windows_service import restart_service, stop_service, start_service, get_service_status
 from .util import log, try_write_event_log
@@ -121,6 +122,35 @@ def main() -> None:
         log("Scheduled agent update triggered")
         try_write_event_log("Scheduled agent update triggered", event_id=2611, level="INFORMATION")
 
+        cfg = AgentConfig.load()
+        if not getattr(cfg, 'auto_update_enabled', True):
+            log('Scheduled agent update: auto updates disabled in config')
+            return
+
+        interval_h = int(getattr(cfg, 'update_interval_hours', 24) or 24)
+        if interval_h < 1:
+            interval_h = 1
+
+        try:
+            last_raw = str(getattr(cfg, 'last_agent_auto_update_at', '') or '').strip()
+            last_ts = 0.0
+            if last_raw:
+                try:
+                    from datetime import datetime
+                    last_ts = datetime.fromisoformat(last_raw).timestamp()
+                except Exception:
+                    try:
+                        last_ts = float(last_raw)
+                    except Exception:
+                        last_ts = 0.0
+            now_ts = time.time()
+            if last_ts and (now_ts - last_ts) < (interval_h * 3600):
+                remain = (interval_h * 3600) - (now_ts - last_ts)
+                log(f"Scheduled agent update: not due yet (interval={interval_h}h, remaining~{int(remain//60)}m)")
+                return
+        except Exception:
+            pass
+
         if not AGENT_EXE_PATH.exists():
             log(f"Scheduled agent update: agent not installed at {AGENT_EXE_PATH}")
             return
@@ -164,6 +194,12 @@ def main() -> None:
             log(f"Scheduled agent update failed: {exc}")
             try_write_event_log(f"Scheduled agent update failed: {exc}", event_id=2613, level="ERROR")
         finally:
+            try:
+                from datetime import datetime
+                cfg.last_agent_auto_update_at = datetime.now().isoformat(timespec='seconds')
+                cfg.save()
+            except Exception:
+                pass
             try:
                 start_service()
             except Exception:

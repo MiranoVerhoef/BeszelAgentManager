@@ -208,6 +208,7 @@ class BeszelAgentManagerApp(tk.Tk):
         style.configure("Card.TLabel", background=surface_bg, foreground=text_primary, font=("Segoe UI", 9))
         style.configure("Muted.TLabel", background=base_bg, foreground=text_muted, font=("Segoe UI", 9))
         style.configure("Link.TLabel", background=base_bg, foreground=accent, font=("Segoe UI", 9, "underline"))
+        style.configure("Hint.TLabel", background=surface_bg, foreground=text_muted, font=("Segoe UI", 8, "italic"))
 
         style.configure("TButton", padding=(10, 4), relief="flat", borderwidth=1)
         style.map("TButton", relief=[("pressed", "sunken"), ("!pressed", "flat")])
@@ -380,7 +381,7 @@ class BeszelAgentManagerApp(tk.Tk):
         )
 
         self.var_auto_update = tk.BooleanVar(value=c.auto_update_enabled)
-        self.var_update_interval = tk.IntVar(value=c.update_interval_days or 1)
+        self.var_update_interval = tk.IntVar(value=int(getattr(c, 'update_interval_hours', 24) or 24))
 
         self.var_auto_restart = tk.BooleanVar(value=getattr(c, "auto_restart_enabled", False))
         self.var_auto_restart_hours = tk.IntVar(value=int(getattr(c, "auto_restart_interval_hours", 24) or 24))
@@ -451,6 +452,30 @@ class BeszelAgentManagerApp(tk.Tk):
         self._env_delete_buttons: list[ttk.Button] = []
         self._env_edit_buttons: list[ttk.Button] = []
         self._env_editing: set[str] = set()
+
+        # Custom env rows (NAME=VALUE)
+        self.custom_env_order: list[str] = []
+        self.custom_env_vars: dict[str, tk.StringVar] = {}
+        try:
+            raw_custom = list(getattr(self.config_obj, "env_custom", []) or [])
+        except Exception:
+            raw_custom = []
+        for item in raw_custom:
+            try:
+                nm = (getattr(item, "name", None) or (item.get("name") if isinstance(item, dict) else "")).strip()
+                val = getattr(item, "value", None) if not isinstance(item, dict) else item.get("value")
+                if nm and nm not in self.custom_env_vars:
+                    self.custom_env_order.append(nm)
+                    self.custom_env_vars[nm] = tk.StringVar(value="" if val is None else str(val))
+            except Exception:
+                continue
+
+        for v in self.custom_env_vars.values():
+            try:
+                v.trace_add("write", self._on_var_changed)
+            except Exception:
+                pass
+
 
         self.var_agent_log_choice = tk.StringVar(value="")
         self._agent_log_paths: list[Path] = []
@@ -721,14 +746,14 @@ class BeszelAgentManagerApp(tk.Tk):
         chk_auto.grid(row=0, column=0, columnspan=2, sticky="w")
         add_tooltip(
             chk_auto,
-            "Create a scheduled task that runs 'beszel-agent update' every N days.",
+            "Creates a scheduled task (hourly) and enforces the interval here; runs 'beszel-agent update' every N hour(s).",
         )
 
-        ttk.Label(auto, text="Interval (days):", style="Card.TLabel").grid(
+        ttk.Label(auto, text="Interval (hours):", style="Card.TLabel").grid(
             row=1, column=0, sticky="w", pady=(6, 0)
         )
         spin = ttk.Spinbox(
-            auto, from_=1, to=90, textvariable=self.var_update_interval, width=6
+            auto, from_=1, to=2160, textvariable=self.var_update_interval, width=6
         )
         spin.grid(row=1, column=1, sticky="w", pady=(6, 0))
 
@@ -1279,11 +1304,13 @@ class BeszelAgentManagerApp(tk.Tk):
 
 
     def _available_env_names(self) -> list[str]:
-        return [
+        names = [
             name
             for (name, _var, _tip) in self.env_definitions
             if name not in self.active_env_names
         ]
+        names.append("Custom")
+        return names
 
     def _rebuild_env_rows(self):
         for child in self.env_rows_frame.winfo_children():
@@ -1292,15 +1319,16 @@ class BeszelAgentManagerApp(tk.Tk):
         self._env_delete_buttons.clear()
         self._env_edit_buttons.clear()
 
+        display_names: list[str] = list(self.active_env_names) + list(getattr(self, "custom_env_order", []) or [])
+
         row = 0
-        for name in self.active_env_names:
+        for name in display_names:
+            # Preset env rows
+            found = False
             for n, var, tip in self.env_definitions:
                 if n == name:
-                    lbl = ttk.Label(
-                        self.env_rows_frame,
-                        text=name + ":",
-                        style="Card.TLabel",
-                    )
+                    found = True
+                    lbl = ttk.Label(self.env_rows_frame, text=name + ":", style="Card.TLabel")
                     lbl.grid(row=row, column=0, sticky="w", pady=1)
                     add_tooltip(lbl, tip)
 
@@ -1325,7 +1353,7 @@ class BeszelAgentManagerApp(tk.Tk):
 
                     btn_edit = ttk.Button(
                         self.env_rows_frame,
-                        text="Save" if name in self._env_editing else "Edit",
+                        text=("Save" if name in self._env_editing else "Edit"),
                         command=_toggle_edit,
                         width=6,
                     )
@@ -1345,6 +1373,63 @@ class BeszelAgentManagerApp(tk.Tk):
                     self._env_delete_buttons.append(btn_del)
                     row += 1
                     break
+
+            if found:
+                continue
+
+            # Custom env rows
+            if name in getattr(self, "custom_env_vars", {}):
+                tip = "Custom environment variable. Remove + re-add to rename."
+
+                lbl = ttk.Label(self.env_rows_frame, text=name + ":", style="Card.TLabel")
+                lbl.grid(row=row, column=0, sticky="w", pady=1)
+                add_tooltip(lbl, tip)
+
+                var = self.custom_env_vars[name]
+                state = ("normal" if name in self._env_editing else "readonly")
+                ent = ttk.Entry(self.env_rows_frame, textvariable=var, state=state)
+                ent.grid(row=row, column=1, sticky="ew", pady=1)
+                add_tooltip(ent, tip)
+
+                def _toggle_edit_custom(nm=name, entry=ent):
+                    if nm not in self._env_editing:
+                        if not self._require_admin():
+                            return
+                        self._env_editing.add(nm)
+                        entry.configure(state="normal")
+                        entry.focus_set()
+                        entry.icursor("end")
+                    else:
+                        self._env_editing.discard(nm)
+                        entry.configure(state="readonly")
+                        self._on_apply()
+                    self._rebuild_env_rows()
+
+                btn_edit = ttk.Button(
+                    self.env_rows_frame,
+                    text=("Save" if name in self._env_editing else "Edit"),
+                    command=_toggle_edit_custom,
+                    width=6,
+                )
+                btn_edit.grid(row=row, column=2, sticky="w", padx=(4, 0))
+                add_tooltip(btn_edit, "Unlock to edit; Save will apply settings (admin required).")
+
+                btn_del = ttk.Button(
+                    self.env_rows_frame,
+                    text="Remove",
+                    command=lambda nm=name: self._on_env_delete(nm),
+                    width=8,
+                )
+                btn_del.grid(row=row, column=3, sticky="w", padx=(4, 0))
+
+                hint = ttk.Label(self.env_rows_frame, text="Remove + re-add to rename", style="Hint.TLabel")
+                hint.grid(row=row + 1, column=1, columnspan=3, sticky="w", pady=(0, 4))
+                add_tooltip(hint, "Custom variable names are fixed. Remove the row and add it again to rename.")
+
+                self._env_entries.append(ent)
+                self._env_edit_buttons.append(btn_edit)
+                self._env_delete_buttons.append(btn_del)
+                row += 2
 
         self.env_rows_frame.columnconfigure(1, weight=1)
         self._update_env_enabled_state()
@@ -1367,7 +1452,8 @@ class BeszelAgentManagerApp(tk.Tk):
     def _update_env_enabled_state(self):
         self.var_env_enabled = tk.BooleanVar(value=True)
 
-        for name, ent in zip(self.active_env_names, self._env_entries):
+        display_names: list[str] = list(self.active_env_names) + list(getattr(self, 'custom_env_order', []) or [])
+        for name, ent in zip(display_names, self._env_entries):
             ent.configure(state="normal" if name in self._env_editing else "readonly")
         for btn in self._env_delete_buttons:
             btn.configure(state="normal")
@@ -1384,21 +1470,80 @@ class BeszelAgentManagerApp(tk.Tk):
         if not choice and names:
             choice = names[0]
 
+        if choice == "Custom":
+            nm = simpledialog.askstring(PROJECT_NAME, "Custom variable name (e.g. FOO_BAR):", parent=self)
+            if nm is None:
+                return
+            nm = str(nm).strip()
+            if not nm:
+                messagebox.showerror(PROJECT_NAME, "Custom variable name cannot be empty.", parent=self)
+                return
+            if any(ch.isspace() for ch in nm) or "=" in nm:
+                messagebox.showerror(PROJECT_NAME, "Invalid name. Do not include spaces or '='.", parent=self)
+                return
+
+            nm_up = nm.upper()
+            reserved = {"KEY", "TOKEN", "HUB_URL", "LISTEN"}
+            preset = {n for (n, _v, _t) in self.env_definitions}
+            if nm_up in reserved or nm_up in preset:
+                messagebox.showerror(PROJECT_NAME, "This name is reserved or already exists as a preset.", parent=self)
+                return
+            if nm in getattr(self, "custom_env_vars", {}):
+                messagebox.showerror(PROJECT_NAME, "A custom variable with this name already exists.", parent=self)
+                return
+
+            val = simpledialog.askstring(PROJECT_NAME, f"Value for {nm} (optional):", parent=self)
+            if val is None:
+                val = ""
+
+            if not hasattr(self, "custom_env_order"):
+                self.custom_env_order = []
+            if not hasattr(self, "custom_env_vars"):
+                self.custom_env_vars = {}
+
+            self.custom_env_order.append(nm)
+            self.custom_env_vars[nm] = tk.StringVar(value=str(val))
+            try:
+                self.custom_env_vars[nm].trace_add("write", self._on_var_changed)
+            except Exception:
+                pass
+
+            self._rebuild_env_rows()
+            self._autosave_config()
+            return
+
         if choice and choice not in self.active_env_names:
             self.active_env_names.append(choice)
             self._rebuild_env_rows()
             self._autosave_config()
+
 
     def _on_env_delete(self, name: str):
         for n, var, _tip in self.env_definitions:
             if n == name:
                 var.set("")
                 break
+
+        if name in getattr(self, "custom_env_vars", {}):
+            try:
+                del self.custom_env_vars[name]
+            except Exception:
+                pass
+            try:
+                if name in self.custom_env_order:
+                    self.custom_env_order.remove(name)
+            except Exception:
+                pass
+            try:
+                self._env_editing.discard(name)
+            except Exception:
+                pass
+
         if name in self.active_env_names:
             self.active_env_names.remove(name)
+
         self._rebuild_env_rows()
         self._autosave_config()
-
 
 
     def _filter_log_text_by_type(self, content: str, type_filter: str) -> str:
@@ -1701,7 +1846,7 @@ class BeszelAgentManagerApp(tk.Tk):
             nvml=self.var_nvml.get().strip(),
             smart_interval=self.var_smart_interval.get().strip(),
             auto_update_enabled=self.var_auto_update.get(),
-            update_interval_days=int(self.var_update_interval.get() or 1),
+            update_interval_hours=int(self.var_update_interval.get() or 24),
             last_known_version=c.last_known_version,
 
             auto_restart_enabled=self.var_auto_restart.get(),
@@ -1717,6 +1862,30 @@ class BeszelAgentManagerApp(tk.Tk):
             manager_update_include_prereleases=self.var_mgr_update_include_pre.get(),
             github_token_enc=getattr(c, "github_token_enc", ""),
         )
+
+        # Persist active env rows
+        try:
+            cfg.env_active_names = list(self.active_env_names)
+        except Exception:
+            cfg.env_active_names = []
+
+        # Persist custom env rows
+        try:
+            items = []
+            for nm in list(getattr(self, "custom_env_order", []) or []):
+                v = ""
+                try:
+                    v = self.custom_env_vars[nm].get()
+                except Exception:
+                    v = ""
+                items.append({"name": nm, "value": v})
+            try:
+                from .config import CustomEnvVar
+                cfg.env_custom = [CustomEnvVar(name=i["name"], value=i["value"]) for i in items]
+            except Exception:
+                cfg.env_custom = items
+        except Exception:
+            pass
 
         extra_disk_usage_cache = self.var_disk_usage_cache.get().strip()
         extra_skip_systemd = self.var_skip_systemd.get().strip()
