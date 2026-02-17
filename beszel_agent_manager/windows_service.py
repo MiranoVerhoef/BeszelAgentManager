@@ -356,25 +356,10 @@ def open_nssm_edit() -> None:
     nssm = _find_nssm()
     svc = _resolve_service_name()
     try:
-        if os.name == 'nt':
-            def _ps_single(s: str) -> str:
-                return s.replace("'", "''")
-
-            quoted_svc = '"' + str(svc) + '"'
-            ps = (
-                "Start-Process -FilePath '{nssm}' -ArgumentList @('edit','{qsvc}')"
-            ).format(nssm=_ps_single(str(nssm)), qsvc=_ps_single(quoted_svc))
-            log(f"Opening NSSM editor: {nssm} edit \"{svc}\"")
-
-            creationflags = 0x08000000  # CREATE_NO_WINDOW
-            subprocess.Popen(
-                ['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-Command', ps],
-                close_fds=True,
-                creationflags=creationflags,
-            )
-            return
-
-        subprocess.Popen([str(nssm), 'edit', str(svc)], close_fds=True)
+        # NSSM is a console-subsystem binary, but the "edit" action opens a GUI.
+        # Using CREATE_NO_WINDOW prevents an extra console window from appearing behind the GUI.
+        creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        subprocess.Popen([str(nssm), 'edit', str(svc)], close_fds=True, creationflags=creationflags)
     except Exception as exc:
         raise ServiceError(f"Failed to open NSSM editor: {exc}") from exc
 

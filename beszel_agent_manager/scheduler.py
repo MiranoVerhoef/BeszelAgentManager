@@ -156,9 +156,12 @@ try {{
     log(f"Wrote update script to {UPDATE_SCRIPT_PATH}")
 
 
-def create_or_update_update_task(days_interval: int) -> None:
-    if days_interval < 1:
-        days_interval = 1
+def create_or_update_update_task(hours_interval: int) -> None:
+    # schtasks does not support /SC HOURLY /MO 24 reliably (max 23),
+    # so we schedule the task hourly and enforce the user interval in-app.
+    if hours_interval < 1:
+        hours_interval = 1
+
     exe = _resolve_task_executable()
 
     if os.path.basename(exe).lower() in ("python.exe", "pythonw.exe"):
@@ -170,8 +173,8 @@ def create_or_update_update_task(days_interval: int) -> None:
         "schtasks",
         "/Create",
         "/F",
-        "/SC", "DAILY",
-        "/MO", str(days_interval),
+        "/SC", "HOURLY",
+        "/MO", "1",
         "/TN", AUTO_UPDATE_TASK_NAME,
         "/RL", "HIGHEST",
         "/RU", "SYSTEM",
@@ -181,11 +184,12 @@ def create_or_update_update_task(days_interval: int) -> None:
     if CREATE_NO_WINDOW:
         kwargs["creationflags"] = CREATE_NO_WINDOW
     subprocess.run(cmd, **kwargs)
-    log(f"Created/updated scheduled task {AUTO_UPDATE_TASK_NAME} (every {days_interval} day(s)).")
+    log(f"Created/updated scheduled task {AUTO_UPDATE_TASK_NAME} (hourly; internal interval {hours_interval} hour(s)).")
 
 
-def ensure_update_task(days_interval: int) -> None:
-    create_or_update_update_task(days_interval)
+
+def ensure_update_task(hours_interval: int) -> None:
+    create_or_update_update_task(hours_interval)
 
 
 def delete_update_task() -> None:

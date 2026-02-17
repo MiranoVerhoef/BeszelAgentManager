@@ -473,6 +473,20 @@ def _build_env_from_config(cfg: AgentConfig, *, include_process_env: bool = Fals
             continue
         set_if(getattr(cfg, attr, ""), env_name)
 
+    # Custom env rows
+    try:
+        custom = list(getattr(cfg, 'env_custom', []) or [])
+    except Exception:
+        custom = []
+    for item in custom:
+        try:
+            nm = (getattr(item, 'name', None) or (item.get('name') if isinstance(item, dict) else '')).strip()
+            val = getattr(item, 'value', None) if not isinstance(item, dict) else item.get('value')
+            if nm:
+                set_if('' if val is None else str(val), nm)
+        except Exception:
+            continue
+
     return env
 
 def _run_agent_once(cfg: AgentConfig, args: list[str]) -> subprocess.CompletedProcess:
@@ -513,9 +527,9 @@ def install_or_update_agent_and_service(cfg: AgentConfig) -> None:
 
     if cfg.auto_update_enabled:
         log(
-            f"Ensuring scheduled update task (interval {cfg.update_interval_days} days)"
+            f"Ensuring scheduled update task (interval {cfg.update_interval_hours} hour(s))"
         )
-        ensure_update_task(cfg.update_interval_days)
+        ensure_update_task(cfg.update_interval_hours)
     else:
         log("Auto update disabled, removing scheduled update task if present")
         delete_update_task()
@@ -543,9 +557,9 @@ def apply_configuration_only(cfg: AgentConfig) -> None:
 
     if cfg.auto_update_enabled:
         log(
-            f"Ensuring scheduled update task (interval {cfg.update_interval_days} days)"
+            f"Ensuring scheduled update task (interval {cfg.update_interval_hours} hour(s))"
         )
-        ensure_update_task(cfg.update_interval_days)
+        ensure_update_task(cfg.update_interval_hours)
     else:
         log("Auto update disabled, removing scheduled update task if present")
         delete_update_task()
