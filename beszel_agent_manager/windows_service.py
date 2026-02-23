@@ -359,7 +359,7 @@ def open_nssm_edit() -> None:
         # NSSM is a console-subsystem binary, but the "edit" action opens a GUI.
         # Using CREATE_NO_WINDOW prevents an extra console window from appearing behind the GUI.
         creationflags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        subprocess.Popen([str(nssm), 'edit', str(svc)], close_fds=True, creationflags=creationflags)
+        subprocess.Popen([str(nssm), "edit", str(svc)], close_fds=True, creationflags=creationflags)
     except Exception as exc:
         raise ServiceError(f"Failed to open NSSM editor: {exc}") from exc
 

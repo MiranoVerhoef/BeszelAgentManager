@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 PROJECT_NAME = "BeszelAgentManager"
-APP_VERSION = "2.8.6"
+APP_VERSION = "2.8.7"
 
 AGENT_SERVICE_NAME = "Beszel Agent"
 AGENT_DISPLAY_NAME = "Beszel Agent"

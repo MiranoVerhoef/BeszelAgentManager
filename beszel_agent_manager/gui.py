@@ -38,6 +38,8 @@ from .agent_manager import (
     update_agent_only,
     check_hub_status,
     fetch_agent_stable_releases,
+    agent_fingerprint_view,
+    agent_fingerprint_reset,
 )
 from .windows_service import (
     get_service_status,
@@ -369,6 +371,8 @@ class BeszelAgentManagerApp(tk.Tk):
         self.var_smart_devices = tk.StringVar(value=c.smart_devices)
         self.var_system_name = tk.StringVar(value=c.system_name)
         self.var_skip_gpu = tk.StringVar(value=c.skip_gpu)
+        self.var_gpu_collector = tk.StringVar(value=getattr(c, "gpu_collector", ""))
+        self.var_disable_ssh = tk.StringVar(value=getattr(c, "disable_ssh", ""))
 
         self.var_nvml = tk.StringVar(value=getattr(c, "nvml", ""))
         self.var_smart_interval = tk.StringVar(value=getattr(c, "smart_interval", ""))
@@ -381,7 +385,7 @@ class BeszelAgentManagerApp(tk.Tk):
         )
 
         self.var_auto_update = tk.BooleanVar(value=c.auto_update_enabled)
-        self.var_update_interval = tk.IntVar(value=int(getattr(c, 'update_interval_hours', 24) or 24))
+        self.var_update_interval = tk.IntVar(value=int(getattr(c, 'update_interval_hours', 0) or (c.update_interval_days or 1) * 24 or 24))
 
         self.var_auto_restart = tk.BooleanVar(value=getattr(c, "auto_restart_enabled", False))
         self.var_auto_restart_hours = tk.IntVar(value=int(getattr(c, "auto_restart_interval_hours", 24) or 24))
@@ -433,6 +437,8 @@ class BeszelAgentManagerApp(tk.Tk):
             ("SMART_INTERVAL", self.var_smart_interval, "Interval to check S.M.A.R.T. devices (e.g. 1h)."),
             ("SYSTEM_NAME", self.var_system_name, "Override host name."),
             ("SKIP_GPU", self.var_skip_gpu, "Skip GPU stats collection."),
+            ("GPU_COLLECTOR", self.var_gpu_collector, "Select GPU collectors (e.g. nvml,amd_sysfs)."),
+            ("DISABLE_SSH", self.var_disable_ssh, "Disable the SSH server (true/false)."),
             ("DISK_USAGE_CACHE", self.var_disk_usage_cache, "Duration to cache disk usage values (e.g. 10m)."),
             ("SKIP_SYSTEMD", self.var_skip_systemd, "Skip systemd integration (set to '1' to disable)."),
         ]
@@ -448,34 +454,30 @@ class BeszelAgentManagerApp(tk.Tk):
             ]
 
 
+        # Custom env rows (NAME=VALUE)
+        self.custom_env_order: list[str] = []
+        self.custom_env_vars: dict[str, tk.StringVar] = {}
+        raw_custom = list(getattr(self.config_obj, "env_custom", []) or [])
+        for item in raw_custom:
+            if not isinstance(item, dict):
+                continue
+            nm = str(item.get("name") or item.get("key") or "").strip()
+            if not nm:
+                continue
+            if nm in self.custom_env_vars:
+                continue
+            vv = "" if item.get("value") is None else str(item.get("value"))
+            self.custom_env_order.append(nm)
+            self.custom_env_vars[nm] = tk.StringVar(value=vv)
+            try:
+                self.custom_env_vars[nm].trace_add("write", self._on_var_changed)
+            except Exception:
+                pass
+
         self._env_entries: list[ttk.Entry] = []
         self._env_delete_buttons: list[ttk.Button] = []
         self._env_edit_buttons: list[ttk.Button] = []
         self._env_editing: set[str] = set()
-
-        # Custom env rows (NAME=VALUE)
-        self.custom_env_order: list[str] = []
-        self.custom_env_vars: dict[str, tk.StringVar] = {}
-        try:
-            raw_custom = list(getattr(self.config_obj, "env_custom", []) or [])
-        except Exception:
-            raw_custom = []
-        for item in raw_custom:
-            try:
-                nm = (getattr(item, "name", None) or (item.get("name") if isinstance(item, dict) else "")).strip()
-                val = getattr(item, "value", None) if not isinstance(item, dict) else item.get("value")
-                if nm and nm not in self.custom_env_vars:
-                    self.custom_env_order.append(nm)
-                    self.custom_env_vars[nm] = tk.StringVar(value="" if val is None else str(val))
-            except Exception:
-                continue
-
-        for v in self.custom_env_vars.values():
-            try:
-                v.trace_add("write", self._on_var_changed)
-            except Exception:
-                pass
-
 
         self.var_agent_log_choice = tk.StringVar(value="")
         self._agent_log_paths: list[Path] = []
@@ -506,6 +508,8 @@ class BeszelAgentManagerApp(tk.Tk):
             self.var_smart_devices,
             self.var_system_name,
             self.var_skip_gpu,
+            self.var_gpu_collector,
+            self.var_disable_ssh,
             self.var_disk_usage_cache,
             self.var_skip_systemd,
             self.var_auto_update,
@@ -753,7 +757,7 @@ class BeszelAgentManagerApp(tk.Tk):
             row=1, column=0, sticky="w", pady=(6, 0)
         )
         spin = ttk.Spinbox(
-            auto, from_=1, to=2160, textvariable=self.var_update_interval, width=6
+            auto, from_=1, to=90, textvariable=self.var_update_interval, width=6
         )
         spin.grid(row=1, column=1, sticky="w", pady=(6, 0))
 
@@ -1089,6 +1093,30 @@ class BeszelAgentManagerApp(tk.Tk):
         btn_github_auth_tab.grid(row=2, column=0, sticky="w")
         add_tooltip(btn_github_auth_tab, "Save/clear GitHub token (stored encrypted).")
 
+        fp_card = ttk.Frame(extra_tab, style="CardInner.TFrame", padding=12)
+        fp_card.grid(row=1, column=0, sticky="ew", pady=(10, 0))
+        fp_card.columnconfigure(0, weight=1)
+
+        ttk.Label(fp_card, text="Agent Fingerprint", style="Header.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            fp_card,
+            text="View or reset the agent fingerprint (beszel-agent fingerprint view/reset).\n"
+                 "Reset is useful if you cloned a VM or want to re-register this machine.",
+            style="Muted.TLabel",
+            justify="left",
+        ).grid(row=1, column=0, sticky="w", pady=(4, 10))
+
+        fp_btns = ttk.Frame(fp_card, style="CardInner.TFrame")
+        fp_btns.grid(row=2, column=0, sticky="w")
+
+        btn_fp_view = ttk.Button(fp_btns, text="View fingerprint", width=BTN_W, command=self._on_fingerprint_view)
+        btn_fp_view.grid(row=0, column=0, sticky="w")
+        add_tooltip(btn_fp_view, "Runs: beszel-agent fingerprint view")
+
+        btn_fp_reset = ttk.Button(fp_btns, text="Reset fingerprint", width=BTN_W, command=self._on_fingerprint_reset)
+        btn_fp_reset.grid(row=0, column=1, sticky="w", padx=(8, 0))
+        add_tooltip(btn_fp_reset, "Runs: beszel-agent fingerprint reset (then restarts service)")
+
         bottom = ttk.Frame(outer, style="App.TFrame")
         bottom.grid(row=2, column=0, sticky="ew", pady=(10, 4))
         bottom.columnconfigure(0, weight=1)
@@ -1351,21 +1379,11 @@ class BeszelAgentManagerApp(tk.Tk):
                             self._on_apply()
                         self._rebuild_env_rows()
 
-                    btn_edit = ttk.Button(
-                        self.env_rows_frame,
-                        text=("Save" if name in self._env_editing else "Edit"),
-                        command=_toggle_edit,
-                        width=6,
-                    )
+                    btn_edit = ttk.Button(self.env_rows_frame, text=("Save" if name in self._env_editing else "Edit"), command=_toggle_edit, width=6)
                     btn_edit.grid(row=row, column=2, sticky="w", padx=(4, 0))
                     add_tooltip(btn_edit, "Unlock to edit; Save will apply settings (admin required).")
 
-                    btn_del = ttk.Button(
-                        self.env_rows_frame,
-                        text="Remove",
-                        command=lambda nm=name: self._on_env_delete(nm),
-                        width=8,
-                    )
+                    btn_del = ttk.Button(self.env_rows_frame, text="Remove", command=lambda nm=name: self._on_env_delete(nm), width=8)
                     btn_del.grid(row=row, column=3, sticky="w", padx=(4, 0))
 
                     self._env_entries.append(ent)
@@ -1380,7 +1398,6 @@ class BeszelAgentManagerApp(tk.Tk):
             # Custom env rows
             if name in getattr(self, "custom_env_vars", {}):
                 tip = "Custom environment variable. Remove + re-add to rename."
-
                 lbl = ttk.Label(self.env_rows_frame, text=name + ":", style="Card.TLabel")
                 lbl.grid(row=row, column=0, sticky="w", pady=1)
                 add_tooltip(lbl, tip)
@@ -1405,21 +1422,11 @@ class BeszelAgentManagerApp(tk.Tk):
                         self._on_apply()
                     self._rebuild_env_rows()
 
-                btn_edit = ttk.Button(
-                    self.env_rows_frame,
-                    text=("Save" if name in self._env_editing else "Edit"),
-                    command=_toggle_edit_custom,
-                    width=6,
-                )
+                btn_edit = ttk.Button(self.env_rows_frame, text=("Save" if name in self._env_editing else "Edit"), command=_toggle_edit_custom, width=6)
                 btn_edit.grid(row=row, column=2, sticky="w", padx=(4, 0))
                 add_tooltip(btn_edit, "Unlock to edit; Save will apply settings (admin required).")
 
-                btn_del = ttk.Button(
-                    self.env_rows_frame,
-                    text="Remove",
-                    command=lambda nm=name: self._on_env_delete(nm),
-                    width=8,
-                )
+                btn_del = ttk.Button(self.env_rows_frame, text="Remove", command=lambda nm=name: self._on_env_delete(nm), width=8)
                 btn_del.grid(row=row, column=3, sticky="w", padx=(4, 0))
 
                 hint = ttk.Label(self.env_rows_frame, text="Remove + re-add to rename", style="Hint.TLabel")
@@ -1453,6 +1460,7 @@ class BeszelAgentManagerApp(tk.Tk):
         self.var_env_enabled = tk.BooleanVar(value=True)
 
         display_names: list[str] = list(self.active_env_names) + list(getattr(self, 'custom_env_order', []) or [])
+
         for name, ent in zip(display_names, self._env_entries):
             ent.configure(state="normal" if name in self._env_editing else "readonly")
         for btn in self._env_delete_buttons:
@@ -1470,7 +1478,7 @@ class BeszelAgentManagerApp(tk.Tk):
         if not choice and names:
             choice = names[0]
 
-        if choice == "Custom":
+        if (choice or "").strip() == "Custom":
             nm = simpledialog.askstring(PROJECT_NAME, "Custom variable name (e.g. FOO_BAR):", parent=self)
             if nm is None:
                 return
@@ -1482,10 +1490,9 @@ class BeszelAgentManagerApp(tk.Tk):
                 messagebox.showerror(PROJECT_NAME, "Invalid name. Do not include spaces or '='.", parent=self)
                 return
 
-            nm_up = nm.upper()
             reserved = {"KEY", "TOKEN", "HUB_URL", "LISTEN"}
             preset = {n for (n, _v, _t) in self.env_definitions}
-            if nm_up in reserved or nm_up in preset:
+            if nm.upper() in reserved or nm in preset:
                 messagebox.showerror(PROJECT_NAME, "This name is reserved or already exists as a preset.", parent=self)
                 return
             if nm in getattr(self, "custom_env_vars", {}):
@@ -1496,18 +1503,12 @@ class BeszelAgentManagerApp(tk.Tk):
             if val is None:
                 val = ""
 
-            if not hasattr(self, "custom_env_order"):
-                self.custom_env_order = []
-            if not hasattr(self, "custom_env_vars"):
-                self.custom_env_vars = {}
-
             self.custom_env_order.append(nm)
             self.custom_env_vars[nm] = tk.StringVar(value=str(val))
             try:
                 self.custom_env_vars[nm].trace_add("write", self._on_var_changed)
             except Exception:
                 pass
-
             self._rebuild_env_rows()
             self._autosave_config()
             return
@@ -1516,6 +1517,7 @@ class BeszelAgentManagerApp(tk.Tk):
             self.active_env_names.append(choice)
             self._rebuild_env_rows()
             self._autosave_config()
+
 
 
     def _on_env_delete(self, name: str):
@@ -1541,9 +1543,9 @@ class BeszelAgentManagerApp(tk.Tk):
 
         if name in self.active_env_names:
             self.active_env_names.remove(name)
-
         self._rebuild_env_rows()
         self._autosave_config()
+
 
 
     def _filter_log_text_by_type(self, content: str, type_filter: str) -> str:
@@ -1843,10 +1845,14 @@ class BeszelAgentManagerApp(tk.Tk):
             smart_devices=self.var_smart_devices.get().strip(),
             system_name=self.var_system_name.get().strip(),
             skip_gpu=self.var_skip_gpu.get().strip(),
+            gpu_collector=self.var_gpu_collector.get().strip(),
+            disable_ssh=self.var_disable_ssh.get().strip(),
             nvml=self.var_nvml.get().strip(),
             smart_interval=self.var_smart_interval.get().strip(),
             auto_update_enabled=self.var_auto_update.get(),
             update_interval_hours=int(self.var_update_interval.get() or 24),
+            update_interval_days=max(1, int((int(self.var_update_interval.get() or 24) + 23) // 24)),
+            last_agent_auto_update_at=getattr(c, 'last_agent_auto_update_at', ''),
             last_known_version=c.last_known_version,
 
             auto_restart_enabled=self.var_auto_restart.get(),
@@ -1863,7 +1869,7 @@ class BeszelAgentManagerApp(tk.Tk):
             github_token_enc=getattr(c, "github_token_enc", ""),
         )
 
-        # Persist active env rows
+        # Persist active preset env rows
         try:
             cfg.env_active_names = list(self.active_env_names)
         except Exception:
@@ -1871,21 +1877,13 @@ class BeszelAgentManagerApp(tk.Tk):
 
         # Persist custom env rows
         try:
-            items = []
-            for nm in list(getattr(self, "custom_env_order", []) or []):
-                v = ""
-                try:
-                    v = self.custom_env_vars[nm].get()
-                except Exception:
-                    v = ""
-                items.append({"name": nm, "value": v})
-            try:
-                from .config import CustomEnvVar
-                cfg.env_custom = [CustomEnvVar(name=i["name"], value=i["value"]) for i in items]
-            except Exception:
-                cfg.env_custom = items
+            cfg.env_custom = [
+                {'name': n, 'value': self.custom_env_vars[n].get()}
+                for n in (getattr(self, 'custom_env_order', []) or [])
+                if n in self.custom_env_vars
+            ]
         except Exception:
-            pass
+            cfg.env_custom = []
 
         extra_disk_usage_cache = self.var_disk_usage_cache.get().strip()
         extra_skip_systemd = self.var_skip_systemd.get().strip()
@@ -2903,6 +2901,106 @@ class BeszelAgentManagerApp(tk.Tk):
             f"releases/tag/{APP_VERSION}"
         )
         self._open_url(url)
+
+    def _show_text_dialog(self, title: str, content: str) -> None:
+        win = tk.Toplevel(self)
+        win.title(title)
+        win.geometry("800x350")
+        win.transient(self)
+        win.grab_set()
+
+        frm = ttk.Frame(win, padding=10)
+        frm.pack(fill="both", expand=True)
+        frm.columnconfigure(0, weight=1)
+        frm.rowconfigure(0, weight=1)
+
+        txt = tk.Text(frm, wrap="word")
+        txt.grid(row=0, column=0, sticky="nsew")
+        scr = ttk.Scrollbar(frm, orient="vertical", command=txt.yview)
+        scr.grid(row=0, column=1, sticky="ns")
+        txt.configure(yscrollcommand=scr.set)
+        txt.insert("1.0", content)
+        txt.configure(state="disabled")
+
+        btns = ttk.Frame(frm)
+        btns.grid(row=1, column=0, columnspan=2, sticky="e", pady=(10, 0))
+        def _copy():
+            self.clipboard_clear()
+            self.clipboard_append(content)
+        ttk.Button(btns, text="Copy", command=_copy).grid(row=0, column=0, padx=(0, 8))
+        ttk.Button(btns, text="Close", command=win.destroy).grid(row=0, column=1)
+
+
+    def _show_fingerprint_dialog(self, fingerprint: str) -> None:
+        win = tk.Toplevel(self)
+        win.title("Agent Fingerprint")
+        win.resizable(False, False)
+        win.transient(self)
+        win.grab_set()
+
+        frm = ttk.Frame(win, padding=12)
+        frm.pack(fill="both", expand=True)
+
+        ttk.Label(frm, text="Fingerprint", style="Header.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(
+            frm,
+            text="Tip: Copy this value. To rename the fingerprint, use reset.",
+            style="Muted.TLabel",
+            justify="left",
+        ).grid(row=1, column=0, sticky="w", pady=(2, 8))
+
+        var = tk.StringVar(value=fingerprint.strip())
+        ent = ttk.Entry(frm, textvariable=var, width=78)
+        ent.grid(row=2, column=0, sticky="ew")
+        ent.configure(state="readonly")
+
+        btns = ttk.Frame(frm)
+        btns.grid(row=3, column=0, sticky="e", pady=(10, 0))
+
+        def _copy():
+            self.clipboard_clear()
+            self.clipboard_append(var.get())
+
+        ttk.Button(btns, text="Copy", command=_copy).grid(row=0, column=0, padx=(0, 8))
+        ttk.Button(btns, text="Close", command=win.destroy).grid(row=0, column=1)
+
+        win.update_idletasks()
+        # Compact size
+        w = win.winfo_reqwidth()
+        h = win.winfo_reqheight()
+        win.geometry(f"{max(520, w)}x{max(155, h)}")
+
+
+    def _on_fingerprint_view(self) -> None:
+        ok, out = agent_fingerprint_view()
+        out_s = (out or "").strip()
+        if ok and re.fullmatch(r"[0-9a-fA-F]{32,128}", out_s):
+            self._show_fingerprint_dialog(out_s)
+            return
+        title = "Agent Fingerprint" if ok else "Agent Fingerprint (error)"
+        self._show_text_dialog(title, out or "")
+
+    def _on_fingerprint_reset(self) -> None:
+        if not messagebox.askyesno(
+            PROJECT_NAME,
+            "Reset the agent fingerprint?\n\nThis will require re-registration in the hub.",
+            parent=self,
+        ):
+            return
+        if not self._require_admin():
+            return
+        try:
+            stop_service(timeout_seconds=15)
+        except Exception:
+            pass
+        ok, out = agent_fingerprint_reset()
+        try:
+            start_service()
+        except Exception:
+            pass
+        title = "Fingerprint reset" if ok else "Fingerprint reset (error)"
+        self._show_text_dialog(title, out or "")
+
 
     def _on_github_auth(self):
         try:

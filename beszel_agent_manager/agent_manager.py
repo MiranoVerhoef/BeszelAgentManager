@@ -64,6 +64,17 @@ def _normalize_version(ver: str | None) -> str | None:
     if not ver:
         return None
 
+    ver = str(ver).strip()
+    if ver.lower().startswith("v"):
+        ver = ver[1:].strip()
+
+    m = re.search(r"\d+\.\d+\.\d+", ver)
+    if m:
+        return m.group(0)
+
+    # If we can't find a semantic version, treat as unknown.
+    return None
+
     ver = ver.strip()
 
     if ver.lower().startswith("v"):
@@ -448,6 +459,8 @@ def _build_env_from_config(cfg: AgentConfig, *, include_process_env: bool = Fals
         "SMART_INTERVAL": "smart_interval",
         "SYSTEM_NAME": "system_name",
         "SKIP_GPU": "skip_gpu",
+        "GPU_COLLECTOR": "gpu_collector",
+        "DISABLE_SSH": "disable_ssh",
         "DISK_USAGE_CACHE": "disk_usage_cache",
         "SKIP_SYSTEMD": "skip_systemd",
     }
@@ -473,19 +486,29 @@ def _build_env_from_config(cfg: AgentConfig, *, include_process_env: bool = Fals
             continue
         set_if(getattr(cfg, attr, ""), env_name)
 
-    # Custom env rows
+
+    # Apply custom env vars (NAME=VALUE) without overriding core/preset keys.
+    reserved = {"KEY", "TOKEN", "HUB_URL", "LISTEN"}
     try:
-        custom = list(getattr(cfg, 'env_custom', []) or [])
+        custom_list = list(getattr(cfg, "env_custom", []) or [])
     except Exception:
-        custom = []
-    for item in custom:
-        try:
-            nm = (getattr(item, 'name', None) or (item.get('name') if isinstance(item, dict) else '')).strip()
-            val = getattr(item, 'value', None) if not isinstance(item, dict) else item.get('value')
-            if nm:
-                set_if('' if val is None else str(val), nm)
-        except Exception:
+        custom_list = []
+    for item in custom_list:
+        if not isinstance(item, dict):
             continue
+        k = str(item.get("name") or item.get("key") or "").strip()
+        if not k:
+            continue
+        if k in reserved:
+            continue
+        if k in env:
+            continue
+        v = item.get("value")
+        if v is None:
+            continue
+        v_str = str(v)
+        if v_str != "":
+            env[k] = v_str
 
     return env
 
@@ -527,7 +550,7 @@ def install_or_update_agent_and_service(cfg: AgentConfig) -> None:
 
     if cfg.auto_update_enabled:
         log(
-            f"Ensuring scheduled update task (interval {cfg.update_interval_hours} hour(s))"
+            f"Ensuring scheduled update task (runs hourly; updates every {cfg.update_interval_hours} hour(s))"
         )
         ensure_update_task(cfg.update_interval_hours)
     else:
@@ -557,7 +580,7 @@ def apply_configuration_only(cfg: AgentConfig) -> None:
 
     if cfg.auto_update_enabled:
         log(
-            f"Ensuring scheduled update task (interval {cfg.update_interval_hours} hour(s))"
+            f"Ensuring scheduled update task (runs hourly; updates every {cfg.update_interval_hours} hour(s))"
         )
         ensure_update_task(cfg.update_interval_hours)
     else:
@@ -589,28 +612,89 @@ def get_agent_version() -> str:
     if not exe_path.exists():
         return "Not installed"
 
+    candidates = [
+        [str(exe_path), "version"],
+        [str(exe_path), "--version"],
+        [str(exe_path), "-version"],
+    ]
+    for cmd in candidates:
+        try:
+            result = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=10,
+                creationflags=CREATE_NO_WINDOW,
+            )
+            raw = ((result.stdout or "") + "\n" + (result.stderr or "")).strip()
+            if not raw:
+                continue
+            norm = _normalize_version(raw)
+            if norm:
+                return norm
+            m2 = re.search(r"\d+\.\d+\.\d+", raw)
+            if m2:
+                return m2.group(0)
+        except Exception as exc:
+            log(f"Failed to get agent version via {cmd}: {exc}")
+    return "Unknown"
+
+
+def agent_fingerprint_view() -> tuple[bool, str]:
+    exe_path = _agent_exe_path()
+    if not exe_path.exists():
+        return False, "Agent is not installed."
+
+    cfg = AgentConfig.load()
+    env_vars = _build_env_from_config(cfg)
+    env = os.environ.copy()
+    env.update(env_vars)
+
     try:
-        result = subprocess.run(
-            [str(exe_path), "version"],
+        cp = subprocess.run(
+            [str(exe_path), "fingerprint", "view"],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=10,
+            timeout=15,
+            env=env,
             creationflags=CREATE_NO_WINDOW,
         )
-        raw = (result.stdout or "").strip() or (result.stderr or "").strip()
-        if not raw:
-            return "Unknown"
-
-        norm = _normalize_version(raw)
-        if not norm:
-            log(f"Could not normalize agent version from output: {raw!r}")
-            return "Unknown"
-
-        return norm
+        out = ((cp.stdout or "") + "\n" + (cp.stderr or "")).strip()
+        if cp.returncode == 0:
+            return True, out or "OK"
+        return False, out or f"fingerprint view failed (exit={cp.returncode})"
     except Exception as exc:
-        log(f"Failed to get agent version: {exc}")
-        return "Unknown"
+        return False, f"fingerprint view failed: {exc}"
+
+
+def agent_fingerprint_reset() -> tuple[bool, str]:
+    exe_path = _agent_exe_path()
+    if not exe_path.exists():
+        return False, "Agent is not installed."
+
+    cfg = AgentConfig.load()
+    env_vars = _build_env_from_config(cfg)
+    env = os.environ.copy()
+    env.update(env_vars)
+
+    try:
+        cp = subprocess.run(
+            [str(exe_path), "fingerprint", "reset"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=15,
+            env=env,
+            creationflags=CREATE_NO_WINDOW,
+        )
+        out = ((cp.stdout or "") + "\n" + (cp.stderr or "")).strip()
+        if cp.returncode == 0:
+            return True, out or "OK"
+        return False, out or f"fingerprint reset failed (exit={cp.returncode})"
+    except Exception as exc:
+        return False, f"fingerprint reset failed: {exc}"
 
 
 def check_hub_status(hub_url: str | None) -> str:

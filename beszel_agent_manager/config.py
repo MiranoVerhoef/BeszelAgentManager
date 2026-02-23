@@ -1,14 +1,9 @@
 from __future__ import annotations
 import json
 import dataclasses
+import math
 from dataclasses import dataclass
 from .constants import CONFIG_PATH, DATA_DIR
-
-
-@dataclass
-class CustomEnvVar:
-    name: str = ""
-    value: str = ""
 
 
 @dataclass
@@ -41,6 +36,8 @@ class AgentConfig:
     smart_devices: str = ""
     system_name: str = ""
     skip_gpu: str = ""
+    gpu_collector: str = ""
+    disable_ssh: str = ""
     nvml: str = ""
     smart_interval: str = ""
     disk_usage_cache: str = ""
@@ -48,18 +45,18 @@ class AgentConfig:
 
     env_enabled: bool = True
 
-    # Preset env rows enabled in the UI (names like DATA_DIR, DOCKER_HOST, ...)
+
     env_active_names: list[str] = dataclasses.field(default_factory=list)
 
-    # Custom env rows (arbitrary NAME=VALUE pairs)
-    env_custom: list[CustomEnvVar] = dataclasses.field(default_factory=list)
-
+    # Custom environment variables added via UI (list of {"name": "...", "value": "..."})
+    env_custom: list[dict[str, str]] = dataclasses.field(default_factory=list)
     auto_update_enabled: bool = True
-    # Interval in hours (default 24)
+    # Interval in hours (UI uses hours). Defaults to 24.
     update_interval_hours: int = 24
-    # Tracks last scheduled auto-update run (ISO string)
+    # Legacy (for backward compatibility). If present in older config, it will be converted to hours.
+    update_interval_days: int = 1
+    # Used by the hourly scheduled task to decide whether an update is due.
     last_agent_auto_update_at: str = ""
-
     last_known_version: str = ""
 
     auto_restart_enabled: bool = False
@@ -118,13 +115,8 @@ class AgentConfig:
             "hub_url_ip_fallback",
             "hub_url_ip_fallback_enabled",
 
-            "env_enabled",
-            "env_active_names",
-            "env_custom",
-
             "auto_update_enabled",
-            "update_interval_hours",
-
+            "update_interval_days",
             "auto_restart_enabled",
             "auto_restart_interval_hours",
         ]
@@ -135,125 +127,124 @@ class AgentConfig:
 
     def apply_fingerprint(self) -> str:
         import hashlib
-        payload = json.dumps(
-            self._apply_relevant_dict(),
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=True,
-            default=lambda o: dataclasses.asdict(o) if dataclasses.is_dataclass(o) else str(o),
-        )
+        import json
+
+        payload = json.dumps(self._apply_relevant_dict(), sort_keys=True, separators=(",", ":"), ensure_ascii=True)
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     @classmethod
     def load(cls) -> "AgentConfig":
         DATA_DIR.mkdir(parents=True, exist_ok=True)
-        if not CONFIG_PATH.exists():
-            return cls()
-
-        try:
-            with CONFIG_PATH.open("r", encoding="utf-8") as f:
-                raw = json.load(f)
-        except Exception:
-            return cls()
-
-        try:
-            kwargs: dict[str, object] = {}
-            for fld in dataclasses.fields(cls):
-                if fld.name in raw:
-                    kwargs[fld.name] = raw.get(fld.name)
-                else:
-                    if fld.default is not dataclasses.MISSING:
-                        kwargs[fld.name] = fld.default
-                    elif fld.default_factory is not dataclasses.MISSING:  # type: ignore
-                        kwargs[fld.name] = fld.default_factory()  # type: ignore
+        if CONFIG_PATH.exists():
+            try:
+                with CONFIG_PATH.open("r", encoding="utf-8") as f:
+                    raw = json.load(f)
+                kwargs: dict[str, object] = {}
+                for fld in dataclasses.fields(cls):
+                    if fld.name in raw:
+                        kwargs[fld.name] = raw.get(fld.name)
                     else:
-                        kwargs[fld.name] = None
+                        if fld.default is not dataclasses.MISSING:
+                            kwargs[fld.name] = fld.default
+                        elif fld.default_factory is not dataclasses.MISSING:  # type: ignore
+                            kwargs[fld.name] = fld.default_factory()  # type: ignore
+                        else:
+                            kwargs[fld.name] = None
 
-            # Hub fallback enabled migration
-            if (
-                "hub_url_ip_fallback_enabled" not in raw
-                and str(raw.get("hub_url_ip_fallback", "") or "").strip() != ""
-            ):
-                kwargs["hub_url_ip_fallback_enabled"] = True
+                if (
+                    "hub_url_ip_fallback_enabled" not in raw
+                    and str(raw.get("hub_url_ip_fallback", "") or "").strip() != ""
+                ):
+                    kwargs["hub_url_ip_fallback_enabled"] = True
 
-            # Days -> hours migration
-            if "update_interval_hours" not in raw:
-                days = raw.get("update_interval_days")
+
+                # Days -> hours migration
+                if "update_interval_hours" not in raw:
+                    try:
+                        d = int(raw.get("update_interval_days", 1) or 1)
+                    except Exception:
+                        d = 1
+                    if d < 1:
+                        d = 1
+                    kwargs["update_interval_hours"] = d * 24
+
                 try:
-                    days_i = int(days)
+                    h = int(kwargs.get("update_interval_hours", 24) or 24)
                 except Exception:
-                    days_i = 1
-                if days_i < 1:
-                    days_i = 1
-                kwargs["update_interval_hours"] = days_i * 24
+                    h = 24
+                if h < 1:
+                    h = 24
+                kwargs["update_interval_hours"] = h
+                # keep legacy days aligned for older builds
+                kwargs["update_interval_days"] = int(math.ceil(h / 24.0))
 
-            # env_custom parse
-            env_custom_raw = raw.get("env_custom")
-            custom_list: list[CustomEnvVar] = []
-            if isinstance(env_custom_raw, list):
-                for item in env_custom_raw:
-                    if isinstance(item, dict):
-                        n = str(item.get("name") or "").strip()
-                        v = str(item.get("value") or "")
-                        if n:
-                            custom_list.append(CustomEnvVar(name=n, value=v))
-            kwargs["env_custom"] = custom_list
+                # Normalize env_custom
+                ec = kwargs.get("env_custom")
+                if not isinstance(ec, list):
+                    kwargs["env_custom"] = []
+                else:
+                    cleaned = []
+                    for item in ec:
+                        if not isinstance(item, dict):
+                            continue
+                        name = str(item.get("name") or item.get("key") or "").strip()
+                        if not name:
+                            continue
+                        value = "" if item.get("value") is None else str(item.get("value"))
+                        cleaned.append({"name": name, "value": value})
+                    kwargs["env_custom"] = cleaned
 
-            # env_active_names migration
-            if "env_active_names" not in raw:
-                active: list[str] = []
-                env_tables = raw.get("env_tables")
-                if isinstance(env_tables, list):
-                    for item in env_tables:
-                        if isinstance(item, dict):
-                            k = item.get("name") or item.get("key")
-                            if isinstance(k, str):
-                                active.append(k)
-                elif isinstance(env_tables, dict):
-                    for k in env_tables.keys():
-                        if isinstance(k, str):
-                            active.append(k)
-
-                if not active:
-                    mapping = {
-                        "DATA_DIR": "data_dir",
-                        "DOCKER_HOST": "docker_host",
-                        "EXCLUDE_CONTAINERS": "exclude_containers",
-                        "EXCLUDE_SMART": "exclude_smart",
-                        "EXTRA_FILESYSTEMS": "extra_filesystems",
-                        "FILESYSTEM": "filesystem",
-                        "INTEL_GPU_DEVICE": "intel_gpu_device",
-                        "NVML": "nvml",
-                        "KEY_FILE": "key_file",
-                        "TOKEN_FILE": "token_file",
-                        "LHM": "lhm",
-                        "LOG_LEVEL": "log_level",
-                        "MEM_CALC": "mem_calc",
-                        "NETWORK": "network",
-                        "NICS": "nics",
-                        "SENSORS": "sensors",
-                        "PRIMARY_SENSOR": "primary_sensor",
-                        "SYS_SENSORS": "sys_sensors",
-                        "SERVICE_PATTERNS": "service_patterns",
-                        "SMART_DEVICES": "smart_devices",
-                        "SMART_INTERVAL": "smart_interval",
-                        "SYSTEM_NAME": "system_name",
-                        "SKIP_GPU": "skip_gpu",
-                        "DISK_USAGE_CACHE": "disk_usage_cache",
-                        "SKIP_SYSTEMD": "skip_systemd",
-                    }
-                    for env_name, attr in mapping.items():
-                        v = raw.get(attr, "")
+                if "env_enabled" not in raw:
+                    core = {"key", "token", "hub_url", "hub_url_ip_fallback", "hub_url_ip_fallback_enabled"}
+                    if raw.get("env_active_names"):
+                        kwargs["env_enabled"] = True
+                    any_env = False
+                    for fld in dataclasses.fields(cls):
+                        if fld.name in core:
+                            continue
+                        v = raw.get(fld.name, "")
                         if isinstance(v, str) and v.strip() != "":
-                            active.append(env_name)
-                kwargs["env_active_names"] = active
+                            any_env = True
+                            break
+                    if any_env:
+                        kwargs["env_enabled"] = True
 
-            if "env_enabled" not in raw:
-                kwargs["env_enabled"] = True
+                if "env_active_names" not in raw:
+                    active: list[str] = []
+                    env_tables = raw.get("env_tables")
+                    if isinstance(env_tables, dict):
+                        for k, v in env_tables.items():
+                            if isinstance(k, str) and k in {f.name for f in dataclasses.fields(cls)}:
+                                if isinstance(v, str):
+                                    kwargs[k] = v
+                                active.append(k)
+                        if active:
+                            kwargs["env_enabled"] = True
+                    elif isinstance(env_tables, list):
+                        for item in env_tables:
+                            if isinstance(item, dict):
+                                k = item.get("name") or item.get("key")
+                                v = item.get("value")
+                                if isinstance(k, str) and k in {f.name for f in dataclasses.fields(cls)}:
+                                    if isinstance(v, str):
+                                        kwargs[k] = v
+                                    active.append(k)
+                        if active:
+                            kwargs["env_enabled"] = True
 
-            return cls(**kwargs)  # type: ignore[arg-type]
-        except Exception:
-            return cls()
+                    if not active:
+                        core = {"key", "token", "hub_url", "hub_url_ip_fallback", "hub_url_ip_fallback_enabled", "env_enabled", "env_active_names"}
+                        for fld in dataclasses.fields(cls):
+                            if fld.name in core:
+                                continue
+                            v = raw.get(fld.name, "")
+                            if isinstance(v, str) and v.strip() != "":
+                                active.append(fld.name)
+                    kwargs["env_active_names"] = active
+                return cls(**kwargs)
+            except Exception:
+                return cls()
+        return cls()
 
     def save(self) -> None:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
