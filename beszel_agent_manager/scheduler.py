@@ -168,9 +168,12 @@ def create_or_update_update_task(interval_hours: int) -> None:
     exe = _resolve_task_executable()
 
     if os.path.basename(exe).lower() in ("python.exe", "pythonw.exe"):
-        tr = f'"{exe}" -m beszel_agent_manager.main --auto-update-agent'
+        inner = f'"{exe}" -m beszel_agent_manager.main --auto-update-agent'
     else:
-        tr = f'"{exe}" --auto-update-agent'
+        inner = f'"{exe}" --auto-update-agent'
+
+    # Run via PowerShell wrapper to avoid direct self-invocation pattern in the task action.
+    tr = f'powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "& {inner}"'
 
     cmd = [
         "schtasks",
