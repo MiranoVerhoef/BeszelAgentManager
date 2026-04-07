@@ -30,6 +30,7 @@ class AgentConfig:
     network: str = ""
     nics: str = ""
     sensors: str = ""
+    sensors_timeout: str = ""
     primary_sensor: str = ""
     sys_sensors: str = ""
     service_patterns: str = ""
@@ -101,6 +102,7 @@ class AgentConfig:
             "network",
             "nics",
             "sensors",
+            "sensors_timeout",
             "primary_sensor",
             "sys_sensors",
             "service_patterns",

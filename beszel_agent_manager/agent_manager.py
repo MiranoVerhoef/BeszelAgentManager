@@ -452,6 +452,7 @@ def _build_env_from_config(cfg: AgentConfig, *, include_process_env: bool = Fals
         "NETWORK": "network",
         "NICS": "nics",
         "SENSORS": "sensors",
+        "SENSORS_TIMEOUT": "sensors_timeout",
         "PRIMARY_SENSOR": "primary_sensor",
         "SYS_SENSORS": "sys_sensors",
         "SERVICE_PATTERNS": "service_patterns",
