@@ -365,6 +365,7 @@ class BeszelAgentManagerApp(tk.Tk):
         self.var_network = tk.StringVar(value=c.network)
         self.var_nics = tk.StringVar(value=c.nics)
         self.var_sensors = tk.StringVar(value=c.sensors)
+        self.var_sensors_timeout = tk.StringVar(value=getattr(c, "sensors_timeout", ""))
         self.var_primary_sensor = tk.StringVar(value=c.primary_sensor)
         self.var_sys_sensors = tk.StringVar(value=c.sys_sensors)
         self.var_service_patterns = tk.StringVar(value=c.service_patterns)
@@ -430,6 +431,7 @@ class BeszelAgentManagerApp(tk.Tk):
             ("NETWORK", self.var_network, "Network mode."),
             ("NICS", self.var_nics, "Network interfaces to include."),
             ("SENSORS", self.var_sensors, "Sensors to read."),
+            ("SENSORS_TIMEOUT", self.var_sensors_timeout, "Timeout for sensor collection (for example 5s)."),
             ("PRIMARY_SENSOR", self.var_primary_sensor, "Primary temperature sensor."),
             ("SYS_SENSORS", self.var_sys_sensors, "System sensors path."),
             ("SERVICE_PATTERNS", self.var_service_patterns, "Service patterns to monitor."),
@@ -502,6 +504,7 @@ class BeszelAgentManagerApp(tk.Tk):
             self.var_network,
             self.var_nics,
             self.var_sensors,
+            self.var_sensors_timeout,
             self.var_primary_sensor,
             self.var_sys_sensors,
             self.var_service_patterns,
@@ -547,6 +550,7 @@ class BeszelAgentManagerApp(tk.Tk):
                 self.var_network,
                 self.var_nics,
                 self.var_sensors,
+                self.var_sensors_timeout,
                 self.var_primary_sensor,
                 self.var_sys_sensors,
                 self.var_service_patterns,
@@ -1839,6 +1843,7 @@ class BeszelAgentManagerApp(tk.Tk):
             network=self.var_network.get().strip(),
             nics=self.var_nics.get().strip(),
             sensors=self.var_sensors.get().strip(),
+            sensors_timeout=self.var_sensors_timeout.get().strip(),
             primary_sensor=self.var_primary_sensor.get().strip(),
             sys_sensors=self.var_sys_sensors.get().strip(),
             service_patterns=self.var_service_patterns.get().strip(),
