@@ -5,6 +5,10 @@ from .constants import PROJECT_NAME, PROGRAM_FILES
 from .util import run, log
 
 
+def _ps_single_quote(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
 def _defender_exclusion(path: Path, add: bool) -> tuple[bool, str]:
     if os.name != "nt":
         return True, "Non-Windows platform"
@@ -16,10 +20,8 @@ def _defender_exclusion(path: Path, add: bool) -> tuple[bool, str]:
                 "powershell",
                 "-NoLogo",
                 "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
                 "-Command",
-                f"{cmdlet} -ExclusionPath '{str(path)}'",
+                f"{cmdlet} -ExclusionPath {_ps_single_quote(str(path))}",
             ],
             check=False,
         )
@@ -36,7 +38,12 @@ def _defender_exclusion(path: Path, add: bool) -> tuple[bool, str]:
         return False, str(exc)
 
 
-def ensure_defender_exclusion_for_manager() -> tuple[bool, str]:
+def ensure_defender_exclusion_for_manager(*, user_consented: bool = False) -> tuple[bool, str]:
+    if not user_consented:
+        msg = "Windows Defender exclusion was not added because user consent was not provided."
+        log(msg)
+        return False, msg
+
     path = Path(PROGRAM_FILES) / PROJECT_NAME
     return _defender_exclusion(path, add=True)
 
