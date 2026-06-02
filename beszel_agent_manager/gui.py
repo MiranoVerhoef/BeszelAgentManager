@@ -2020,18 +2020,22 @@ class BeszelAgentManagerApp(tk.Tk):
         add_defender = False
         if os.name == "nt":
             msg = (
-                "BeszelAgentManager can add a Windows Defender exclusion for its own "
-                "installation folder (C:\\Program Files\\BeszelAgentManager).\n\n"
-                "This helps prevent the manager and the tools it uses from being "
-                "blocked or slowed down during agent install/update.\n\n"
-                "Do you want to add this Defender exclusion now?"
+                "Optional Windows Defender exclusion\n\n"
+                "BeszelAgentManager can add an exclusion for its own installation "
+                "folder:\n\n"
+                "C:\\Program Files\\BeszelAgentManager\n\n"
+                "Only choose Yes if you understand and accept that Windows Defender "
+                "will skip scans for this folder. This can reduce false positives "
+                "during install/update, but it also lowers scanning coverage for "
+                "anything placed there.\n\n"
+                "Add this Defender exclusion?"
             )
             add_defender = messagebox.askyesno(PROJECT_NAME, msg)
 
         def task():
             if add_defender:
                 try:
-                    ok, reason = ensure_defender_exclusion_for_manager()
+                    ok, reason = ensure_defender_exclusion_for_manager(user_consented=True)
                     if not ok:
                         msg = (
                             "BeszelAgentManager could not configure a Windows Defender "

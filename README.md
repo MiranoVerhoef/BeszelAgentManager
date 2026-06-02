@@ -39,7 +39,7 @@ Vibe Coding is used.
   - Requests Administrator rights when required (service/firewall/tasks)
   - Can relocate itself to `C:\Program Files\BeszelAgentManager` for a clean install location
   - Creates a Start Menu shortcut (removes it on uninstall)
-  - Requests Windows Defender exclusion for `C:\Program Files\BeszelAgentManager`
+  - Can add a Windows Defender exclusion for `C:\Program Files\BeszelAgentManager` only after explicit user consent
   - Enforces a single running instance (with an option to close the old one)
   - Uninstall removes service, firewall rule, tasks, agent files, and Start Menu shortcut
 
