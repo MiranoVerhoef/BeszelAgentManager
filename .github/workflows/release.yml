@@ -106,11 +106,23 @@ jobs:
           $tag = "${{ steps.version.outputs.tag }}"
 
           git fetch origin "refs/tags/$tag:refs/tags/$tag" 2>$null
-          if (git rev-parse -q --verify "refs/tags/$tag") {
+          $tagExists = $false
+          git rev-parse -q --verify "refs/tags/$tag" 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $tagExists = $true
+          }
+          $global:LASTEXITCODE = 0
+          if ($tagExists) {
             throw "Tag '$tag' already exists. Update VERSION before publishing a new release."
           }
+
+          $releaseExists = $false
           gh release view $tag 2>$null
           if ($LASTEXITCODE -eq 0) {
+            $releaseExists = $true
+          }
+          $global:LASTEXITCODE = 0
+          if ($releaseExists) {
             throw "Release '$tag' already exists. Update VERSION before publishing a new release."
           }
 
