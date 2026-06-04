@@ -15,6 +15,14 @@ RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 VALUE_NAME = PROJECT_NAME
 
 
+def _desired_command(start_hidden: bool) -> str:
+    exe_path = _get_exe_path()
+    cmd = f'"{exe_path}"'
+    if start_hidden:
+        cmd += " --hidden"
+    return cmd
+
+
 def _get_exe_path() -> Path:
     executable = Path(sys.executable).resolve()
     argv0 = Path(sys.argv[0]).resolve()
@@ -73,10 +81,13 @@ def set_autostart(enabled: bool, start_hidden: bool) -> None:
     key = _open_run_key_writable()
     try:
         if enabled:
-            exe_path = _get_exe_path()
-            cmd = f'"{exe_path}"'
-            if start_hidden:
-                cmd += " --hidden"
+            cmd = _desired_command(start_hidden)
+            try:
+                current, _ = winreg.QueryValueEx(key, VALUE_NAME)
+            except FileNotFoundError:
+                current = None
+            if str(current or "") == cmd:
+                return
 
             winreg.SetValueEx(key, VALUE_NAME, 0, winreg.REG_SZ, cmd)
             log(f"Autostart enabled: {VALUE_NAME} = {cmd}")

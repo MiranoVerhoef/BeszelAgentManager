@@ -133,6 +133,27 @@ def _configure_agent_logging(nssm: str) -> None:
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppTimestampLog', '1'], check=False)
 
 
+def _run_service_command(cmd: list[str], description: str) -> subprocess.CompletedProcess:
+    cp = run(cmd, check=False)
+    if cp.returncode != 0:
+        raise ServiceError(
+            f"{description} failed ({cp.returncode}).\n"
+            f"Command: {' '.join(str(c) for c in cmd)}\n"
+            f"stdout: {(cp.stdout or '').strip()}\n"
+            f"stderr: {(cp.stderr or '').strip()}"
+        )
+    return cp
+
+
+def _require_service_exists() -> None:
+    state = get_service_status()
+    if state == 'NOT FOUND':
+        raise ServiceError(
+            f"Service '{AGENT_SERVICE_NAME}' was not created. "
+            "Check the NSSM install output above and verify the app is running as administrator."
+        )
+
+
 def create_or_update_service(env_vars: Dict[str, str]) -> None:
     if not AGENT_EXE_PATH.exists():
         raise ServiceError(f'Agent executable not found: {AGENT_EXE_PATH}')
@@ -144,9 +165,14 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
         run(['sc', 'delete', LEGACY_AGENT_SERVICE_NAME], check=False)
 
     AGENT_DIR.mkdir(parents=True, exist_ok=True)
-    run([nssm, 'install', AGENT_SERVICE_NAME, str(AGENT_EXE_PATH)], check=False)
-    run([nssm, 'set', AGENT_SERVICE_NAME, 'DisplayName', AGENT_DISPLAY_NAME], check=False)
-    run(
+    if not _service_exists(AGENT_SERVICE_NAME):
+        _run_service_command([nssm, 'install', AGENT_SERVICE_NAME, str(AGENT_EXE_PATH)], "NSSM service install")
+    else:
+        log(f"Service {AGENT_SERVICE_NAME} already exists; updating configuration.")
+    _require_service_exists()
+
+    _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'DisplayName', AGENT_DISPLAY_NAME], "Set service display name")
+    _run_service_command(
         [
             nssm,
             'set',
@@ -154,14 +180,14 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
             'Description',
             f"Beszel agent service managed by {PROJECT_NAME}. Configure and update via {PROJECT_NAME}.",
         ],
-        check=False,
+        "Set service description",
     )
-    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppDirectory', str(AGENT_DIR)], check=False)
+    _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'AppDirectory', str(AGENT_DIR)], "Set service app directory")
 
-    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodConsole', '1500'], check=False)
-    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodWindow', '1500'], check=False)
-    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodThreads', '1500'], check=False)
-    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppKillProcessTree', '1'], check=False)
+    _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodConsole', '1500'], "Set service console stop timeout")
+    _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodWindow', '1500'], "Set service window stop timeout")
+    _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodThreads', '1500'], "Set service thread stop timeout")
+    _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'AppKillProcessTree', '1'], "Set service process-tree kill")
 
     _configure_agent_logging(nssm)
     env_pairs = [f"{k}={v}" for k, v in env_vars.items() if v]
@@ -170,9 +196,9 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
     run([nssm, 'reset', AGENT_SERVICE_NAME, 'AppEnvironmentExtra'], check=False)
 
     if env_pairs:
-        run([nssm, 'set', AGENT_SERVICE_NAME, 'AppEnvironmentExtra', *env_pairs], check=False)
-    run([nssm, 'set', AGENT_SERVICE_NAME, 'Start', 'SERVICE_AUTO_START'], check=False)
-    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppRestartDelay', '5000'], check=False)
+        _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'AppEnvironmentExtra', *env_pairs], "Set service environment")
+    _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'Start', 'SERVICE_AUTO_START'], "Set service start mode")
+    _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'AppRestartDelay', '5000'], "Set service restart delay")
 
     restart_service(timeout_seconds=15)
 
