@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from .constants import PROJECT_NAME, PROGRAM_FILES, DATA_DIR, LOCK_PATH
+from .constants import PROJECT_NAME, DATA_DIR, LOCK_PATH, MANAGER_EXE_PATH, MANAGER_INSTALL_DIR
 from .util import log, ensure_data_dir
 
 ACL_DONE_FLAG = DATA_DIR / "acl_done.flag"
@@ -168,10 +168,10 @@ def _adjust_acl(path: Path) -> None:
 
 
 def _copy_to_program_files(exe_path: Path) -> Path:
-    target_dir = Path(PROGRAM_FILES) / PROJECT_NAME
+    target_dir = MANAGER_EXE_PATH.parent
     target_dir.mkdir(parents=True, exist_ok=True)
 
-    target_exe = target_dir / f"{PROJECT_NAME}.exe"
+    target_exe = MANAGER_EXE_PATH
     if exe_path.resolve() == target_exe.resolve():
         log("Executable is already in Program Files; skipping copy.")
         return target_exe
@@ -247,7 +247,7 @@ def _ask_move_and_elevate(exe_path: Path) -> None:
 
         text = (
             f"{PROJECT_NAME} needs to move itself to:\n"
-            f"  {PROGRAM_FILES}\\{PROJECT_NAME}\n\n"
+            f"  {MANAGER_INSTALL_DIR}\n\n"
             "and run once with administrator rights to set permissions.\n\n"
             "Click Yes to continue, or No to exit."
         )
@@ -282,33 +282,12 @@ def ensure_elevated_and_location() -> None:
     if exe_path is None:
         return
 
-    target_dir = Path(PROGRAM_FILES) / PROJECT_NAME
-    target_exe = target_dir / f"{PROJECT_NAME}.exe"
+    target_dir = MANAGER_INSTALL_DIR
+    target_exe = MANAGER_EXE_PATH
 
     if exe_path.resolve() != target_exe.resolve():
-        if not is_admin():
-            _ask_move_and_elevate(exe_path)
-            return  # _ask_move_and_elevate exits
-
-        new_exe = _copy_to_program_files(exe_path)
-
-        if not ACL_DONE_FLAG.exists():
-            _adjust_acl(target_dir)
-            _adjust_acl(DATA_DIR.parent)
-            _adjust_acl(DATA_DIR)
-            try:
-                ACL_DONE_FLAG.parent.mkdir(parents=True, exist_ok=True)
-                ACL_DONE_FLAG.write_text("ok", encoding="utf-8")
-            except Exception as exc:
-                log(f"Failed to write ACL flag: {exc}")
-
-        try:
-            subprocess.Popen([str(new_exe)], shell=False)
-            log(f"Started Program Files instance {new_exe} and exiting elevated instance.")
-            _schedule_delete_file(exe_path)
-        except Exception as exc:
-            log(f"Failed to start Program Files instance: {exc}")
-        sys.exit(0)
+        log(f"Running outside installer-managed path; skipping self-relocation: {exe_path}")
+        return
 
     if is_admin() and not ACL_DONE_FLAG.exists():
         _adjust_acl(target_dir)

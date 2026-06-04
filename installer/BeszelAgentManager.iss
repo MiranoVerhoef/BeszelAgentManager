@@ -10,6 +10,7 @@
 AppId={{8E3ED77F-F8A2-4D8C-8D5F-0F5295E1B10D}
 AppName={#AppName}
 AppVersion={#AppVersion}
+AppVerName={#AppName} {#AppVersion}
 AppPublisher=Verhoef
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
@@ -19,19 +20,33 @@ OutputBaseFilename={#AppName}Setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
 CloseApplications=yes
 CloseApplicationsFilter=BeszelAgentManager.exe
 RestartApplications=no
-UninstallDisplayIcon={app}\BeszelAgentManager.exe
+UninstallDisplayIcon={app}\app\BeszelAgentManager.exe
+VersionInfoCompany=Verhoef
+VersionInfoDescription={#AppName} Installer
+VersionInfoProductName={#AppName}
+VersionInfoProductVersion={#AppVersion}
+VersionInfoVersion={#AppVersion}.0
 
 [Files]
-Source: "{#DistDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#DistDir}\*"; DestDir: "{app}\app"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+[InstallDelete]
+Type: filesandordirs; Name: "{app}\*"
+
+[UninstallRun]
+Filename: "{cmd}"; Parameters: "/C taskkill /IM ""BeszelAgentManager.exe"" /T /F"; Flags: runhidden waituntilterminated; RunOnceId: "StopBeszelAgentManager"
+
+[UninstallDelete]
+Type: filesandordirs; Name: "{app}"
 
 [Icons]
-Name: "{group}\{#AppName}"; Filename: "{app}\BeszelAgentManager.exe"
+Name: "{group}\{#AppName}"; Filename: "{app}\app\BeszelAgentManager.exe"; WorkingDir: "{app}\app"
 
 [Run]
-Filename: "{app}\BeszelAgentManager.exe"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\app\BeszelAgentManager.exe"; Description: "Launch {#AppName}"; WorkingDir: "{app}\app"; Flags: nowait postinstall skipifsilent
