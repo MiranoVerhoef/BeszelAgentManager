@@ -17,6 +17,7 @@ DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 OutputDir=..\installer-dist
 OutputBaseFilename={#AppName}Setup
+SetupIconFile=..\BeszelAgentManager_icon.ico
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -49,4 +50,4 @@ Type: filesandordirs; Name: "{app}"
 Name: "{group}\{#AppName}"; Filename: "{app}\app\BeszelAgentManager.exe"; WorkingDir: "{app}\app"
 
 [Run]
-Filename: "{app}\app\BeszelAgentManager.exe"; Description: "Launch {#AppName}"; WorkingDir: "{app}\app"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\app\BeszelAgentManager.exe"; Description: "Launch {#AppName}"; WorkingDir: "{app}\app"; Flags: nowait postinstall skipifsilent shellexec; Verb: runas

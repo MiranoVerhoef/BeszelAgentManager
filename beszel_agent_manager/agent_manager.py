@@ -9,7 +9,7 @@ import urllib.request
 import ssl
 import zipfile
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 from .config import AgentConfig
 from .constants import AGENT_DIR, DATA_DIR, PROJECT_NAME, AGENT_STAGED_EXE_PATH
@@ -42,6 +42,20 @@ def _powershell_exe() -> str:
 
 def _ps_escape_single(s: str) -> str:
     return s.replace("'", "''")
+
+
+def _ps_headers_literal(headers: Optional[Dict[str, str]]) -> str:
+    if not headers:
+        return "@{}"
+    parts = [f"'{_ps_escape_single(k)}'='{_ps_escape_single(v)}'" for k, v in headers.items()]
+    return "@{" + ";".join(parts) + "}"
+
+
+def _is_ssl_verify_error(exc: BaseException) -> bool:
+    if isinstance(exc, ssl.SSLCertVerificationError):
+        return True
+    reason = getattr(exc, "reason", None)
+    return isinstance(reason, ssl.SSLCertVerificationError)
 
 
 def _ps_run(command: str, timeout: int = 60) -> subprocess.CompletedProcess:
@@ -314,7 +328,8 @@ def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -
 
     log(f"Downloading agent from {url}")
     try:
-        req = urllib.request.Request(url, headers={"User-Agent": PROJECT_NAME})
+        headers = {"User-Agent": PROJECT_NAME}
+        req = urllib.request.Request(url, headers=headers)
         ctx = ssl.create_default_context()
         with urllib.request.urlopen(req, timeout=30, context=ctx) as resp, zip_path.open("wb") as f:
             shutil.copyfileobj(resp, f)
@@ -322,18 +337,23 @@ def _download_and_extract_agent(version: str, changelog: Optional[str] = None) -
         log(f"Download failed due to SSL verify error: {exc}. Retrying via PowerShell...")
         u = _ps_escape_single(url)
         outp = _ps_escape_single(str(zip_path))
-        ps_cmd = f"Invoke-WebRequest -UseBasicParsing -Uri '{u}' -OutFile '{outp}'"
+        hdr = _ps_headers_literal({"User-Agent": PROJECT_NAME})
+        ps_cmd = f"$h={hdr}; Invoke-WebRequest -UseBasicParsing -Headers $h -Uri '{u}' -OutFile '{outp}'"
         cp = _ps_run(ps_cmd, timeout=60)
         if cp.returncode != 0:
-            raise RuntimeError(f"Download failed: {cp.stderr.strip()}") from exc
+            raise RuntimeError(f"PowerShell download failed: {(cp.stderr or cp.stdout).strip()}") from exc
     except Exception as exc:
-        log(f"Download failed: {exc}. Retrying via PowerShell...")
+        if _is_ssl_verify_error(exc):
+            log(f"Download failed due to SSL verify error: {exc}. Retrying via PowerShell...")
+        else:
+            log(f"Download failed: {exc}. Retrying via PowerShell...")
         u = _ps_escape_single(url)
         outp = _ps_escape_single(str(zip_path))
-        ps_cmd = f"Invoke-WebRequest -UseBasicParsing -Uri '{u}' -OutFile '{outp}'"
+        hdr = _ps_headers_literal({"User-Agent": PROJECT_NAME})
+        ps_cmd = f"$h={hdr}; Invoke-WebRequest -UseBasicParsing -Headers $h -Uri '{u}' -OutFile '{outp}'"
         cp = _ps_run(ps_cmd, timeout=60)
         if cp.returncode != 0:
-            raise RuntimeError(f"Download failed: {cp.stderr.strip()}") from exc
+            raise RuntimeError(f"PowerShell download failed: {(cp.stderr or cp.stdout).strip()}") from exc
 
     log("Extracting agent zip")
     try:

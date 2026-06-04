@@ -46,7 +46,22 @@ def _ps_escape_single(s: str) -> str:
     return s.replace("'", "''")
 
 
+def _ps_headers_literal(headers: Optional[Dict[str, str]]) -> str:
+    if not headers:
+        return "@{}"
+    parts = [f"'{_ps_escape_single(k)}'='{_ps_escape_single(v)}'" for k, v in headers.items()]
+    return "@{" + ";".join(parts) + "}"
+
+
+def _is_ssl_verify_error(exc: BaseException) -> bool:
+    if isinstance(exc, ssl.SSLCertVerificationError):
+        return True
+    reason = getattr(exc, "reason", None)
+    return isinstance(reason, ssl.SSLCertVerificationError)
+
+
 def _ps_run(command: str, timeout: int = 60) -> subprocess.CompletedProcess:
+    command = "try{[Net.ServicePointManager]::SecurityProtocol=[Net.SecurityProtocolType]::Tls12}catch{}; " + command
     ps = _powershell_exe()
     cmd = [ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command]
     creationflags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
@@ -86,11 +101,7 @@ def _http_get_json(url: str, headers: Optional[Dict[str, str]] = None, timeout: 
             log(f"GitHub Auth: token present but request failed ({exc})")
         log(f"GitHub request failed: {exc}. Falling back to PowerShell.")
 
-    hdr = "@{}"
-    if headers:
-        parts = [f"'{_ps_escape_single(k)}'='{_ps_escape_single(v)}'" for k, v in headers.items()]
-        hdr = "@{" + ";".join(parts) + "}"
-
+    hdr = _ps_headers_literal(headers)
     u = _ps_escape_single(url)
     ps_cmd = f"$h={hdr}; (Invoke-WebRequest -UseBasicParsing -Headers $h -Uri '{u}').Content"
     cp = _ps_run(ps_cmd, timeout=timeout)
@@ -120,11 +131,15 @@ def _download_file(url: str, dest: Path, headers: Optional[Dict[str, str]] = Non
     except ssl.SSLCertVerificationError as exc:
         log(f"Download SSL verify failed: {exc}. Falling back to PowerShell.")
     except Exception as exc:
-        log(f"Download failed: {exc}. Falling back to PowerShell.")
+        if _is_ssl_verify_error(exc):
+            log(f"Download SSL verify failed: {exc}. Falling back to PowerShell.")
+        else:
+            log(f"Download failed: {exc}. Falling back to PowerShell.")
 
     u = _ps_escape_single(url)
     outp = _ps_escape_single(str(dest))
-    ps_cmd = f"Invoke-WebRequest -UseBasicParsing -Uri '{u}' -OutFile '{outp}'"
+    hdr = _ps_headers_literal(headers)
+    ps_cmd = f"$h={hdr}; Invoke-WebRequest -UseBasicParsing -Headers $h -Uri '{u}' -OutFile '{outp}'"
     cp = _ps_run(ps_cmd, timeout=timeout)
     if cp.returncode != 0:
         raise RuntimeError((cp.stderr or cp.stdout or "").strip())
