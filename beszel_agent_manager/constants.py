@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 PROJECT_NAME = "BeszelAgentManager"
-APP_VERSION = "2.9.1"
+APP_VERSION = "3.0.0"
 
 AGENT_SERVICE_NAME = "Beszel Agent"
 AGENT_DISPLAY_NAME = "Beszel Agent"
@@ -52,7 +52,7 @@ FIREWALL_RULE_NAME = "Beszel Agent"
 
 MANAGER_REPO = "MiranoVerhoef/BeszelAgentManager"
 
-MANAGER_ASSET_NAME = f"{PROJECT_NAME}.exe"
+MANAGER_INSTALLER_ASSET_NAME = f"{PROJECT_NAME}Setup.exe"
 
 MANAGER_UPDATES_DIR = DATA_DIR / "updates"
 

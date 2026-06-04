@@ -78,32 +78,37 @@ The status bar shows:
 Prerequisites:
 - Windows 10/11 (64-bit)
 - Python 3.10+
-- Python packages: `pyinstaller`, `requests`
+- Inno Setup 6
+- Python packages: `nuitka`, `ordered-set`, `zstandard`, `requests`
 - Optional (tray icon): `pystray`, `Pillow`
 
-Recommended build with spec:
+Recommended standalone build:
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\activate
-pip install pyinstaller requests
+pip install nuitka ordered-set zstandard requests
 pip install pystray pillow
 
-pyinstaller BeszelAgentManager.spec
+python -m nuitka `
+  --standalone `
+  --enable-plugin=tk-inter `
+  --windows-console-mode=disable `
+  --windows-icon-from-ico=BeszelAgentManager_icon.ico `
+  --include-data-files=BeszelAgentManager_icon.ico=BeszelAgentManager_icon.ico `
+  --include-data-files=BeszelAgentManager_icon_512.png=BeszelAgentManager_icon_512.png `
+  --output-dir=build `
+  --output-filename=BeszelAgentManager.exe `
+  main.py
+```
+
+Build installer:
+```powershell
+iscc installer\BeszelAgentManager.iss /DAppVersion=3.0.0 /DDistDir="$PWD\build\main.dist"
 ```
 
 Output:
 ```text
-dist\BeszelAgentManager.exe
-```
-
-Manual one-liner build (alternative):
-```powershell
-pyinstaller --onefile --noconsole ^
-  --icon=BeszelAgentManager_icon.ico ^
-  --version-file=file_version_info.txt ^
-  --add-data "BeszelAgentManager_icon.ico;." ^
-  --add-data "BeszelAgentManager_icon_512.png;." ^
-  -n BeszelAgentManager beszel_agent_manager\main.py
+installer-dist\BeszelAgentManagerSetup.exe
 ```
 
 ## Credits
