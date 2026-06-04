@@ -119,7 +119,6 @@ jobs:
             --assume-yes-for-downloads `
             --enable-plugin=tk-inter `
             --windows-console-mode=disable `
-            --windows-uac-admin `
             --windows-icon-from-ico=BeszelAgentManager_icon.ico `
             --windows-company-name="Verhoef" `
             --windows-product-name="BeszelAgentManager" `

@@ -39,15 +39,17 @@ Source: "{#DistDir}\*"; DestDir: "{app}\app"; Flags: ignoreversion recursesubdir
 
 [InstallDelete]
 Type: filesandordirs; Name: "{app}\*"
+Type: files; Name: "{commonprograms}\{#AppName}.lnk"
 
 [UninstallRun]
 Filename: "{cmd}"; Parameters: "/C taskkill /IM ""BeszelAgentManager.exe"" /T /F"; Flags: runhidden waituntilterminated; RunOnceId: "StopBeszelAgentManager"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
+Type: files; Name: "{commonprograms}\{#AppName}.lnk"
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\app\BeszelAgentManager.exe"; WorkingDir: "{app}\app"
 
 [Run]
-Filename: "{app}\app\BeszelAgentManager.exe"; Description: "Launch {#AppName}"; WorkingDir: "{app}\app"; Flags: nowait postinstall skipifsilent shellexec; Verb: runas
+Filename: "{app}\app\BeszelAgentManager.exe"; Description: "Launch {#AppName}"; WorkingDir: "{app}\app"; Flags: nowait postinstall skipifsilent

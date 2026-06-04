@@ -107,7 +107,6 @@ python -m nuitka `
   --standalone `
   --enable-plugin=tk-inter `
   --windows-console-mode=disable `
-  --windows-uac-admin `
   --windows-icon-from-ico=BeszelAgentManager_icon.ico `
   --include-data-files=BeszelAgentManager_icon.ico=BeszelAgentManager_icon.ico `
   --include-data-files=BeszelAgentManager_icon_512.png=BeszelAgentManager_icon_512.png `
