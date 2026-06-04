@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - VERSION
+      - RELEASE_CHANNEL
       - main.py
       - beszel_agent_manager/**
       - installer/**
@@ -13,6 +14,7 @@ on:
       - main
     paths:
       - VERSION
+      - RELEASE_CHANNEL
   workflow_dispatch:
     inputs:
       release_notes:
@@ -41,9 +43,33 @@ jobs:
           if (-not ($version -match '^\d+\.\d+\.\d+$')) {
             throw "VERSION must be in x.y.z format. Found: '$version'"
           }
+
+          $channel = "stable"
+          if (Test-Path -Path RELEASE_CHANNEL) {
+            $channel = (Get-Content -Path RELEASE_CHANNEL -Raw).Trim().ToLowerInvariant()
+          }
+          if ([string]::IsNullOrWhiteSpace($channel)) {
+            $channel = "stable"
+          }
+
+          if ($channel -eq "stable") {
+            $tag = $version
+            $releaseName = "V$version"
+            $isPrerelease = "false"
+          } elseif ($channel -match '^rc[0-9]+$') {
+            $rc = $channel.ToUpperInvariant()
+            $tag = "$version-$channel"
+            $releaseName = "V$version $rc"
+            $isPrerelease = "true"
+          } else {
+            throw "RELEASE_CHANNEL must be 'stable' or 'rcN' (for example rc1). Found: '$channel'"
+          }
+
           "version=$version" >> $env:GITHUB_OUTPUT
-          "tag=$version" >> $env:GITHUB_OUTPUT
-          "release_name=V$version" >> $env:GITHUB_OUTPUT
+          "channel=$channel" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "release_name=$releaseName" >> $env:GITHUB_OUTPUT
+          "is_prerelease=$isPrerelease" >> $env:GITHUB_OUTPUT
 
       - name: Verify version metadata
         shell: pwsh
@@ -93,6 +119,7 @@ jobs:
             --assume-yes-for-downloads `
             --enable-plugin=tk-inter `
             --windows-console-mode=disable `
+            --windows-uac-admin `
             --windows-icon-from-ico=BeszelAgentManager_icon.ico `
             --windows-company-name="Verhoef" `
             --windows-product-name="BeszelAgentManager" `
@@ -136,7 +163,7 @@ jobs:
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: BeszelAgentManagerSetup-${{ steps.version.outputs.version }}
+          name: BeszelAgentManagerSetup-${{ steps.version.outputs.tag }}
           path: |
             installer-dist/BeszelAgentManagerSetup.exe
             SHA256SUMS.txt
@@ -149,8 +176,9 @@ jobs:
           RELEASE_NOTES_INPUT: ${{ inputs.release_notes }}
         run: |
           $version = "${{ steps.version.outputs.version }}"
+          $releaseName = "${{ steps.version.outputs.release_name }}"
           if ([string]::IsNullOrWhiteSpace($env:RELEASE_NOTES_INPUT)) {
-            "BeszelAgentManager v$version" | Out-File -FilePath RELEASE_NOTES.generated.md -Encoding utf8
+            $releaseName | Out-File -FilePath RELEASE_NOTES.generated.md -Encoding utf8
           } else {
             $env:RELEASE_NOTES_INPUT | Out-File -FilePath RELEASE_NOTES.generated.md -Encoding utf8
           }
@@ -192,9 +220,15 @@ jobs:
         run: |
           $tag = "${{ steps.version.outputs.tag }}"
           $releaseName = "${{ steps.version.outputs.release_name }}"
-          gh release create $tag `
-            --target $env:GITHUB_SHA `
-            --title $releaseName `
-            --notes-file RELEASE_NOTES.generated.md `
-            installer-dist\BeszelAgentManagerSetup.exe `
-            SHA256SUMS.txt
+          $args = @(
+            "release", "create", $tag,
+            "--target", $env:GITHUB_SHA,
+            "--title", $releaseName,
+            "--notes-file", "RELEASE_NOTES.generated.md",
+            "installer-dist\BeszelAgentManagerSetup.exe",
+            "SHA256SUMS.txt"
+          )
+          if ("${{ steps.version.outputs.is_prerelease }}" -eq "true") {
+            $args += "--prerelease"
+          }
+          gh @args
