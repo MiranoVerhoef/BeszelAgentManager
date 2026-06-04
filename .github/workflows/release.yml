@@ -31,7 +31,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -96,7 +96,7 @@ jobs:
           }
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
@@ -158,11 +158,11 @@ jobs:
           $hash = Get-FileHash -Path installer-dist\BeszelAgentManagerSetup.exe -Algorithm SHA256
           "$($hash.Hash.ToLower())  BeszelAgentManagerSetup.exe" | Out-File -FilePath SHA256SUMS.txt -Encoding ascii
 
-      - name: Upload PR test installer
+      - name: Upload PR test installer exe
         if: github.event_name == 'pull_request'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
-          name: BeszelAgentManagerSetup-${{ steps.version.outputs.tag }}
+          name: BeszelAgentManagerSetup.exe
           path: |
             installer-dist/BeszelAgentManagerSetup.exe
             SHA256SUMS.txt
