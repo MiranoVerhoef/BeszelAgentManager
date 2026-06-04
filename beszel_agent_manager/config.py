@@ -136,7 +136,11 @@ class AgentConfig:
 
     @classmethod
     def load(cls) -> "AgentConfig":
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
+        try:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            return cls()
+
         if CONFIG_PATH.exists():
             try:
                 with CONFIG_PATH.open("r", encoding="utf-8") as f:

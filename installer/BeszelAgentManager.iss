@@ -40,6 +40,10 @@ Source: "{#DistDir}\*"; DestDir: "{app}\app"; Flags: ignoreversion recursesubdir
 [Dirs]
 Name: "{commonappdata}\{#AppName}"; Permissions: users-modify
 
+[Tasks]
+Name: "startmenuicon"; Description: "Create a Start Menu shortcut"; GroupDescription: "Shortcuts:"; Flags: checkedonce
+Name: "desktopicon"; Description: "Create a Desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
+
 [InstallDelete]
 Type: filesandordirs; Name: "{app}\*"
 Type: files; Name: "{commonprograms}\{#AppName}.lnk"
@@ -52,7 +56,9 @@ Type: filesandordirs; Name: "{app}"
 Type: files; Name: "{commonprograms}\{#AppName}.lnk"
 
 [Icons]
-Name: "{group}\{#AppName}"; Filename: "{app}\app\BeszelAgentManager.exe"; WorkingDir: "{app}\app"
+Name: "{group}\{#AppName}"; Filename: "{app}\app\BeszelAgentManager.exe"; WorkingDir: "{app}\app"; Tasks: startmenuicon
+Name: "{commondesktop}\{#AppName}"; Filename: "{app}\app\BeszelAgentManager.exe"; WorkingDir: "{app}\app"; Tasks: desktopicon
 
 [Run]
+Filename: "{cmd}"; Parameters: "/C icacls ""{commonappdata}\{#AppName}"" /inheritance:e /grant *S-1-5-32-545:(OI)(CI)M *S-1-5-11:(OI)(CI)M /T /C"; Flags: runhidden waituntilterminated
 Filename: "{app}\app\BeszelAgentManager.exe"; WorkingDir: "{app}\app"; Flags: nowait skipifsilent runasoriginaluser
