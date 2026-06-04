@@ -73,6 +73,20 @@ The status bar shows:
 - Your detected agent version (when available)
 - Hub reachability status (**Reachable / Unreachable / Not configured**) based on the configured `HUB_URL`
 
+## GitHub authentication (optional)
+
+BeszelAgentManager checks GitHub for Beszel agent and manager releases. Unauthenticated GitHub API requests can be rate limited, especially on shared networks or when checking updates often.
+
+You can add a GitHub personal access token to raise the API limit:
+
+1. Go to https://github.com/settings/tokens
+2. Choose **Tokens (classic)**.
+3. Create a token with **no scopes selected**. Public release checks do not need repository or admin permissions.
+4. Copy the token.
+5. In BeszelAgentManager, open **GitHub Authentication** and paste the token.
+
+The token is stored encrypted with Windows DPAPI. If the `GITHUB_TOKEN` environment variable is set, it overrides the saved token.
+
 ## Build from source (for developers)
 
 Prerequisites:
