@@ -1,6 +1,13 @@
 name: Build and publish release
 
 on:
+  pull_request:
+    paths:
+      - VERSION
+      - main.py
+      - beszel_agent_manager/**
+      - installer/**
+      - .github/workflows/release.yml
   push:
     branches:
       - main
@@ -125,7 +132,18 @@ jobs:
           $hash = Get-FileHash -Path installer-dist\BeszelAgentManagerSetup.exe -Algorithm SHA256
           "$($hash.Hash.ToLower())  BeszelAgentManagerSetup.exe" | Out-File -FilePath SHA256SUMS.txt -Encoding ascii
 
+      - name: Upload PR test installer
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: BeszelAgentManagerSetup-${{ steps.version.outputs.version }}
+          path: |
+            installer-dist/BeszelAgentManagerSetup.exe
+            SHA256SUMS.txt
+          if-no-files-found: error
+
       - name: Create release notes
+        if: github.event_name != 'pull_request'
         shell: pwsh
         env:
           RELEASE_NOTES_INPUT: ${{ inputs.release_notes }}
@@ -138,6 +156,7 @@ jobs:
           }
 
       - name: Verify release tag is unused
+        if: github.event_name != 'pull_request'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -166,6 +185,7 @@ jobs:
           }
 
       - name: Publish release
+        if: github.event_name != 'pull_request'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
