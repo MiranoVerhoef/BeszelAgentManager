@@ -241,7 +241,7 @@ def _ensure_agent_dir() -> Path:
 
 
 def _agent_exe_path() -> Path:
-    return _ensure_agent_dir() / AGENT_EXE_NAME
+    return AGENT_DIR / AGENT_EXE_NAME
 
 
 def _try_apply_staged_agent_update() -> bool:
