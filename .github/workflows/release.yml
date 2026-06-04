@@ -110,6 +110,30 @@ jobs:
         shell: pwsh
         run: choco install innosetup --no-progress --yes
 
+      - name: Prepare bundled NSSM
+        shell: pwsh
+        run: |
+          choco install nssm --no-progress --yes
+          $candidates = @()
+          if ($env:ChocolateyInstall) {
+            $candidates += Get-ChildItem -Path (Join-Path $env:ChocolateyInstall "lib\nssm") -Recurse -Filter nssm.exe -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match "\\win64\\nssm\.exe$" } |
+              Select-Object -ExpandProperty FullName
+          }
+          $cmd = Get-Command nssm.exe -ErrorAction SilentlyContinue
+          if ($cmd) {
+            $candidates += $cmd.Source
+          }
+          $nssm = $candidates | Where-Object { $_ -and (Test-Path -Path $_) } | Select-Object -First 1
+          if (-not $nssm) {
+            throw "Could not find nssm.exe after Chocolatey install"
+          }
+          New-Item -ItemType Directory -Path build-assets -Force | Out-Null
+          Copy-Item -Path $nssm -Destination build-assets\nssm.exe -Force
+          if (-not (Test-Path -Path build-assets\nssm.exe)) {
+            throw "Failed to stage bundled nssm.exe"
+          }
+
       - name: Build standalone app
         shell: pwsh
         run: |
@@ -129,6 +153,7 @@ jobs:
             --include-package=PIL `
             --include-data-files=BeszelAgentManager_icon.ico=BeszelAgentManager_icon.ico `
             --include-data-files=BeszelAgentManager_icon_512.png=BeszelAgentManager_icon_512.png `
+            --include-data-files=build-assets\nssm.exe=nssm.exe `
             --output-dir=build `
             --output-filename=BeszelAgentManager.exe `
             main.py

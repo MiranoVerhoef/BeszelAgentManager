@@ -6,6 +6,7 @@ import zipfile
 import time
 import re
 import subprocess
+import sys
 from typing import Dict
 
 import requests
@@ -90,10 +91,27 @@ def _download_nssm() -> str:
     return str(NSSM_EXE_PATH)
 
 
+def _bundled_nssm() -> str | None:
+    candidates = []
+    if getattr(sys, "frozen", False):
+        candidates.append(os.path.join(os.path.dirname(sys.executable), "nssm.exe"))
+    candidates.append(os.path.join(os.path.dirname(__file__), "..", "nssm.exe"))
+
+    for candidate in candidates:
+        path = os.path.abspath(candidate)
+        if os.path.exists(path):
+            log(f"Using bundled NSSM at {path}")
+            return path
+    return None
+
+
 def _find_nssm() -> str:
     override = os.environ.get('NSSM_PATH')
     if override and shutil.which(override):
         return override
+    bundled = _bundled_nssm()
+    if bundled:
+        return bundled
     nssm = shutil.which('nssm')
     if nssm:
         return nssm
