@@ -4,7 +4,7 @@ import os
 import sys
 from pathlib import Path
 
-from .constants import PROJECT_NAME
+from .constants import MANAGER_EXE_PATH, PROJECT_NAME
 from .util import log
 
 if os.name == "nt":
@@ -16,9 +16,14 @@ VALUE_NAME = PROJECT_NAME
 
 
 def _get_exe_path() -> Path:
-    if getattr(sys, "frozen", False):
-        return Path(sys.executable).resolve()
-    return Path(sys.argv[0]).resolve()
+    executable = Path(sys.executable).resolve()
+    argv0 = Path(sys.argv[0]).resolve()
+
+    if MANAGER_EXE_PATH.exists():
+        return MANAGER_EXE_PATH.resolve()
+    if executable.name.lower() in ("python.exe", "pythonw.exe"):
+        return argv0
+    return executable
 
 
 def _open_run_key_writable():
