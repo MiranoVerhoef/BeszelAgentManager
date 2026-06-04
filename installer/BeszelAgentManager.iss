@@ -37,6 +37,9 @@ VersionInfoVersion={#AppVersion}.0
 [Files]
 Source: "{#DistDir}\*"; DestDir: "{app}\app"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+[Dirs]
+Name: "{commonappdata}\{#AppName}"; Permissions: users-modify
+
 [InstallDelete]
 Type: filesandordirs; Name: "{app}\*"
 Type: files; Name: "{commonprograms}\{#AppName}.lnk"
@@ -52,4 +55,4 @@ Type: files; Name: "{commonprograms}\{#AppName}.lnk"
 Name: "{group}\{#AppName}"; Filename: "{app}\app\BeszelAgentManager.exe"; WorkingDir: "{app}\app"
 
 [Run]
-Filename: "{app}\app\BeszelAgentManager.exe"; Description: "Launch {#AppName}"; WorkingDir: "{app}\app"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\app\BeszelAgentManager.exe"; WorkingDir: "{app}\app"; Flags: nowait skipifsilent runasoriginaluser
