@@ -162,7 +162,7 @@ jobs:
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v6
         with:
-          name: BeszelAgentManagerSetup.exe-${{ steps.version.outputs.tag }}
+          name: BeszelAgentManagerSetup.exe
           path: |
             installer-dist/BeszelAgentManagerSetup.exe
             SHA256SUMS.txt
