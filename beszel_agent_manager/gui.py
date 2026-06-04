@@ -56,7 +56,7 @@ from .scheduler import delete_update_task, delete_agent_log_rotate_task
 from .agent_logs import list_agent_log_files, rotate_agent_logs_and_rename
 from .manager_logs import list_manager_log_files, rotate_if_needed as rotate_manager_logs_if_needed
 from .support_bundle import create_support_bundle
-from .manager_updater import fetch_latest_release, is_update_available
+from .manager_updater import fetch_latest_release, is_update_available, start_update
 from .util import log, set_debug_logging, run, dpapi_encrypt, dpapi_decrypt, set_github_token, github_headers
 from .autostart import (
     get_autostart_state,
@@ -2398,19 +2398,13 @@ class BeszelAgentManagerApp(tk.Tk):
         v = str(release.get("version") or "").strip() or "?"
         tag = str(release.get("tag") or "").strip() or "?"
         dl = str(release.get("download_url") or "").strip()
-        page = str(release.get("html_url") or "").strip()
-        log(f"Manager manual download requested: version={v} tag={tag} url={dl or page or '?'}")
+        log(f"Manager installer update requested: version={v} tag={tag} url={dl or '?'}")
 
-        url = dl or page or "https://github.com/MiranoVerhoef/BeszelAgentManager/releases"
         try:
-            webbrowser.open(url)
-        except Exception:
-            pass
-        messagebox.showinfo(
-            PROJECT_NAME,
-            "BeszelAgentManager updates are downloaded manually.\n\n"
-            "Your browser will open to the release download.",
-        )
+            start_update(release, args=self._current_relaunch_args(), current_pid=os.getpid(), force=force)
+        except Exception as exc:
+            log(f"Manager installer update failed: {exc}")
+            messagebox.showerror(PROJECT_NAME, f"Failed to start manager installer update:\n{exc}")
 
     def _on_download_manager(self):
         if self._task_running:
@@ -2473,17 +2467,17 @@ class BeszelAgentManagerApp(tk.Tk):
                     f"Installed: {APP_VERSION}\n"
                     f"Latest on GitHub: {latest} (tag: {tag})"
                     f"{snippet}\n\n"
-                    "Open the download in your browser?"
+                    "Download and run the installer now?"
                 )
                 if not messagebox.askyesno(PROJECT_NAME, msg):
                     return
 
-                url = dl or page or "https://github.com/MiranoVerhoef/BeszelAgentManager/releases"
                 try:
-                    webbrowser.open(url)
-                except Exception:
-                    pass
-                self.label_status.config(text=("Manager is up to date" if up_to_date else "Manager download opened"))
+                    start_update(rel, args=self._current_relaunch_args(), current_pid=os.getpid(), force=False)
+                except Exception as exc:
+                    log(f"Manager installer update failed: {exc}")
+                    messagebox.showerror(PROJECT_NAME, f"Failed to start manager installer update:\n{exc}")
+                self.label_status.config(text=("Manager is up to date" if up_to_date else "Manager installer started"))
 
             self.after(0, done_check)
 

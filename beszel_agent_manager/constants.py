@@ -3,13 +3,15 @@ import os
 from pathlib import Path
 
 PROJECT_NAME = "BeszelAgentManager"
-APP_VERSION = "2.9.1"
+APP_VERSION = "3.0.0"
 
 AGENT_SERVICE_NAME = "Beszel Agent"
 AGENT_DISPLAY_NAME = "Beszel Agent"
 
 PROGRAM_FILES = os.environ.get("ProgramFiles", r"C:\Program Files")
-MANAGER_EXE_PATH = Path(PROGRAM_FILES) / PROJECT_NAME / f"{PROJECT_NAME}.exe"
+MANAGER_INSTALL_DIR = Path(PROGRAM_FILES) / PROJECT_NAME
+MANAGER_APP_DIR = MANAGER_INSTALL_DIR / "app"
+MANAGER_EXE_PATH = MANAGER_APP_DIR / f"{PROJECT_NAME}.exe"
 AGENT_DIR = Path(PROGRAM_FILES) / "Beszel-Agent"
 AGENT_EXE_NAME = "beszel-agent.exe"
 AGENT_EXE_PATH = AGENT_DIR / AGENT_EXE_NAME
@@ -23,8 +25,6 @@ MANAGER_LOG_ARCHIVE_DIR = DATA_DIR / "manager_logs"
 MANAGER_LOG_LAST_DATE_PATH = DATA_DIR / "manager_log_last_date.txt"
 
 SUPPORT_BUNDLES_DIR = DATA_DIR / "support_bundles"
-
-MANAGER_PREVIOUS_EXE_PATH = Path(PROGRAM_FILES) / PROJECT_NAME / f"{PROJECT_NAME}.previous.exe"
 
 AGENT_STAGED_EXE_PATH = AGENT_DIR / "beszel-agent.new.exe"
 
@@ -52,7 +52,7 @@ FIREWALL_RULE_NAME = "Beszel Agent"
 
 MANAGER_REPO = "MiranoVerhoef/BeszelAgentManager"
 
-MANAGER_ASSET_NAME = f"{PROJECT_NAME}.exe"
+MANAGER_INSTALLER_ASSET_NAME = f"{PROJECT_NAME}Setup.exe"
 
 MANAGER_UPDATES_DIR = DATA_DIR / "updates"
 

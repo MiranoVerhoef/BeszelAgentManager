@@ -5,28 +5,17 @@ import os
 import re
 import ssl
 import subprocess
-import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from .constants import (
-    MANAGER_ASSET_NAME,
+    MANAGER_INSTALLER_ASSET_NAME,
     MANAGER_REPO,
-    MANAGER_UPDATE_SCRIPT,
     MANAGER_UPDATES_DIR,
     PROJECT_NAME,
     APP_VERSION,
-    MANAGER_PREVIOUS_EXE_PATH,
-    LOG_PATH,
 )
 from .util import log, github_headers
-
-
-def _new_handshake_token() -> str:
-    try:
-        return os.urandom(8).hex()
-    except Exception:
-        return str(int(os.getpid()))
 
 
 def _normalize_version(tag: Optional[str]) -> Optional[str]:
@@ -156,7 +145,8 @@ def fetch_latest_release(*, include_prereleases: bool = False) -> Optional[dict]
 
         asset_url = None
         for a in (data.get("assets") or []):
-            if str(a.get("name") or "").lower() == MANAGER_ASSET_NAME.lower():
+            name = str(a.get("name") or "")
+            if name.lower() == MANAGER_INSTALLER_ASSET_NAME.lower():
                 asset_url = a.get("browser_download_url")
                 break
 
@@ -168,6 +158,7 @@ def fetch_latest_release(*, include_prereleases: bool = False) -> Optional[dict]
             "tag": tag,
             "body": body,
             "download_url": asset_url,
+            "asset_name": MANAGER_INSTALLER_ASSET_NAME,
             "published_at": data.get("published_at"),
             "prerelease": bool(data.get("prerelease")),
         }
@@ -195,7 +186,8 @@ def fetch_stable_releases(limit: int = 50, *, include_prereleases: bool = False)
 
         asset_url = None
         for a in (r.get("assets") or []):
-            if str(a.get("name") or "").lower() == MANAGER_ASSET_NAME.lower():
+            name = str(a.get("name") or "")
+            if name.lower() == MANAGER_INSTALLER_ASSET_NAME.lower():
                 asset_url = a.get("browser_download_url")
                 break
 
@@ -208,6 +200,7 @@ def fetch_stable_releases(limit: int = 50, *, include_prereleases: bool = False)
                 "tag": tag,
                 "body": str(r.get("body") or ""),
                 "download_url": asset_url,
+                "asset_name": MANAGER_INSTALLER_ASSET_NAME,
                 "published_at": r.get("published_at"),
                 "prerelease": bool(r.get("prerelease")),
             }
@@ -222,13 +215,15 @@ def is_update_available(current_version: str, latest_version: str) -> bool:
 
 
 def stage_download(release: dict, force: bool = False) -> Path:
-    tag = release.get("tag") or release.get("version")
     version = release.get("version") or "unknown"
     download_url = release["download_url"]
+    asset_name = str(release.get("asset_name") or MANAGER_INSTALLER_ASSET_NAME).strip()
+    if not asset_name:
+        asset_name = MANAGER_INSTALLER_ASSET_NAME
 
     out_dir = MANAGER_UPDATES_DIR / str(version)
     out_dir.mkdir(parents=True, exist_ok=True)
-    dest = out_dir / MANAGER_ASSET_NAME
+    dest = out_dir / asset_name
 
     if force and dest.exists():
         try:
@@ -251,234 +246,10 @@ def stage_download(release: dict, force: bool = False) -> Path:
             )
         if size < 1_000_000:
             raise RuntimeError(f"Downloaded EXE is unexpectedly small ({size} bytes). Aborting update.")
-
-        pat = re.compile(br"python3\d\d\.dll", re.IGNORECASE)
-        found = False
-        tail = b""
-        with dest.open("rb") as f:
-            while True:
-                chunk = f.read(1024 * 1024)
-                if not chunk:
-                    break
-                buf = tail + chunk
-                if pat.search(buf):
-                    found = True
-                    break
-                tail = buf[-32:]
-        if not found:
-            raise RuntimeError(
-                "Downloaded EXE does not contain an embedded python3xx.dll marker. "
-                "This usually means the release asset is not a valid PyInstaller onefile build (or is corrupted)."
-            )
     except Exception as exc:
         log(f"Manager download validation failed: {exc}")
         raise
     return dest
-
-
-def _installed_manager_path() -> Path:
-    program_files = os.environ.get("ProgramFiles", r"C:\\Program Files")
-    return Path(program_files) / PROJECT_NAME / MANAGER_ASSET_NAME
-
-
-def _write_update_script(pid: int, src_exe: Path, dst_exe: Path, args: List[str], handshake_path: Path) -> Path:
-    MANAGER_UPDATE_SCRIPT.parent.mkdir(parents=True, exist_ok=True)
-    arg_str = " ".join([f'"{a}"' for a in args])
-
-    prev = str(MANAGER_PREVIOUS_EXE_PATH)
-    logfile = str(LOG_PATH)
-    hpath = str(handshake_path)
-
-    script = f"""
-param(
-  [int]$PidToWait,
-  [string]$Src,
-  [string]$Dst,
-  [string]$Prev,
-  [string]$Args,
-  [string]$LogFile,
-  [string]$HandshakePath,
-  [string]$FromVer,
-  [string]$ToVer
-)
-
-$ErrorActionPreference = 'Stop'
-
-function Write-Log([string]$m) {{
-  try {{
-    $ts = (Get-Date).ToString('yyyy-MM-dd HH:mm:ss')
-    Add-Content -Path $LogFile -Value "[$ts] $m"
-  }} catch {{}}
-}}
-
-Write-Log "Update script started. Waiting for PID $PidToWait to exit."
-
-try {{
-  Unblock-File -LiteralPath $Src -ErrorAction SilentlyContinue
-}} catch {{}}
-
-try {{
-  while (Get-Process -Id $PidToWait -ErrorAction SilentlyContinue) {{
-    Start-Sleep -Milliseconds 500
-  }}
-}} catch {{}}
-
-$dstDir = Split-Path -Parent $Dst
-New-Item -ItemType Directory -Force -Path $dstDir | Out-Null
-
-try {{
-  if (Test-Path -LiteralPath $Dst) {{
-    Copy-Item -Force -Path $Dst -Destination $Prev
-    Write-Log "Backed up current manager to $Prev"
-  }}
-}} catch {{
-  Write-Log "Backup failed: $($_.Exception.Message)"
-}}
-
-$copied = $false
-for ($i=0; $i -lt 60; $i++) {{
-  try {{
-    Copy-Item -Force -Path $Src -Destination $Dst
-    $copied = $true
-    break
-  }} catch {{
-    Start-Sleep -Milliseconds 500
-  }}
-}}
-
-if (-not $copied) {{
-  Write-Log "Failed to copy updated executable to $Dst"
-  throw "Failed to copy updated executable to $Dst"
-}}
-
-try {{
-  $s = (Get-Item -LiteralPath $Src).Length
-  $d = (Get-Item -LiteralPath $Dst).Length
-  Write-Log "Copy verification: srcSize=$s dstSize=$d"
-
-  try {{ Unblock-File -LiteralPath $Dst -ErrorAction SilentlyContinue }} catch {{ }}
-
-  $bytes = Get-Content -LiteralPath $Dst -Encoding Byte -TotalCount 2 -ErrorAction SilentlyContinue
-  if ($bytes -and $bytes.Count -ge 2) {{
-    if ($bytes[0] -ne 77 -or $bytes[1] -ne 90) {{
-      Write-Log "Destination file signature check failed (not MZ). Aborting update."
-      throw "Downloaded file does not look like a Windows executable."
-    }}
-  }}
-}} catch {{
-  Write-Log "Copy verification failed: $($_.Exception.Message)"
-  try {{
-    if (Test-Path -LiteralPath $Prev) {{
-      Copy-Item -Force -Path $Prev -Destination $Dst
-      Write-Log "Rolled back to previous executable after verification failure."
-      Start-Process -FilePath $Dst -ErrorAction SilentlyContinue | Out-Null
-    }}
-  }} catch {{
-    Write-Log "Rollback after verification failure failed: $($_.Exception.Message)"
-  }}
-  throw
-}}
-
-Write-Log "Starting updated manager: $Dst $Args"
-Write-Log "Waiting for update handshake marker at: $HandshakePath"
-
-try {{
-  if (Test-Path -LiteralPath $HandshakePath) {{
-    Remove-Item -Force -LiteralPath $HandshakePath -ErrorAction SilentlyContinue
-  }}
-}} catch {{}}
-
-function Start-Manager() {{
-  try {{
-    if ([string]::IsNullOrWhiteSpace($Args)) {{
-      $pp = Start-Process -FilePath $Dst -PassThru
-    }} else {{
-      $pp = Start-Process -FilePath $Dst -ArgumentList $Args -PassThru
-    }}
-    if ($pp -and $pp.Id) {{ Write-Log "Started manager PID $($pp.Id)" }}
-    return $pp
-  }} catch {{
-    Write-Log "Start-Process failed: $($_.Exception.Message)"
-    return $null
-  }}
-}}
-
-function Find-ManagerByPath() {{
-  try {{
-    $p = Get-CimInstance Win32_Process | Where-Object {{ $_.ExecutablePath -eq $Dst }} | Select-Object -First 1
-    return $p
-  }} catch {{ return $null }}
-}}
-
-$p = Start-Manager
-if (-not $p) {{
-  try {{
-    cmd /c start "" "$Dst" $Args | Out-Null
-    Write-Log "Fallback cmd start invoked"
-  }} catch {{
-    Write-Log "Fallback cmd start failed: $($_.Exception.Message)"
-  }}
-}}
-
-$maxSeconds = 30
-$ok = $false
-$pid = $null
-try {{
-  if ($p -and $p.Id) {{ $pid = $p.Id }}
-  else {{
-    $ci = Find-ManagerByPath
-    if ($ci -and $ci.ProcessId) {{ $pid = $ci.ProcessId }}
-  }}
-}} catch {{ $pid = $null }}
-
-for ($i=0; $i -lt ($maxSeconds*2); $i++) {{
-  try {{
-    if (Test-Path -LiteralPath $HandshakePath) {{
-      $ok = $true
-      break
-    }}
-  }} catch {{}}
-
-  try {{
-    if ($pid) {{
-      if (-not (Get-Process -Id $pid -ErrorAction SilentlyContinue)) {{ break }}
-    }}
-  }} catch {{}}
-
-  Start-Sleep -Milliseconds 500
-}}
-
-if ($ok) {{
-  Write-Log "Update handshake received. Update considered successful."
-}} else {{
-  Write-Log "Update handshake not received within $maxSeconds seconds; treating update as failed."
-
-  try {{
-    if ($pid) {{
-      Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue
-    }}
-  }} catch {{}}
-
-  Write-Log "Attempting rollback to previous manager."
-  try {{
-    if (Test-Path -LiteralPath $Prev) {{
-      Copy-Item -Force -Path $Prev -Destination $Dst
-      Write-Log "Rollback copy succeeded. Restarting previous manager."
-      $null = Start-Manager
-      if (-not $Args) {{
-        Start-Process -FilePath $Dst | Out-Null
-      }}
-    }} else {{
-      Write-Log "No rollback binary found at $Prev"
-    }}
-  }} catch {{
-    Write-Log "Rollback failed: $($_.Exception.Message)"
-  }}
-}}
-"""
-
-    MANAGER_UPDATE_SCRIPT.write_text(script, encoding="utf-8")
-    return MANAGER_UPDATE_SCRIPT
 
 
 def start_update(
@@ -487,47 +258,28 @@ def start_update(
     current_pid: Optional[int] = None,
     force: bool = False,
 ) -> None:
-    """Stage release and trigger elevated replacement of installed manager."""
-    args = args or []
-    pid = int(current_pid or os.getpid())
-
+    """Stage release and trigger the installer-based manager update."""
     target = str(release.get('tag_name') or release.get('name') or 'unknown')
     log(f"Manager update requested: {APP_VERSION} -> {target}")
 
-    src = stage_download(release, force=force)
-    dst = _installed_manager_path()
-
-    token = _new_handshake_token()
-    data_dir = Path(os.getenv("ProgramData", r"C:\\ProgramData")) / PROJECT_NAME
-    handshake_path = data_dir / f"update-handshake-{token}.ok"
-    new_args = list(args) + ["--update-handshake", token]
-
-    _write_update_script(pid, src, dst, new_args, handshake_path)
-
-    script = str(MANAGER_UPDATE_SCRIPT)
-    ps = _powershell_exe()
+    installer = stage_download(release, force=force)
+    is_installer = installer.name.lower() == MANAGER_INSTALLER_ASSET_NAME.lower()
+    if not is_installer:
+        raise RuntimeError(
+            f"Release asset {installer.name} is not supported for in-app updates. "
+            f"Expected {MANAGER_INSTALLER_ASSET_NAME}."
+        )
 
     try:
         import ctypes
 
-        args_str = " ".join(new_args)
-        args_str = args_str.replace('"', '')
-
-        prev = str(MANAGER_PREVIOUS_EXE_PATH)
-        logfile = str(LOG_PATH)
-        hpath = str(handshake_path)
-        params = (
-            f"-NoProfile -ExecutionPolicy Bypass -File \"{script}\" "
-            f"-PidToWait {pid} -Src \"{src}\" -Dst \"{dst}\" "
-            f"-Prev \"{prev}\" -Args \"{args_str}\" -LogFile \"{logfile}\" "
-            f"-HandshakePath \"{hpath}\" -FromVer \"{APP_VERSION}\" -ToVer \"{target}\""
-        )
-        rc = ctypes.windll.shell32.ShellExecuteW(None, "runas", ps, params, None, 0)
+        params = "/CLOSEAPPLICATIONS /RESTARTAPPLICATIONS"
+        rc = ctypes.windll.shell32.ShellExecuteW(None, "runas", str(installer), params, None, 1)
         if rc <= 32:
             raise RuntimeError(f"ShellExecuteW failed with code {rc}")
     except Exception as exc:
-        log(f"Failed to start elevated update: {exc}")
+        log(f"Failed to start elevated installer update: {exc}")
         raise
 
-    log("Manager update started; exiting to allow replacement.")
-    sys.exit(0)
+    log("Manager installer update started; exiting to allow installer replacement.")
+    os._exit(0)

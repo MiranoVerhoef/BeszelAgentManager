@@ -20,3 +20,11 @@ rad.json
 *.flf
 #Test results file
 TestResults.xml
+
+# Build output
+build/
+dist/
+installer-dist/
+*.build/
+*.dist/
+*.onefile-build/

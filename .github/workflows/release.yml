@@ -1,6 +1,13 @@
 name: Build and publish release
 
 on:
+  pull_request:
+    paths:
+      - VERSION
+      - main.py
+      - beszel_agent_manager/**
+      - installer/**
+      - .github/workflows/release.yml
   push:
     branches:
       - main
@@ -71,22 +78,72 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --upgrade pip
-          pip install pyinstaller requests pystray pillow
+          pip install nuitka ordered-set zstandard requests pystray pillow
 
-      - name: Build executable
+      - name: Install Inno Setup
         shell: pwsh
-        run: pyinstaller BeszelAgentManager.spec
+        run: choco install innosetup --no-progress --yes
+
+      - name: Build standalone app
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          python -m nuitka `
+            --standalone `
+            --assume-yes-for-downloads `
+            --enable-plugin=tk-inter `
+            --windows-console-mode=disable `
+            --windows-icon-from-ico=BeszelAgentManager_icon.ico `
+            --windows-company-name="Verhoef" `
+            --windows-product-name="BeszelAgentManager" `
+            --windows-file-description="BeszelAgentManager" `
+            --windows-file-version="$version.0" `
+            --windows-product-version="$version.0" `
+            --include-package=pystray `
+            --include-package=PIL `
+            --include-data-files=BeszelAgentManager_icon.ico=BeszelAgentManager_icon.ico `
+            --include-data-files=BeszelAgentManager_icon_512.png=BeszelAgentManager_icon_512.png `
+            --output-dir=build `
+            --output-filename=BeszelAgentManager.exe `
+            main.py
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $distDir = (Get-ChildItem -Path build -Directory -Filter "*.dist" | Select-Object -First 1).FullName
+          if (-not $distDir) {
+            throw "Nuitka standalone .dist directory was not created"
+          }
+          if (-not (Test-Path -Path (Join-Path $distDir "BeszelAgentManager.exe"))) {
+            throw "BeszelAgentManager.exe was not created in $distDir"
+          }
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            installer\BeszelAgentManager.iss `
+            /DAppVersion="$version" `
+            /DDistDir="$distDir"
 
       - name: Generate checksum
         shell: pwsh
         run: |
-          if (-not (Test-Path -Path dist\BeszelAgentManager.exe)) {
-            throw "dist\BeszelAgentManager.exe was not created"
+          if (-not (Test-Path -Path installer-dist\BeszelAgentManagerSetup.exe)) {
+            throw "installer-dist\BeszelAgentManagerSetup.exe was not created"
           }
-          $hash = Get-FileHash -Path dist\BeszelAgentManager.exe -Algorithm SHA256
-          "$($hash.Hash.ToLower())  BeszelAgentManager.exe" | Out-File -FilePath SHA256SUMS.txt -Encoding ascii
+          $hash = Get-FileHash -Path installer-dist\BeszelAgentManagerSetup.exe -Algorithm SHA256
+          "$($hash.Hash.ToLower())  BeszelAgentManagerSetup.exe" | Out-File -FilePath SHA256SUMS.txt -Encoding ascii
+
+      - name: Upload PR test installer
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: BeszelAgentManagerSetup-${{ steps.version.outputs.version }}
+          path: |
+            installer-dist/BeszelAgentManagerSetup.exe
+            SHA256SUMS.txt
+          if-no-files-found: error
 
       - name: Create release notes
+        if: github.event_name != 'pull_request'
         shell: pwsh
         env:
           RELEASE_NOTES_INPUT: ${{ inputs.release_notes }}
@@ -99,6 +156,7 @@ jobs:
           }
 
       - name: Verify release tag is unused
+        if: github.event_name != 'pull_request'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -127,6 +185,7 @@ jobs:
           }
 
       - name: Publish release
+        if: github.event_name != 'pull_request'
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -137,5 +196,5 @@ jobs:
             --target $env:GITHUB_SHA `
             --title $releaseName `
             --notes-file RELEASE_NOTES.generated.md `
-            dist\BeszelAgentManager.exe `
+            installer-dist\BeszelAgentManagerSetup.exe `
             SHA256SUMS.txt
