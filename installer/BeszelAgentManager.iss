@@ -18,6 +18,7 @@ DisableProgramGroupPage=yes
 OutputDir=..\installer-dist
 OutputBaseFilename={#AppName}Setup
 SetupIconFile=..\BeszelAgentManager_icon.ico
+WizardSmallImageFile=WizardSmallImage.bmp
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern

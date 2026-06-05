@@ -87,6 +87,20 @@ def _resolve_service_name() -> str:
     return AGENT_SERVICE_NAME
 
 
+def _service_binary_path(name: str) -> str | None:
+    cp = run(['sc', 'qc', name], check=False)
+    if cp.returncode != 0:
+        return None
+    for line in _clean_output((cp.stdout or '') + (cp.stderr or '')).splitlines():
+        if 'BINARY_PATH_NAME' not in line:
+            continue
+        _, _, value = line.partition(':')
+        value = value.strip().strip('"')
+        if value:
+            return _long_path(value)
+    return None
+
+
 def _download_nssm() -> str:
     NSSM_DIR.mkdir(parents=True, exist_ok=True)
     if NSSM_EXE_PATH.exists():
@@ -136,8 +150,6 @@ def _bundled_nssm() -> str | None:
     candidates.extend(
         [
             os.path.join(install_dir, "nssm.exe"),
-            os.path.join(app_dir, "nssm.exe"),
-            os.path.join(exe_dir, "nssm.exe"),
             os.path.join(os.path.dirname(exe_dir), "nssm.exe"),
         ]
     )
@@ -220,6 +232,27 @@ def _require_service_exists() -> None:
         )
 
 
+def _ensure_service_uses_nssm_path(nssm: str) -> None:
+    current = _service_binary_path(AGENT_SERVICE_NAME)
+    if not current:
+        return
+    desired = _long_path(nssm)
+    if os.path.normcase(current) == os.path.normcase(desired):
+        return
+    log(f"Service {AGENT_SERVICE_NAME} uses NSSM at {current}; recreating it with {desired}.")
+    run([desired, 'stop', AGENT_SERVICE_NAME], check=False)
+    run([desired, 'remove', AGENT_SERVICE_NAME, 'confirm'], check=False)
+    run(['sc', 'delete', AGENT_SERVICE_NAME], check=False)
+    deadline = time.time() + 10
+    while _service_exists(AGENT_SERVICE_NAME) and time.time() < deadline:
+        time.sleep(0.5)
+    if _service_exists(AGENT_SERVICE_NAME):
+        _run_service_command(
+            ['sc', 'config', AGENT_SERVICE_NAME, 'binPath=', f'"{desired}"'],
+            "Update service NSSM executable path",
+        )
+
+
 def create_or_update_service(env_vars: Dict[str, str]) -> None:
     if not AGENT_EXE_PATH.exists():
         raise ServiceError(f'Agent executable not found: {AGENT_EXE_PATH}')
@@ -231,6 +264,9 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
         run(['sc', 'delete', LEGACY_AGENT_SERVICE_NAME], check=False)
 
     AGENT_DIR.mkdir(parents=True, exist_ok=True)
+    if _service_exists(AGENT_SERVICE_NAME):
+        _ensure_service_uses_nssm_path(nssm)
+
     if not _service_exists(AGENT_SERVICE_NAME):
         _run_service_command([nssm, 'install', AGENT_SERVICE_NAME, str(AGENT_EXE_PATH)], "NSSM service install")
     else:
