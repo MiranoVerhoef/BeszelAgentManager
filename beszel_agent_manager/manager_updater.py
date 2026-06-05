@@ -159,13 +159,23 @@ def fetch_latest_release(*, include_prereleases: bool = False) -> Optional[dict]
         body = str(data.get("body") or "")
 
         asset_url = None
+        asset_names: list[str] = []
         for a in (data.get("assets") or []):
             name = str(a.get("name") or "")
+            if name:
+                asset_names.append(name)
             if name.lower() == MANAGER_INSTALLER_ASSET_NAME.lower():
                 asset_url = a.get("browser_download_url")
                 break
 
-        if not version or not asset_url:
+        if not version:
+            log(f"Manager latest release skipped because tag could not be normalized: {tag!r}")
+            return None
+        if not asset_url:
+            log(
+                f"Manager latest release {tag or version} skipped because asset "
+                f"{MANAGER_INSTALLER_ASSET_NAME} was not found. Assets: {asset_names or 'none'}"
+            )
             return None
 
         return {
@@ -200,13 +210,20 @@ def fetch_stable_releases(limit: int = 50, *, include_prereleases: bool = False)
             continue
 
         asset_url = None
+        asset_names: list[str] = []
         for a in (r.get("assets") or []):
             name = str(a.get("name") or "")
+            if name:
+                asset_names.append(name)
             if name.lower() == MANAGER_INSTALLER_ASSET_NAME.lower():
                 asset_url = a.get("browser_download_url")
                 break
 
         if not asset_url:
+            log(
+                f"Manager release {tag or version} skipped because asset "
+                f"{MANAGER_INSTALLER_ASSET_NAME} was not found. Assets: {asset_names or 'none'}"
+            )
             continue
 
         releases.append(

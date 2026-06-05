@@ -30,6 +30,7 @@ from .constants import (
     DATA_DIR,
     AGENT_LOG_DIR,
     AGENT_LOG_CURRENT_PATH,
+    MANAGER_INSTALLER_ASSET_NAME,
 )
 from .agent_manager import (
     install_or_update_agent_and_service,
@@ -2437,10 +2438,15 @@ class BeszelAgentManagerApp(tk.Tk):
         self.progress.start(10)
 
         state = {"error": None, "release": None}
+        include_prereleases = False
+        try:
+            include_prereleases = bool(self.var_mgr_update_include_pre.get())
+        except Exception:
+            include_prereleases = False
 
         def worker_check():
             try:
-                state["release"] = fetch_latest_release(include_prereleases=False)
+                state["release"] = fetch_latest_release(include_prereleases=include_prereleases)
             except Exception as exc:
                 state["error"] = exc
                 log(f"Manager download check failed: {exc}\n{traceback.format_exc()}")
@@ -2459,7 +2465,14 @@ class BeszelAgentManagerApp(tk.Tk):
                 rel = state["release"]
                 if not rel:
                     self.label_status.config(text="No release info")
-                    messagebox.showinfo(PROJECT_NAME, "Could not fetch release info from GitHub.")
+                    mode = "stable or prerelease" if include_prereleases else "stable"
+                    messagebox.showinfo(
+                        PROJECT_NAME,
+                        "Could not find a usable manager release on GitHub.\n\n"
+                        f"Checked: {mode} releases\n"
+                        f"Expected asset: {MANAGER_INSTALLER_ASSET_NAME}\n\n"
+                        "Make sure the release contains the installer asset with that exact name.",
+                    )
                     return
 
                 latest = str(rel.get("version") or "").strip() or "?"

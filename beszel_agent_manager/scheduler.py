@@ -304,7 +304,7 @@ def ensure_periodic_restart_task(hours_interval: int) -> None:
     create_or_update_periodic_restart_task(hours_interval)
 
 
-def delete_periodic_restart_task() -> None:
+def delete_periodic_restart_task(*, log_missing: bool = True) -> None:
     global _restart_task_missing_logged
     cmd = ["schtasks", "/Delete", "/TN", AUTO_RESTART_TASK_NAME, "/F"]
     kwargs = {"check": False, "capture_output": True, "text": True}
@@ -329,8 +329,9 @@ def delete_periodic_restart_task() -> None:
         )
 
         if any(m in combined for m in not_found_markers):
-            if not _restart_task_missing_logged:
+            if log_missing and not _restart_task_missing_logged:
                 log(f"Scheduled task {AUTO_RESTART_TASK_NAME} not found; nothing to delete.")
+                _restart_task_missing_logged = True
         else:
             err = (cp.stderr or cp.stdout or "").strip()
             log(f"Failed to delete scheduled task {AUTO_RESTART_TASK_NAME}: {err}")
