@@ -241,7 +241,7 @@ def _ensure_agent_dir() -> Path:
 
 
 def _agent_exe_path() -> Path:
-    return _ensure_agent_dir() / AGENT_EXE_NAME
+    return AGENT_DIR / AGENT_EXE_NAME
 
 
 def _try_apply_staged_agent_update() -> bool:
@@ -583,8 +583,7 @@ def install_or_update_agent_and_service(cfg: AgentConfig) -> None:
         log(f"Ensuring periodic restart task (every {hours} hour(s))")
         ensure_periodic_restart_task(hours)
     else:
-        log("Periodic restart disabled, removing restart task if present")
-        delete_periodic_restart_task()
+        delete_periodic_restart_task(log_missing=False)
 
 
 def apply_configuration_only(cfg: AgentConfig) -> None:
@@ -613,8 +612,7 @@ def apply_configuration_only(cfg: AgentConfig) -> None:
         log(f"Ensuring periodic restart task (every {hours} hour(s))")
         ensure_periodic_restart_task(hours)
     else:
-        log("Periodic restart disabled, removing restart task if present")
-        delete_periodic_restart_task()
+        delete_periodic_restart_task(log_missing=False)
 
 
 def update_agent_only(version: str | None = None, changelog: str | None = None) -> None:

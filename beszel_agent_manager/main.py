@@ -228,7 +228,29 @@ def main() -> None:
     ensure_single_instance()
 
     log(f"Starting GUI (start_hidden={start_hidden})")
-    gui_main(start_hidden=start_hidden)
+    try:
+        gui_main(start_hidden=start_hidden)
+    except Exception as exc:
+        log(f"GUI startup failed: {exc}")
+        if os.name == "nt":
+            try:
+                import ctypes  # type: ignore[attr-defined]
+                import traceback
+
+                message = (
+                    f"{PROJECT_NAME} could not start.\n\n"
+                    f"{exc}\n\n"
+                    f"Details:\n{traceback.format_exc()}"
+                )
+                ctypes.windll.user32.MessageBoxW(  # type: ignore[attr-defined]
+                    None,
+                    message,
+                    PROJECT_NAME,
+                    0x00000010,
+                )
+            except Exception:
+                pass
+        raise
 
 
 if __name__ == "__main__":

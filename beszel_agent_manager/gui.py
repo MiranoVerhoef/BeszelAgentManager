@@ -30,6 +30,7 @@ from .constants import (
     DATA_DIR,
     AGENT_LOG_DIR,
     AGENT_LOG_CURRENT_PATH,
+    MANAGER_INSTALLER_ASSET_NAME,
 )
 from .agent_manager import (
     install_or_update_agent_and_service,
@@ -74,9 +75,23 @@ LEGACY_AGENT_DIR = Path(r"C:\Beszel-Agent")
 
 
 def _resource_path(relative: str) -> str:
+    candidates: list[Path] = []
     if hasattr(sys, "_MEIPASS"):
-        return str(Path(sys._MEIPASS) / relative)
-    return str(Path(__file__).resolve().parent.parent / relative)
+        candidates.append(Path(sys._MEIPASS) / relative)
+    package_dir = Path(__file__).resolve().parent
+    app_dir = package_dir.parent
+    candidates.extend(
+        [
+            app_dir / relative,
+            app_dir.parent / relative,
+            Path(sys.executable).resolve().parent / relative,
+            Path(sys.executable).resolve().parent.parent / relative,
+        ]
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return str(candidates[0] if candidates else app_dir / relative)
 
 
 class ToolTip:
@@ -168,8 +183,14 @@ class BeszelAgentManagerApp(tk.Tk):
         self.configure(bg="#f3f3f3")
         try:
             self.iconbitmap(_resource_path("BeszelAgentManager_icon.ico"))
-        except Exception:
-            pass
+        except Exception as exc:
+            log(f"Failed to load window icon .ico: {exc}")
+        try:
+            icon_img = tk.PhotoImage(file=_resource_path("BeszelAgentManager_icon_512.png"))
+            self.iconphoto(True, icon_img)
+            self._window_icon_img = icon_img
+        except Exception as exc:
+            log(f"Failed to load window icon .png: {exc}")
 
         style = ttk.Style()
         try:
@@ -2417,10 +2438,15 @@ class BeszelAgentManagerApp(tk.Tk):
         self.progress.start(10)
 
         state = {"error": None, "release": None}
+        include_prereleases = False
+        try:
+            include_prereleases = bool(self.var_mgr_update_include_pre.get())
+        except Exception:
+            include_prereleases = False
 
         def worker_check():
             try:
-                state["release"] = fetch_latest_release(include_prereleases=False)
+                state["release"] = fetch_latest_release(include_prereleases=include_prereleases)
             except Exception as exc:
                 state["error"] = exc
                 log(f"Manager download check failed: {exc}\n{traceback.format_exc()}")
@@ -2439,7 +2465,14 @@ class BeszelAgentManagerApp(tk.Tk):
                 rel = state["release"]
                 if not rel:
                     self.label_status.config(text="No release info")
-                    messagebox.showinfo(PROJECT_NAME, "Could not fetch release info from GitHub.")
+                    mode = "stable or prerelease" if include_prereleases else "stable"
+                    messagebox.showinfo(
+                        PROJECT_NAME,
+                        "Could not find a usable manager release on GitHub.\n\n"
+                        f"Checked: {mode} releases\n"
+                        f"Expected asset: {MANAGER_INSTALLER_ASSET_NAME}\n\n"
+                        "Make sure the release contains the installer asset with that exact name.",
+                    )
                     return
 
                 latest = str(rel.get("version") or "").strip() or "?"
@@ -2506,6 +2539,19 @@ class BeszelAgentManagerApp(tk.Tk):
                     return
             except Exception:
                 pass
+
+            try:
+                cfg.save()
+                self.config_obj = cfg
+                self.label_config_saved.config(text="Config saved")
+                self.after(2500, lambda: self.label_config_saved.config(text=""))
+            except Exception as exc:
+                log(f"Apply failed while saving configuration before admin check: {exc}")
+                try:
+                    messagebox.showerror(PROJECT_NAME, f"Failed to save configuration.\n\n{exc}")
+                except Exception:
+                    pass
+                return
 
         if not self._require_admin():
             return
@@ -3352,6 +3398,7 @@ class BeszelAgentManagerApp(tk.Tk):
                 exe_path = Path(sys.argv[0]).resolve()
 
             app_dir = exe_path.parent
+            install_dir = app_dir.parent
             data_dir = DATA_DIR
             agent_dir = AGENT_DIR
             legacy_agent_dir = LEGACY_AGENT_DIR
@@ -3371,6 +3418,7 @@ param(
   [int]$PidToWait,
   [string]$Exe,
   [string]$AppDir,
+  [string]$InstallDir,
   [string]$DataDir,
   [string]$AgentDir,
   [string]$LegacyAgentDir,
@@ -3406,7 +3454,7 @@ try {{
   taskkill /IM "nssm.exe" /T /F | Out-Null
 }} catch {{ }}
 
-$targets = @($Exe, $AppDir, $DataDir, $AgentDir, $LegacyAgentDir)
+$targets = @($Exe, $AppDir, $DataDir, $AgentDir, $LegacyAgentDir, $InstallDir)
 Log ("Cleanup: targets=" + ($targets -join '; '))
 
 for ($i=0; $i -lt 120; $i++) {{
@@ -3449,6 +3497,8 @@ try {{ $remaining | ForEach-Object {{ Log $_ }} }} catch {{ }}
                         str(exe_path),
                         "-AppDir",
                         str(app_dir),
+                        "-InstallDir",
+                        str(install_dir),
                         "-DataDir",
                         str(data_dir),
                         "-AgentDir",
@@ -3465,7 +3515,7 @@ try {{ $remaining | ForEach-Object {{ Log $_ }} }} catch {{ }}
 
                     subprocess.Popen(args, creationflags=creationflags)
                     log(
-                        f"Scheduled cleanup via PowerShell: exe={exe_path}, app_dir={app_dir}, data_dir={data_dir}, "
+                        f"Scheduled cleanup via PowerShell: exe={exe_path}, app_dir={app_dir}, install_dir={install_dir}, data_dir={data_dir}, "
                         f"agent_dir={agent_dir}, legacy_agent_dir={legacy_agent_dir}"
                     )
                 except Exception as exc:

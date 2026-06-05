@@ -110,6 +110,87 @@ jobs:
         shell: pwsh
         run: choco install innosetup --no-progress --yes
 
+      - name: Prepare bundled NSSM
+        shell: pwsh
+        run: |
+          $zip = Join-Path $PWD "build-assets\nssm-2.24.zip"
+          $extract = Join-Path $PWD "build-assets\nssm-package"
+          New-Item -ItemType Directory -Path build-assets -Force | Out-Null
+
+          function Test-NssmBinary($Path) {
+            $file = Get-Item -Path $Path
+            if ($file.Length -lt 200000) {
+              Write-Host "Rejected NSSM candidate because it is too small: $Path ($($file.Length) bytes)"
+              return $false
+            }
+            $stream = [System.IO.File]::OpenRead($Path)
+            try {
+              $bytes = New-Object byte[] 2
+              [void]$stream.Read($bytes, 0, 2)
+              return ($bytes[0] -eq 0x4d -and $bytes[1] -eq 0x5a)
+            } finally {
+              $stream.Dispose()
+            }
+          }
+
+          function Find-UsableNssm($ArchivePath, $SourceName) {
+            if (Test-Path -Path $extract) {
+              Remove-Item -Path $extract -Recurse -Force
+            }
+            Expand-Archive -Path $ArchivePath -DestinationPath $extract -Force
+            $candidates = Get-ChildItem -Path $extract -Recurse -Filter nssm.exe |
+              Where-Object { $_.FullName -match "\\win64\\nssm\.exe$" } |
+              Sort-Object FullName
+            foreach ($candidate in $candidates) {
+              Write-Host "Checked NSSM candidate from ${SourceName}: $($candidate.FullName)"
+              if (Test-NssmBinary $candidate.FullName) {
+                return $candidate.FullName
+              }
+            }
+            return $null
+          }
+
+          $nssm = $null
+          $repoFallback = Join-Path $PWD "vendor\nssm\nssm-2.24.zip"
+          $sources = @(
+            @{ Name = "official NSSM release"; Uri = "https://www.nssm.cc/release/nssm-2.24.zip" },
+            @{ Name = "repository fallback"; Path = $repoFallback },
+            @{ Name = "GitHub repository fallback"; Uri = "https://raw.githubusercontent.com/MiranoVerhoef/BeszelAgentManager/main/vendor/nssm/nssm-2.24.zip" }
+          )
+
+          foreach ($source in $sources) {
+            try {
+              if ($source.Path) {
+                if (-not (Test-Path -Path $source.Path)) {
+                  Write-Host "Skipping $($source.Name); file does not exist at $($source.Path)"
+                  continue
+                }
+                Copy-Item -Path $source.Path -Destination $zip -Force
+              } else {
+                Invoke-WebRequest -UseBasicParsing -Uri $source.Uri -OutFile $zip
+              }
+              $nssm = Find-UsableNssm $zip $source.Name
+              if ($nssm) {
+                Write-Host "Using NSSM from $($source.Name): $nssm"
+                break
+              }
+              Write-Host "No usable NSSM binary found in $($source.Name)"
+            } catch {
+              Write-Host "Failed to prepare NSSM from $($source.Name): $_"
+            }
+          }
+
+          if (-not $nssm) {
+            throw "Could not find a usable nssm.exe from the official NSSM release or repository fallback."
+          }
+          Copy-Item -Path $nssm -Destination build-assets\nssm.exe -Force
+          if (-not (Test-Path -Path build-assets\nssm.exe)) {
+            throw "Failed to stage bundled nssm.exe"
+          }
+          if (-not (Test-NssmBinary "build-assets\nssm.exe")) {
+            throw "Staged nssm.exe is not a usable win64 NSSM binary"
+          }
+
       - name: Build standalone app
         shell: pwsh
         run: |
@@ -129,6 +210,7 @@ jobs:
             --include-package=PIL `
             --include-data-files=BeszelAgentManager_icon.ico=BeszelAgentManager_icon.ico `
             --include-data-files=BeszelAgentManager_icon_512.png=BeszelAgentManager_icon_512.png `
+            --include-data-files=build-assets\nssm.exe=nssm.exe `
             --output-dir=build `
             --output-filename=BeszelAgentManager.exe `
             main.py

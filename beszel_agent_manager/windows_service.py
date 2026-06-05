@@ -6,6 +6,7 @@ import zipfile
 import time
 import re
 import subprocess
+import sys
 from typing import Dict
 
 import requests
@@ -33,6 +34,42 @@ class ServiceError(RuntimeError):
 LEGACY_AGENT_SERVICE_NAME = PROJECT_NAME
 
 
+def _long_path(path: str) -> str:
+    path = os.path.normpath(os.path.abspath(path))
+    if os.name != "nt":
+        return path
+    try:
+        import ctypes  # type: ignore[attr-defined]
+
+        buf = ctypes.create_unicode_buffer(32768)
+        rc = ctypes.windll.kernel32.GetLongPathNameW(str(path), buf, len(buf))  # type: ignore[attr-defined]
+        if 0 < rc < len(buf):
+            return buf.value
+    except Exception:
+        pass
+    return path
+
+
+def _format_cmd(cmd: list[str]) -> str:
+    parts = []
+    for item in cmd:
+        text = str(item)
+        if os.path.exists(text):
+            text = _long_path(text)
+        if " " in text:
+            text = f'"{text}"'
+        parts.append(text)
+    return " ".join(parts)
+
+
+def _clean_output(text: str) -> str:
+    if not text:
+        return ""
+    if "\x00" in text:
+        text = text.replace("\x00", "")
+    return text.strip()
+
+
 def _service_exists(name: str) -> bool:
     try:
         cp = run(['sc', 'query', name], check=False)
@@ -48,6 +85,20 @@ def _resolve_service_name() -> str:
     if LEGACY_AGENT_SERVICE_NAME and _service_exists(LEGACY_AGENT_SERVICE_NAME):
         return LEGACY_AGENT_SERVICE_NAME
     return AGENT_SERVICE_NAME
+
+
+def _service_binary_path(name: str) -> str | None:
+    cp = run(['sc', 'qc', name], check=False)
+    if cp.returncode != 0:
+        return None
+    for line in _clean_output((cp.stdout or '') + (cp.stderr or '')).splitlines():
+        if 'BINARY_PATH_NAME' not in line:
+            continue
+        _, _, value = line.partition(':')
+        value = value.strip().strip('"')
+        if value:
+            return _long_path(value)
+    return None
 
 
 def _download_nssm() -> str:
@@ -90,10 +141,51 @@ def _download_nssm() -> str:
     return str(NSSM_EXE_PATH)
 
 
+def _bundled_nssm() -> str | None:
+    candidates = []
+    exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+    package_dir = os.path.dirname(os.path.abspath(__file__))
+    app_dir = os.path.normpath(os.path.join(package_dir, ".."))
+    install_dir = os.path.normpath(os.path.join(app_dir, ".."))
+    candidates.extend(
+        [
+            os.path.join(install_dir, "nssm.exe"),
+            os.path.join(os.path.dirname(exe_dir), "nssm.exe"),
+        ]
+    )
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        path = _long_path(candidate)
+        key = os.path.normcase(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        if os.path.exists(path):
+            if _looks_like_nssm_binary(path):
+                log(f"Using bundled NSSM at {path}")
+                return path
+            log(f"Ignoring unusable bundled NSSM at {path}")
+    return None
+
+
+def _looks_like_nssm_binary(path: str) -> bool:
+    try:
+        if os.path.getsize(path) < 200_000:
+            return False
+        with open(path, "rb") as fh:
+            return fh.read(2) == b"MZ"
+    except OSError:
+        return False
+
+
 def _find_nssm() -> str:
     override = os.environ.get('NSSM_PATH')
     if override and shutil.which(override):
         return override
+    bundled = _bundled_nssm()
+    if bundled:
+        return bundled
     nssm = shutil.which('nssm')
     if nssm:
         return nssm
@@ -115,6 +207,53 @@ def _configure_agent_logging(nssm: str) -> None:
     run([nssm, 'set', AGENT_SERVICE_NAME, 'AppTimestampLog', '1'], check=False)
 
 
+def _run_service_command(cmd: list[str], description: str) -> subprocess.CompletedProcess:
+    cp = run(cmd, check=False)
+    if cp.returncode != 0:
+        stdout = _clean_output(cp.stdout or '')
+        stderr = _clean_output(cp.stderr or '')
+        details = [f"{description} failed ({cp.returncode}).", f"Command: {_format_cmd(cmd)}"]
+        if stdout:
+            details.append(f"Output: {stdout}")
+        if stderr:
+            details.append(f"Error: {stderr}")
+        raise ServiceError(
+            "\n".join(details)
+        )
+    return cp
+
+
+def _require_service_exists() -> None:
+    state = get_service_status()
+    if state == 'NOT FOUND':
+        raise ServiceError(
+            f"Service '{AGENT_SERVICE_NAME}' was not created. "
+            "Check the NSSM install output above and verify the app is running as administrator."
+        )
+
+
+def _ensure_service_uses_nssm_path(nssm: str) -> None:
+    current = _service_binary_path(AGENT_SERVICE_NAME)
+    if not current:
+        return
+    desired = _long_path(nssm)
+    if os.path.normcase(current) == os.path.normcase(desired):
+        return
+    log(f"Service {AGENT_SERVICE_NAME} uses NSSM at {current}; recreating it with {desired}.")
+    run([desired, 'stop', AGENT_SERVICE_NAME], check=False)
+    run([desired, 'remove', AGENT_SERVICE_NAME, 'confirm'], check=False)
+    run(['sc', 'delete', AGENT_SERVICE_NAME], check=False)
+    deadline = time.time() + 10
+    while _service_exists(AGENT_SERVICE_NAME) and time.time() < deadline:
+        time.sleep(0.5)
+    if _service_exists(AGENT_SERVICE_NAME):
+        raise ServiceError(
+            f"Service '{AGENT_SERVICE_NAME}' was removed but Windows has not released it yet. "
+            "Close the Services window if it is open, wait a few seconds, then apply settings again. "
+            "If Windows still reports the service as marked for deletion, restart Windows and apply again."
+        )
+
+
 def create_or_update_service(env_vars: Dict[str, str]) -> None:
     if not AGENT_EXE_PATH.exists():
         raise ServiceError(f'Agent executable not found: {AGENT_EXE_PATH}')
@@ -126,9 +265,17 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
         run(['sc', 'delete', LEGACY_AGENT_SERVICE_NAME], check=False)
 
     AGENT_DIR.mkdir(parents=True, exist_ok=True)
-    run([nssm, 'install', AGENT_SERVICE_NAME, str(AGENT_EXE_PATH)], check=False)
-    run([nssm, 'set', AGENT_SERVICE_NAME, 'DisplayName', AGENT_DISPLAY_NAME], check=False)
-    run(
+    if _service_exists(AGENT_SERVICE_NAME):
+        _ensure_service_uses_nssm_path(nssm)
+
+    if not _service_exists(AGENT_SERVICE_NAME):
+        _run_service_command([nssm, 'install', AGENT_SERVICE_NAME, str(AGENT_EXE_PATH)], "NSSM service install")
+    else:
+        log(f"Service {AGENT_SERVICE_NAME} already exists; updating configuration.")
+    _require_service_exists()
+
+    _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'DisplayName', AGENT_DISPLAY_NAME], "Set service display name")
+    _run_service_command(
         [
             nssm,
             'set',
@@ -136,14 +283,13 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
             'Description',
             f"Beszel agent service managed by {PROJECT_NAME}. Configure and update via {PROJECT_NAME}.",
         ],
-        check=False,
+        "Set service description",
     )
-    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppDirectory', str(AGENT_DIR)], check=False)
+    _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'AppDirectory', str(AGENT_DIR)], "Set service app directory")
 
-    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodConsole', '1500'], check=False)
-    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodWindow', '1500'], check=False)
-    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodThreads', '1500'], check=False)
-    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppKillProcessTree', '1'], check=False)
+    _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodConsole', '1500'], "Set service console stop timeout")
+    _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodWindow', '1500'], "Set service window stop timeout")
+    _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodThreads', '1500'], "Set service thread stop timeout")
 
     _configure_agent_logging(nssm)
     env_pairs = [f"{k}={v}" for k, v in env_vars.items() if v]
@@ -152,9 +298,9 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
     run([nssm, 'reset', AGENT_SERVICE_NAME, 'AppEnvironmentExtra'], check=False)
 
     if env_pairs:
-        run([nssm, 'set', AGENT_SERVICE_NAME, 'AppEnvironmentExtra', *env_pairs], check=False)
-    run([nssm, 'set', AGENT_SERVICE_NAME, 'Start', 'SERVICE_AUTO_START'], check=False)
-    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppRestartDelay', '5000'], check=False)
+        _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'AppEnvironmentExtra', *env_pairs], "Set service environment")
+    _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'Start', 'SERVICE_AUTO_START'], "Set service start mode")
+    _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'AppRestartDelay', '5000'], "Set service restart delay")
 
     restart_service(timeout_seconds=15)
 
@@ -322,7 +468,7 @@ def get_service_diagnostics() -> str:
     try:
         cp = run(['sc', 'queryex', _resolve_service_name()], check=False)
         lines.append('=== sc queryex ===')
-        lines.append((cp.stdout or cp.stderr or '').strip())
+        lines.append(_clean_output(cp.stdout or cp.stderr or ''))
     except Exception as exc:
         lines.append(f'=== sc queryex failed: {exc} ===')
 
@@ -330,9 +476,9 @@ def get_service_diagnostics() -> str:
         nssm = _find_nssm()
         lines.append('=== nssm get (selected) ===')
         svc = _resolve_service_name()
-        for key in ['DisplayName', 'Description', 'Application', 'AppDirectory', 'AppStdout', 'AppStderr', 'AppEnvironment', 'AppEnvironmentExtra', 'Start', 'AppRestartDelay', 'AppStopMethodConsole', 'AppStopMethodWindow', 'AppStopMethodThreads', 'AppKillProcessTree']:
+        for key in ['DisplayName', 'Description', 'Application', 'AppDirectory', 'AppStdout', 'AppStderr', 'AppEnvironment', 'AppEnvironmentExtra', 'Start', 'AppRestartDelay', 'AppStopMethodConsole', 'AppStopMethodWindow', 'AppStopMethodThreads']:
             cp = run([nssm, 'get', svc, key], check=False)
-            val = (cp.stdout or cp.stderr or '').strip()
+            val = _clean_output(cp.stdout or cp.stderr or '')
             lines.append(f'{key}: {val}')
     except Exception as exc:
         lines.append(f'=== nssm get failed: {exc} ===')
