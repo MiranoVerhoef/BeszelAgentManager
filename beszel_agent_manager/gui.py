@@ -74,9 +74,23 @@ LEGACY_AGENT_DIR = Path(r"C:\Beszel-Agent")
 
 
 def _resource_path(relative: str) -> str:
+    candidates: list[Path] = []
     if hasattr(sys, "_MEIPASS"):
-        return str(Path(sys._MEIPASS) / relative)
-    return str(Path(__file__).resolve().parent.parent / relative)
+        candidates.append(Path(sys._MEIPASS) / relative)
+    package_dir = Path(__file__).resolve().parent
+    app_dir = package_dir.parent
+    candidates.extend(
+        [
+            app_dir / relative,
+            app_dir.parent / relative,
+            Path(sys.executable).resolve().parent / relative,
+            Path(sys.executable).resolve().parent.parent / relative,
+        ]
+    )
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return str(candidates[0] if candidates else app_dir / relative)
 
 
 class ToolTip:
@@ -168,8 +182,14 @@ class BeszelAgentManagerApp(tk.Tk):
         self.configure(bg="#f3f3f3")
         try:
             self.iconbitmap(_resource_path("BeszelAgentManager_icon.ico"))
-        except Exception:
-            pass
+        except Exception as exc:
+            log(f"Failed to load window icon .ico: {exc}")
+        try:
+            icon_img = tk.PhotoImage(file=_resource_path("BeszelAgentManager_icon_512.png"))
+            self.iconphoto(True, icon_img)
+            self._window_icon_img = icon_img
+        except Exception as exc:
+            log(f"Failed to load window icon .png: {exc}")
 
         style = ttk.Style()
         try:

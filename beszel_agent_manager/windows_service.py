@@ -129,15 +129,26 @@ def _download_nssm() -> str:
 
 def _bundled_nssm() -> str | None:
     candidates = []
-    if getattr(sys, "frozen", False):
-        app_dir = os.path.dirname(sys.executable)
-        install_dir = os.path.dirname(app_dir)
-        candidates.append(os.path.join(install_dir, "nssm.exe"))
-        candidates.append(os.path.join(app_dir, "nssm.exe"))
-    candidates.append(os.path.join(os.path.dirname(__file__), "..", "nssm.exe"))
+    exe_dir = os.path.dirname(os.path.abspath(sys.executable))
+    package_dir = os.path.dirname(os.path.abspath(__file__))
+    app_dir = os.path.normpath(os.path.join(package_dir, ".."))
+    install_dir = os.path.normpath(os.path.join(app_dir, ".."))
+    candidates.extend(
+        [
+            os.path.join(install_dir, "nssm.exe"),
+            os.path.join(app_dir, "nssm.exe"),
+            os.path.join(exe_dir, "nssm.exe"),
+            os.path.join(os.path.dirname(exe_dir), "nssm.exe"),
+        ]
+    )
 
+    seen: set[str] = set()
     for candidate in candidates:
         path = _long_path(candidate)
+        key = os.path.normcase(path)
+        if key in seen:
+            continue
+        seen.add(key)
         if os.path.exists(path):
             if _looks_like_nssm_binary(path):
                 log(f"Using bundled NSSM at {path}")
