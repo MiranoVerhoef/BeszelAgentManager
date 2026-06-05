@@ -127,16 +127,21 @@ def _bundled_nssm() -> str | None:
     for candidate in candidates:
         path = _long_path(candidate)
         if os.path.exists(path):
-            try:
-                cp = run([path, "version"], check=False)
-                output = (cp.stdout or "") + (cp.stderr or "")
-                if cp.returncode == 0 and "Cannot find file" not in output:
-                    log(f"Using bundled NSSM at {path}")
-                    return path
-                log(f"Ignoring unusable bundled NSSM at {path}: {output.strip()}")
-            except Exception as exc:
-                log(f"Ignoring unusable bundled NSSM at {path}: {exc}")
+            if _looks_like_nssm_binary(path):
+                log(f"Using bundled NSSM at {path}")
+                return path
+            log(f"Ignoring unusable bundled NSSM at {path}")
     return None
+
+
+def _looks_like_nssm_binary(path: str) -> bool:
+    try:
+        if os.path.getsize(path) < 200_000:
+            return False
+        with open(path, "rb") as fh:
+            return fh.read(2) == b"MZ"
+    except OSError:
+        return False
 
 
 def _find_nssm() -> str:
