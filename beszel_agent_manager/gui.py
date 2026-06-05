@@ -2527,6 +2527,19 @@ class BeszelAgentManagerApp(tk.Tk):
             except Exception:
                 pass
 
+            try:
+                cfg.save()
+                self.config_obj = cfg
+                self.label_config_saved.config(text="Config saved")
+                self.after(2500, lambda: self.label_config_saved.config(text=""))
+            except Exception as exc:
+                log(f"Apply failed while saving configuration before admin check: {exc}")
+                try:
+                    messagebox.showerror(PROJECT_NAME, f"Failed to save configuration.\n\n{exc}")
+                except Exception:
+                    pass
+                return
+
         if not self._require_admin():
             return
 

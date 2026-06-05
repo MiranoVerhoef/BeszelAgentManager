@@ -247,9 +247,10 @@ def _ensure_service_uses_nssm_path(nssm: str) -> None:
     while _service_exists(AGENT_SERVICE_NAME) and time.time() < deadline:
         time.sleep(0.5)
     if _service_exists(AGENT_SERVICE_NAME):
-        _run_service_command(
-            ['sc', 'config', AGENT_SERVICE_NAME, 'binPath=', f'"{desired}"'],
-            "Update service NSSM executable path",
+        raise ServiceError(
+            f"Service '{AGENT_SERVICE_NAME}' was removed but Windows has not released it yet. "
+            "Close the Services window if it is open, wait a few seconds, then apply settings again. "
+            "If Windows still reports the service as marked for deletion, restart Windows and apply again."
         )
 
 
