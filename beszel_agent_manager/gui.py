@@ -3352,6 +3352,7 @@ class BeszelAgentManagerApp(tk.Tk):
                 exe_path = Path(sys.argv[0]).resolve()
 
             app_dir = exe_path.parent
+            install_dir = app_dir.parent
             data_dir = DATA_DIR
             agent_dir = AGENT_DIR
             legacy_agent_dir = LEGACY_AGENT_DIR
@@ -3371,6 +3372,7 @@ param(
   [int]$PidToWait,
   [string]$Exe,
   [string]$AppDir,
+  [string]$InstallDir,
   [string]$DataDir,
   [string]$AgentDir,
   [string]$LegacyAgentDir,
@@ -3406,7 +3408,7 @@ try {{
   taskkill /IM "nssm.exe" /T /F | Out-Null
 }} catch {{ }}
 
-$targets = @($Exe, $AppDir, $DataDir, $AgentDir, $LegacyAgentDir)
+$targets = @($Exe, $AppDir, $DataDir, $AgentDir, $LegacyAgentDir, $InstallDir)
 Log ("Cleanup: targets=" + ($targets -join '; '))
 
 for ($i=0; $i -lt 120; $i++) {{
@@ -3449,6 +3451,8 @@ try {{ $remaining | ForEach-Object {{ Log $_ }} }} catch {{ }}
                         str(exe_path),
                         "-AppDir",
                         str(app_dir),
+                        "-InstallDir",
+                        str(install_dir),
                         "-DataDir",
                         str(data_dir),
                         "-AgentDir",
@@ -3465,7 +3469,7 @@ try {{ $remaining | ForEach-Object {{ Log $_ }} }} catch {{ }}
 
                     subprocess.Popen(args, creationflags=creationflags)
                     log(
-                        f"Scheduled cleanup via PowerShell: exe={exe_path}, app_dir={app_dir}, data_dir={data_dir}, "
+                        f"Scheduled cleanup via PowerShell: exe={exe_path}, app_dir={app_dir}, install_dir={install_dir}, data_dir={data_dir}, "
                         f"agent_dir={agent_dir}, legacy_agent_dir={legacy_agent_dir}"
                     )
                 except Exception as exc:

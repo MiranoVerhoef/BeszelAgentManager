@@ -34,6 +34,33 @@ class ServiceError(RuntimeError):
 LEGACY_AGENT_SERVICE_NAME = PROJECT_NAME
 
 
+def _long_path(path: str) -> str:
+    if os.name != "nt":
+        return os.path.abspath(path)
+    try:
+        import ctypes  # type: ignore[attr-defined]
+
+        buf = ctypes.create_unicode_buffer(32768)
+        rc = ctypes.windll.kernel32.GetLongPathNameW(str(path), buf, len(buf))  # type: ignore[attr-defined]
+        if 0 < rc < len(buf):
+            return buf.value
+    except Exception:
+        pass
+    return os.path.abspath(path)
+
+
+def _format_cmd(cmd: list[str]) -> str:
+    parts = []
+    for item in cmd:
+        text = str(item)
+        if os.path.exists(text):
+            text = _long_path(text)
+        if " " in text:
+            text = f'"{text}"'
+        parts.append(text)
+    return " ".join(parts)
+
+
 def _service_exists(name: str) -> bool:
     try:
         cp = run(['sc', 'query', name], check=False)
@@ -98,10 +125,17 @@ def _bundled_nssm() -> str | None:
     candidates.append(os.path.join(os.path.dirname(__file__), "..", "nssm.exe"))
 
     for candidate in candidates:
-        path = os.path.abspath(candidate)
+        path = _long_path(candidate)
         if os.path.exists(path):
-            log(f"Using bundled NSSM at {path}")
-            return path
+            try:
+                cp = run([path, "version"], check=False)
+                output = (cp.stdout or "") + (cp.stderr or "")
+                if cp.returncode == 0 and "Cannot find file" not in output:
+                    log(f"Using bundled NSSM at {path}")
+                    return path
+                log(f"Ignoring unusable bundled NSSM at {path}: {output.strip()}")
+            except Exception as exc:
+                log(f"Ignoring unusable bundled NSSM at {path}: {exc}")
     return None
 
 
@@ -136,11 +170,15 @@ def _configure_agent_logging(nssm: str) -> None:
 def _run_service_command(cmd: list[str], description: str) -> subprocess.CompletedProcess:
     cp = run(cmd, check=False)
     if cp.returncode != 0:
+        stdout = (cp.stdout or '').strip()
+        stderr = (cp.stderr or '').strip()
+        details = [f"{description} failed ({cp.returncode}).", f"Command: {_format_cmd(cmd)}"]
+        if stdout:
+            details.append(f"Output: {stdout}")
+        if stderr:
+            details.append(f"Error: {stderr}")
         raise ServiceError(
-            f"{description} failed ({cp.returncode}).\n"
-            f"Command: {' '.join(str(c) for c in cmd)}\n"
-            f"stdout: {(cp.stdout or '').strip()}\n"
-            f"stderr: {(cp.stderr or '').strip()}"
+            "\n".join(details)
         )
     return cp
 

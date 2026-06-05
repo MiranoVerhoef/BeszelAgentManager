@@ -113,25 +113,24 @@ jobs:
       - name: Prepare bundled NSSM
         shell: pwsh
         run: |
-          choco install nssm --no-progress --yes
-          $candidates = @()
-          if ($env:ChocolateyInstall) {
-            $candidates += Get-ChildItem -Path (Join-Path $env:ChocolateyInstall "lib\nssm") -Recurse -Filter nssm.exe -ErrorAction SilentlyContinue |
-              Where-Object { $_.FullName -match "\\win64\\nssm\.exe$" } |
-              Select-Object -ExpandProperty FullName
-          }
-          $cmd = Get-Command nssm.exe -ErrorAction SilentlyContinue
-          if ($cmd) {
-            $candidates += $cmd.Source
-          }
-          $nssm = $candidates | Where-Object { $_ -and (Test-Path -Path $_) } | Select-Object -First 1
-          if (-not $nssm) {
-            throw "Could not find nssm.exe after Chocolatey install"
-          }
+          $nupkg = Join-Path $PWD "build-assets\nssm.nupkg"
+          $extract = Join-Path $PWD "build-assets\nssm-package"
           New-Item -ItemType Directory -Path build-assets -Force | Out-Null
+          Invoke-WebRequest -UseBasicParsing -Uri "https://community.chocolatey.org/api/v2/package/nssm" -OutFile $nupkg
+          Expand-Archive -Path $nupkg -DestinationPath $extract -Force
+          $nssm = Get-ChildItem -Path $extract -Recurse -Filter nssm.exe |
+            Where-Object { $_.FullName -match "\\tools\\nssm-[^\\]+\\win64\\nssm\.exe$" } |
+            Select-Object -ExpandProperty FullName -First 1
+          if (-not $nssm) {
+            throw "Could not find real win64 nssm.exe in Chocolatey package"
+          }
           Copy-Item -Path $nssm -Destination build-assets\nssm.exe -Force
           if (-not (Test-Path -Path build-assets\nssm.exe)) {
             throw "Failed to stage bundled nssm.exe"
+          }
+          $output = & build-assets\nssm.exe version 2>&1
+          if ($LASTEXITCODE -ne 0 -or ($output -match "Cannot find file")) {
+            throw "Staged nssm.exe is not a usable NSSM binary: $output"
           }
 
       - name: Build standalone app

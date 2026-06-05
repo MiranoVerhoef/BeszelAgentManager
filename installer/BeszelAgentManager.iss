@@ -50,6 +50,7 @@ Type: files; Name: "{commonprograms}\{#AppName}.lnk"
 
 [UninstallRun]
 Filename: "{cmd}"; Parameters: "/C taskkill /IM ""BeszelAgentManager.exe"" /T /F"; Flags: runhidden waituntilterminated; RunOnceId: "StopBeszelAgentManager"
+Filename: "{cmd}"; Parameters: "/C ping 127.0.0.1 -n 3 >NUL & rmdir /S /Q ""{app}"""; Flags: runhidden nowait; RunOnceId: "RemoveBeszelAgentManagerFolder"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
