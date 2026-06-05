@@ -35,7 +35,8 @@ VersionInfoProductVersion={#AppVersion}
 VersionInfoVersion={#AppVersion}.0
 
 [Files]
-Source: "{#DistDir}\*"; DestDir: "{app}\app"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#DistDir}\*"; DestDir: "{app}\app"; Excludes: "nssm.exe"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#DistDir}\nssm.exe"; DestDir: "{app}"; Flags: ignoreversion
 
 [Dirs]
 Name: "{commonappdata}\{#AppName}"; Permissions: users-modify

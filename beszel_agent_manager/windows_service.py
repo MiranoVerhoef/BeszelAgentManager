@@ -35,8 +35,9 @@ LEGACY_AGENT_SERVICE_NAME = PROJECT_NAME
 
 
 def _long_path(path: str) -> str:
+    path = os.path.normpath(os.path.abspath(path))
     if os.name != "nt":
-        return os.path.abspath(path)
+        return path
     try:
         import ctypes  # type: ignore[attr-defined]
 
@@ -46,7 +47,7 @@ def _long_path(path: str) -> str:
             return buf.value
     except Exception:
         pass
-    return os.path.abspath(path)
+    return path
 
 
 def _format_cmd(cmd: list[str]) -> str:
@@ -59,6 +60,14 @@ def _format_cmd(cmd: list[str]) -> str:
             text = f'"{text}"'
         parts.append(text)
     return " ".join(parts)
+
+
+def _clean_output(text: str) -> str:
+    if not text:
+        return ""
+    if "\x00" in text:
+        text = text.replace("\x00", "")
+    return text.strip()
 
 
 def _service_exists(name: str) -> bool:
@@ -121,7 +130,10 @@ def _download_nssm() -> str:
 def _bundled_nssm() -> str | None:
     candidates = []
     if getattr(sys, "frozen", False):
-        candidates.append(os.path.join(os.path.dirname(sys.executable), "nssm.exe"))
+        app_dir = os.path.dirname(sys.executable)
+        install_dir = os.path.dirname(app_dir)
+        candidates.append(os.path.join(install_dir, "nssm.exe"))
+        candidates.append(os.path.join(app_dir, "nssm.exe"))
     candidates.append(os.path.join(os.path.dirname(__file__), "..", "nssm.exe"))
 
     for candidate in candidates:
@@ -175,8 +187,8 @@ def _configure_agent_logging(nssm: str) -> None:
 def _run_service_command(cmd: list[str], description: str) -> subprocess.CompletedProcess:
     cp = run(cmd, check=False)
     if cp.returncode != 0:
-        stdout = (cp.stdout or '').strip()
-        stderr = (cp.stderr or '').strip()
+        stdout = _clean_output(cp.stdout or '')
+        stderr = _clean_output(cp.stderr or '')
         details = [f"{description} failed ({cp.returncode}).", f"Command: {_format_cmd(cmd)}"]
         if stdout:
             details.append(f"Output: {stdout}")
@@ -230,7 +242,6 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
     _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodConsole', '1500'], "Set service console stop timeout")
     _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodWindow', '1500'], "Set service window stop timeout")
     _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodThreads', '1500'], "Set service thread stop timeout")
-    _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'AppKillProcessTree', '1'], "Set service process-tree kill")
 
     _configure_agent_logging(nssm)
     env_pairs = [f"{k}={v}" for k, v in env_vars.items() if v]
@@ -409,7 +420,7 @@ def get_service_diagnostics() -> str:
     try:
         cp = run(['sc', 'queryex', _resolve_service_name()], check=False)
         lines.append('=== sc queryex ===')
-        lines.append((cp.stdout or cp.stderr or '').strip())
+        lines.append(_clean_output(cp.stdout or cp.stderr or ''))
     except Exception as exc:
         lines.append(f'=== sc queryex failed: {exc} ===')
 
@@ -417,9 +428,9 @@ def get_service_diagnostics() -> str:
         nssm = _find_nssm()
         lines.append('=== nssm get (selected) ===')
         svc = _resolve_service_name()
-        for key in ['DisplayName', 'Description', 'Application', 'AppDirectory', 'AppStdout', 'AppStderr', 'AppEnvironment', 'AppEnvironmentExtra', 'Start', 'AppRestartDelay', 'AppStopMethodConsole', 'AppStopMethodWindow', 'AppStopMethodThreads', 'AppKillProcessTree']:
+        for key in ['DisplayName', 'Description', 'Application', 'AppDirectory', 'AppStdout', 'AppStderr', 'AppEnvironment', 'AppEnvironmentExtra', 'Start', 'AppRestartDelay', 'AppStopMethodConsole', 'AppStopMethodWindow', 'AppStopMethodThreads']:
             cp = run([nssm, 'get', svc, key], check=False)
-            val = (cp.stdout or cp.stderr or '').strip()
+            val = _clean_output(cp.stdout or cp.stderr or '')
             lines.append(f'{key}: {val}')
     except Exception as exc:
         lines.append(f'=== nssm get failed: {exc} ===')
