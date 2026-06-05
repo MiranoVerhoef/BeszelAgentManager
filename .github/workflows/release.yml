@@ -118,11 +118,20 @@ jobs:
           New-Item -ItemType Directory -Path build-assets -Force | Out-Null
           Invoke-WebRequest -UseBasicParsing -Uri "https://community.chocolatey.org/api/v2/package/nssm" -OutFile $nupkg
           Expand-Archive -Path $nupkg -DestinationPath $extract -Force
-          $nssm = Get-ChildItem -Path $extract -Recurse -Filter nssm.exe |
-            Where-Object { $_.FullName -match "\\tools\\nssm-[^\\]+\\win64\\nssm\.exe$" } |
-            Select-Object -ExpandProperty FullName -First 1
+          $candidates = Get-ChildItem -Path $extract -Recurse -Filter nssm.exe |
+            Sort-Object @{ Expression = { if ($_.FullName -match "\\win64\\") { 0 } else { 1 } } }, FullName
+          $nssm = $null
+          $candidateReport = @()
+          foreach ($candidate in $candidates) {
+            $output = & $candidate.FullName version 2>&1
+            $candidateReport += "$($candidate.FullName): exit=$LASTEXITCODE output=$output"
+            if ($LASTEXITCODE -eq 0 -and ($output -notmatch "Cannot find file")) {
+              $nssm = $candidate.FullName
+              break
+            }
+          }
           if (-not $nssm) {
-            throw "Could not find real win64 nssm.exe in Chocolatey package"
+            throw "Could not find a usable nssm.exe in Chocolatey package. Candidates: $($candidateReport -join ' | ')"
           }
           Copy-Item -Path $nssm -Destination build-assets\nssm.exe -Force
           if (-not (Test-Path -Path build-assets\nssm.exe)) {
