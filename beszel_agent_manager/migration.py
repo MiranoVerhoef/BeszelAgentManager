@@ -6,7 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .constants import DATA_DIR, MANAGER_EXE_PATH, MANAGER_INSTALL_DIR, PROJECT_NAME
+from .constants import AGENT_DIR, DATA_DIR, MANAGER_EXE_PATH, MANAGER_INSTALL_DIR, PROJECT_NAME
 from .shortcut import create_start_menu_shortcut, get_legacy_shortcut_path
 from .util import log
 
@@ -148,6 +148,38 @@ def _migrate_legacy_shortcut() -> None:
         create_start_menu_shortcut()
 
 
+def repair_agent_acl_if_needed() -> None:
+    if os.name != "nt" or not AGENT_DIR.exists():
+        return
+    cmd = [
+        "icacls",
+        str(AGENT_DIR),
+        "/inheritance:e",
+        "/grant",
+        "*S-1-5-32-545:(OI)(CI)RX",
+        "*S-1-5-11:(OI)(CI)RX",
+        "*S-1-5-32-544:(OI)(CI)F",
+        "*S-1-5-18:(OI)(CI)F",
+        "/T",
+        "/C",
+    ]
+    try:
+        cp = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        if cp.returncode == 0:
+            log(f"Repaired Beszel agent ACLs at {AGENT_DIR}")
+        else:
+            err = (cp.stderr or cp.stdout or "").strip()
+            log(f"Failed to repair Beszel agent ACLs at {AGENT_DIR}: {err}")
+    except Exception as exc:
+        log(f"Failed to repair Beszel agent ACLs at {AGENT_DIR}: {exc}")
+
+
 def run_installer_migration_once() -> None:
     if os.name != "nt" or not _is_installed_app():
         return
@@ -155,6 +187,7 @@ def run_installer_migration_once() -> None:
         return
 
     log("Running installer migration for old standalone manager installs.")
+    repair_agent_acl_if_needed()
     _migrate_run_key()
     _migrate_legacy_shortcut()
 
