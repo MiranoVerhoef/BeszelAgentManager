@@ -7,6 +7,7 @@ import subprocess
 from pathlib import Path
 
 from .bootstrap import ensure_elevated_and_location, ensure_single_instance
+from .migration import run_installer_migration_once
 from .gui import main as gui_main
 from .agent_logs import rotate_agent_logs_and_rename
 from .windows_service import restart_service, stop_service, start_service, get_service_status
@@ -226,6 +227,7 @@ def main() -> None:
         return
 
     ensure_single_instance()
+    run_installer_migration_once()
 
     log(f"Starting GUI (start_hidden={start_hidden})")
     try:
