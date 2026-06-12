@@ -101,6 +101,42 @@ def _service_binary_path(name: str) -> str | None:
     return None
 
 
+def _service_pid(name: str) -> int | None:
+    cp = run(['sc', 'queryex', name], check=False)
+    if cp.returncode != 0:
+        return None
+    for line in _clean_output((cp.stdout or '') + (cp.stderr or '')).splitlines():
+        line = line.strip()
+        if not line.startswith('PID'):
+            continue
+        _, _, value = line.partition(':')
+        value = value.strip()
+        if value.isdigit():
+            pid = int(value)
+            return pid if pid > 0 else None
+    return None
+
+
+def _wait_until_service_removed(name: str, timeout_seconds: int) -> bool:
+    deadline = time.time() + timeout_seconds
+    while _service_exists(name) and time.time() < deadline:
+        time.sleep(0.5)
+    return not _service_exists(name)
+
+
+def _kill_service_process_if_present(name: str) -> bool:
+    pid = _service_pid(name)
+    if not pid:
+        return False
+    log(f"Service {name} is still present with PID {pid}; force-killing stale service process.")
+    cp = run(['taskkill', '/F', '/PID', str(pid)], check=False)
+    if cp.returncode != 0:
+        err = _clean_output((cp.stdout or '') + (cp.stderr or ''))
+        log(f"Failed to kill stale service process PID {pid}: {err}")
+        return False
+    return True
+
+
 def _download_nssm() -> str:
     NSSM_DIR.mkdir(parents=True, exist_ok=True)
     if NSSM_EXE_PATH.exists():
@@ -243,9 +279,9 @@ def _ensure_service_uses_nssm_path(nssm: str) -> None:
     run([desired, 'stop', AGENT_SERVICE_NAME], check=False)
     run([desired, 'remove', AGENT_SERVICE_NAME, 'confirm'], check=False)
     run(['sc', 'delete', AGENT_SERVICE_NAME], check=False)
-    deadline = time.time() + 10
-    while _service_exists(AGENT_SERVICE_NAME) and time.time() < deadline:
-        time.sleep(0.5)
+    if not _wait_until_service_removed(AGENT_SERVICE_NAME, 10):
+        if _kill_service_process_if_present(AGENT_SERVICE_NAME):
+            _wait_until_service_removed(AGENT_SERVICE_NAME, 10)
     if _service_exists(AGENT_SERVICE_NAME):
         raise ServiceError(
             f"Service '{AGENT_SERVICE_NAME}' was removed but Windows has not released it yet. "

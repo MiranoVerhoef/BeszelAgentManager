@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 from .config import AgentConfig
+from .migration import repair_agent_acl_if_needed
 from .constants import AGENT_DIR, DATA_DIR, PROJECT_NAME, AGENT_STAGED_EXE_PATH
 from .scheduler import delete_update_task, ensure_agent_log_rotate_task
 from .util import log, github_headers
@@ -554,6 +555,7 @@ def _run_agent_once(cfg: AgentConfig, args: list[str]) -> subprocess.CompletedPr
 
 
 def install_or_update_agent_and_service(cfg: AgentConfig) -> None:
+    repair_agent_acl_if_needed()
     version, changelog = _fetch_latest_agent_release()
     if not version:
         version = _parse_download_version()
@@ -587,6 +589,7 @@ def install_or_update_agent_and_service(cfg: AgentConfig) -> None:
 
 
 def apply_configuration_only(cfg: AgentConfig) -> None:
+    repair_agent_acl_if_needed()
     exe_path = _agent_exe_path()
     if not exe_path.exists():
         raise RuntimeError("Agent is not installed yet.")
@@ -631,11 +634,14 @@ def get_agent_version() -> str:
     if not exe_path.exists():
         return "Not installed"
 
+    metadata_version = _get_file_product_version(exe_path)
+
     candidates = [
         [str(exe_path), "version"],
         [str(exe_path), "--version"],
         [str(exe_path), "-version"],
     ]
+    failures: list[str] = []
     for cmd in candidates:
         try:
             result = subprocess.run(
@@ -656,8 +662,57 @@ def get_agent_version() -> str:
             if m2:
                 return m2.group(0)
         except Exception as exc:
-            log(f"Failed to get agent version via {cmd}: {exc}")
+            failures.append(f"{cmd}: {exc}")
+    if metadata_version:
+        if failures:
+            log(f"Agent version command failed; using file metadata version {metadata_version}. First failure: {failures[0]}")
+        return metadata_version
+    if failures:
+        log(f"Failed to get agent version. First failure: {failures[0]}")
     return "Unknown"
+
+
+def _get_file_product_version(path: Path) -> str | None:
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes  # type: ignore[attr-defined]
+        from ctypes import wintypes
+
+        size = ctypes.windll.version.GetFileVersionInfoSizeW(str(path), None)  # type: ignore[attr-defined]
+        if not size:
+            return None
+        data = ctypes.create_string_buffer(size)
+        if not ctypes.windll.version.GetFileVersionInfoW(str(path), 0, size, data):  # type: ignore[attr-defined]
+            return None
+
+        trans_ptr = ctypes.c_void_p()
+        trans_len = wintypes.UINT()
+        if not ctypes.windll.version.VerQueryValueW(  # type: ignore[attr-defined]
+            data,
+            r"\VarFileInfo\Translation",
+            ctypes.byref(trans_ptr),
+            ctypes.byref(trans_len),
+        ):
+            return None
+        if trans_len.value < 4:
+            return None
+        lang, codepage = ctypes.cast(trans_ptr, ctypes.POINTER(wintypes.WORD * 2)).contents
+
+        value_ptr = ctypes.c_void_p()
+        value_len = wintypes.UINT()
+        query = rf"\StringFileInfo\{lang:04x}{codepage:04x}\ProductVersion"
+        if not ctypes.windll.version.VerQueryValueW(  # type: ignore[attr-defined]
+            data,
+            query,
+            ctypes.byref(value_ptr),
+            ctypes.byref(value_len),
+        ):
+            return None
+        raw = ctypes.wstring_at(value_ptr, value_len.value).strip("\x00").strip()
+        return _normalize_version(raw)
+    except Exception:
+        return None
 
 
 def agent_fingerprint_view() -> tuple[bool, str]:
