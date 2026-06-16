@@ -43,6 +43,7 @@ Source: "{#DistDir}\nssm.exe"; DestDir: "{app}"; Flags: ignoreversion
 Name: "{commonappdata}\{#AppName}"; Permissions: users-modify
 
 [Tasks]
+Name: "cleanlegacyroot"; Description: "Stop old manager and clean legacy Program Files layout"; GroupDescription: "Migration:"; Check: IsLegacyRootInstall; Flags: checkedonce
 Name: "startmenuicon"; Description: "Create a Start Menu shortcut"; GroupDescription: "Shortcuts:"; Flags: checkedonce
 Name: "desktopicon"; Description: "Create a Desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
 
@@ -66,3 +67,34 @@ Name: "{commondesktop}\{#AppName}"; Filename: "{app}\app\BeszelAgentManager.exe"
 Filename: "{cmd}"; Parameters: "/C icacls ""{commonappdata}\{#AppName}"" /inheritance:e /grant *S-1-5-32-545:(OI)(CI)M *S-1-5-11:(OI)(CI)M /T /C"; Flags: runhidden waituntilterminated
 Filename: "{cmd}"; Parameters: "/C if exist ""{autopf}\Beszel-Agent"" icacls ""{autopf}\Beszel-Agent"" /inheritance:e /grant *S-1-5-32-545:(OI)(CI)RX *S-1-5-11:(OI)(CI)RX *S-1-5-32-544:(OI)(CI)F *S-1-5-18:(OI)(CI)F /T /C"; Flags: runhidden waituntilterminated
 Filename: "{app}\app\BeszelAgentManager.exe"; WorkingDir: "{app}\app"; Flags: nowait skipifsilent runasoriginaluser
+
+[Code]
+function IsLegacyRootInstall(): Boolean;
+begin
+  Result :=
+    FileExists(ExpandConstant('{app}\BeszelAgentManager.exe')) or
+    FileExists(ExpandConstant('{app}\python3.dll')) or
+    FileExists(ExpandConstant('{app}\python312.dll')) or
+    FileExists(ExpandConstant('{app}\python313.dll')) or
+    FileExists(ExpandConstant('{app}\python314.dll')) or
+    DirExists(ExpandConstant('{app}\charset_normalizer')) or
+    DirExists(ExpandConstant('{app}\PIL'));
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  Result := '';
+  if WizardIsTaskSelected('cleanlegacyroot') then
+  begin
+    Exec(
+      ExpandConstant('{cmd}'),
+      '/C taskkill /IM "BeszelAgentManager.exe" /T /F',
+      '',
+      SW_HIDE,
+      ewWaitUntilTerminated,
+      ResultCode
+    );
+  end;
+end;
