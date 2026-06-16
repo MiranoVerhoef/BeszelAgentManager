@@ -259,7 +259,11 @@ jobs:
           $version = "${{ steps.version.outputs.version }}"
           $releaseName = "${{ steps.version.outputs.release_name }}"
           if ([string]::IsNullOrWhiteSpace($env:RELEASE_NOTES_INPUT)) {
-            $releaseName | Out-File -FilePath RELEASE_NOTES.generated.md -Encoding utf8
+            if (Test-Path -Path RELEASE_NOTES.md) {
+              Get-Content -Path RELEASE_NOTES.md -Raw | Out-File -FilePath RELEASE_NOTES.generated.md -Encoding utf8
+            } else {
+              $releaseName | Out-File -FilePath RELEASE_NOTES.generated.md -Encoding utf8
+            }
           } else {
             $env:RELEASE_NOTES_INPUT | Out-File -FilePath RELEASE_NOTES.generated.md -Encoding utf8
           }
