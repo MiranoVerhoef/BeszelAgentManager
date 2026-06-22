@@ -1,3 +1,9 @@
+# BeszelAgentManager v3.0.1
+
+## Hotfix
+
+- Fixed agent installation failing while redundantly setting the NSSM service display name.
+
 # BeszelAgentManager v3.0.0
 
 This is the first installer-based release of BeszelAgentManager. Version 3.0.0 moves away from the old portable executable flow and gives the manager a cleaner, more reliable Windows installation experience.

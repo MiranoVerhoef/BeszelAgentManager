@@ -310,7 +310,8 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
         log(f"Service {AGENT_SERVICE_NAME} already exists; updating configuration.")
     _require_service_exists()
 
-    _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'DisplayName', AGENT_DISPLAY_NAME], "Set service display name")
+    if AGENT_DISPLAY_NAME != AGENT_SERVICE_NAME:
+        _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'DisplayName', AGENT_DISPLAY_NAME], "Set service display name")
     _run_service_command(
         [
             nssm,
