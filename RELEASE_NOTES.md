@@ -10,8 +10,6 @@
 - Removes a newly created service when its initial configuration fails.
 - Adds automated regression tests for retries, idempotency, verification, and rollback.
 
-# BeszelAgentManager v3.0.1
-
 ## Hotfix
 
 - Fixed agent installation failing while redundantly setting the NSSM service display name.
