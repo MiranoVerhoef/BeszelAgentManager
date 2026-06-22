@@ -14,6 +14,25 @@ def completed(cmd: list[str], returncode: int = 0, stdout: str = "", stderr: str
 
 
 class ServiceConfigurationTests(unittest.TestCase):
+    def test_only_supported_rotation_settings_are_configured(self) -> None:
+        settings = dict(service._desired_service_settings({}))
+        self.assertEqual(settings["AppRotateFiles"], ["1"])
+        self.assertEqual(settings["AppRotateOnline"], ["1"])
+        self.assertNotIn("AppRotation", settings)
+        self.assertNotIn("AppTimestampLog", settings)
+
+    def test_service_state_uses_numeric_code_not_localized_label(self) -> None:
+        output = "        STATE              : 4  ACTIEF"
+        self.assertEqual(service._parse_service_state(output), "RUNNING")
+
+    def test_missing_service_is_detected_from_windows_error_code(self) -> None:
+        result = completed(
+            ["sc", "query", "Beszel Agent"],
+            returncode=1060,
+            stderr="[SC] OpenService MISLUKT 1060: De opgegeven service bestaat niet.",
+        )
+        self.assertTrue(service._service_query_reports_missing(result))
+
     def test_redundant_display_name_setting_is_omitted(self) -> None:
         settings = dict(service._desired_service_settings({}))
         self.assertNotIn("DisplayName", settings)

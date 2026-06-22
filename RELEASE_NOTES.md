@@ -4,6 +4,7 @@
 
 - Applies only NSSM settings that differ from the desired configuration.
 - Reads settings back after each change and fails if verification does not match.
+- Uses supported NSSM 2.24 rotation settings and handles localized Windows service-state output.
 - Retries transient Windows service-manager deletion and locking errors.
 - Confirms that the agent service remains running after configuration.
 - Restores changed settings when updating an existing service fails.

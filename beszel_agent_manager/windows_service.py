@@ -33,6 +33,16 @@ class ServiceError(RuntimeError):
 
 LEGACY_AGENT_SERVICE_NAME = PROJECT_NAME
 
+SERVICE_STATES = {
+    1: 'STOPPED',
+    2: 'START_PENDING',
+    3: 'STOP_PENDING',
+    4: 'RUNNING',
+    5: 'CONTINUE_PENDING',
+    6: 'PAUSE_PENDING',
+    7: 'PAUSED',
+}
+
 
 def _long_path(path: str) -> str:
     path = os.path.normpath(os.path.abspath(path))
@@ -70,6 +80,22 @@ def _clean_output(text: str) -> str:
     return text.strip()
 
 
+def _service_query_reports_missing(cp: subprocess.CompletedProcess) -> bool:
+    text = _clean_output((cp.stdout or '') + (cp.stderr or '')).lower()
+    return cp.returncode != 0 and ('1060' in text or 'does not exist' in text)
+
+
+def _parse_service_state(text: str) -> str:
+    match = re.search(r'\bSTATE\s*:\s*(\d+)', text, flags=re.IGNORECASE)
+    if match:
+        return SERVICE_STATES.get(int(match.group(1)), 'UNKNOWN')
+
+    for state in SERVICE_STATES.values():
+        if re.search(rf'\b{re.escape(state)}\b', text, flags=re.IGNORECASE):
+            return state
+    return 'UNKNOWN'
+
+
 def _service_exists(name: str) -> bool:
     try:
         cp = run(['sc', 'query', name], check=False)
@@ -78,7 +104,7 @@ def _service_exists(name: str) -> bool:
     if cp.returncode == 0:
         return True
     text = _clean_output((cp.stdout or '') + (cp.stderr or ''))
-    if '1060' in text or 'does not exist' in text.lower():
+    if _service_query_reports_missing(cp):
         return False
     raise ServiceError(
         f"Unable to query service '{name}' ({cp.returncode})."
@@ -411,9 +437,8 @@ def _desired_service_settings(env_vars: Dict[str, str]) -> list[tuple[str, list[
         ('AppStopMethodThreads', ['1500']),
         ('AppStdout', [str(AGENT_LOG_CURRENT_PATH)]),
         ('AppStderr', [str(AGENT_LOG_CURRENT_PATH)]),
-        ('AppRotation', ['1']),
+        ('AppRotateFiles', ['1']),
         ('AppRotateOnline', ['1']),
-        ('AppTimestampLog', ['1']),
         ('AppEnvironment', []),
         ('AppEnvironmentExtra', env_pairs),
         ('Start', ['SERVICE_AUTO_START']),
@@ -529,20 +554,8 @@ def rotate_service_logs() -> None:
 
 
 def get_service_status() -> str:
-    try:
-        cp = run(['sc', 'query', _resolve_service_name()], check=False)
-    except FileNotFoundError:
-        return 'NOT FOUND'
-    txt = (cp.stdout or '') + (cp.stderr or '')
-    if 'does not exist' in txt:
-        return 'NOT FOUND'
-    for line in txt.splitlines():
-        line = line.strip()
-        if line.startswith('STATE'):
-            parts = line.split()
-            if parts:
-                return parts[-1]
-    return 'UNKNOWN'
+    state, _ = _query_service_state_and_pid()
+    return state
 
 
 def start_service() -> None:
@@ -564,18 +577,14 @@ def _query_service_state_and_pid() -> tuple[str, int]:
         return ('NOT FOUND', 0)
 
     txt = (cp.stdout or '') + (cp.stderr or '')
-    if 'does not exist' in txt:
+    if _service_query_reports_missing(cp):
         return ('NOT FOUND', 0)
 
-    state = 'UNKNOWN'
+    state = _parse_service_state(txt)
     pid = 0
     for line in txt.splitlines():
         s = line.strip()
-        if s.startswith('STATE'):
-            parts = s.split()
-            if parts:
-                state = parts[-1]
-        elif s.startswith('PID'):
+        if s.startswith('PID'):
             m = re.search(r"PID\s*:\s*(\d+)", s)
             if m:
                 try:
