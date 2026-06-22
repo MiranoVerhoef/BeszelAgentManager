@@ -1,3 +1,20 @@
+# BeszelAgentManager v3.1.0
+
+## Resilient service configuration
+
+- Applies only NSSM settings that differ from the desired configuration.
+- Reads settings back after each change and fails if verification does not match.
+- Uses supported NSSM 2.24 rotation settings and handles localized Windows service-state output.
+- Retries transient Windows service-manager deletion and locking errors.
+- Confirms that the agent service remains running after configuration.
+- Restores changed settings when updating an existing service fails.
+- Removes a newly created service when its initial configuration fails.
+- Adds automated regression tests for retries, idempotency, verification, and rollback.
+
+## Hotfix
+
+- Fixed agent installation failing while redundantly setting the NSSM service display name.
+
 # BeszelAgentManager v3.0.0
 
 This is the first installer-based release of BeszelAgentManager. Version 3.0.0 moves away from the old portable executable flow and gives the manager a cleaner, more reliable Windows installation experience.
