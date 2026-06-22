@@ -1,3 +1,15 @@
+# BeszelAgentManager v3.1.0
+
+## Resilient service configuration
+
+- Applies only NSSM settings that differ from the desired configuration.
+- Reads settings back after each change and fails if verification does not match.
+- Retries transient Windows service-manager deletion and locking errors.
+- Confirms that the agent service remains running after configuration.
+- Restores changed settings when updating an existing service fails.
+- Removes a newly created service when its initial configuration fails.
+- Adds automated regression tests for retries, idempotency, verification, and rollback.
+
 # BeszelAgentManager v3.0.1
 
 ## Hotfix

@@ -75,8 +75,15 @@ def _service_exists(name: str) -> bool:
         cp = run(['sc', 'query', name], check=False)
     except FileNotFoundError:
         return False
-    txt = (cp.stdout or '') + (cp.stderr or '')
-    return ('does not exist' not in txt)
+    if cp.returncode == 0:
+        return True
+    text = _clean_output((cp.stdout or '') + (cp.stderr or ''))
+    if '1060' in text or 'does not exist' in text.lower():
+        return False
+    raise ServiceError(
+        f"Unable to query service '{name}' ({cp.returncode})."
+        + (f"\n{text}" if text else "")
+    )
 
 
 def _resolve_service_name() -> str:
@@ -122,6 +129,15 @@ def _wait_until_service_removed(name: str, timeout_seconds: int) -> bool:
     while _service_exists(name) and time.time() < deadline:
         time.sleep(0.5)
     return not _service_exists(name)
+
+
+def _wait_until_service_exists(name: str, timeout_seconds: int) -> bool:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        if _service_exists(name):
+            return True
+        time.sleep(0.5)
+    return _service_exists(name)
 
 
 def _kill_service_process_if_present(name: str) -> bool:
@@ -228,35 +244,184 @@ def _find_nssm() -> str:
     return _download_nssm()
 
 
-def _configure_agent_logging(nssm: str) -> None:
-    try:
-        AGENT_LOG_DIR.mkdir(parents=True, exist_ok=True)
-    except Exception as exc:
-        log(f"Failed to create agent log dir {AGENT_LOG_DIR}: {exc}")
-        return
-
-    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppStdout', str(AGENT_LOG_CURRENT_PATH)], check=False)
-    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppStderr', str(AGENT_LOG_CURRENT_PATH)], check=False)
-
-    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppRotation', '1'], check=False)
-    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppRotateOnline', '1'], check=False)
-    run([nssm, 'set', AGENT_SERVICE_NAME, 'AppTimestampLog', '1'], check=False)
+def _ensure_agent_log_dir() -> None:
+    AGENT_LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def _run_service_command(cmd: list[str], description: str) -> subprocess.CompletedProcess:
-    cp = run(cmd, check=False)
-    if cp.returncode != 0:
+def _is_transient_service_error(text: str) -> bool:
+    value = text.lower()
+    return (
+        "marked for deletion" in value
+        or "error 1072" in value
+        or "failed 1072" in value
+        or "database is locked" in value
+    )
+
+
+def _run_service_command(
+    cmd: list[str],
+    description: str,
+    *,
+    attempts: int = 3,
+) -> subprocess.CompletedProcess:
+    attempts = max(1, attempts)
+    for attempt in range(1, attempts + 1):
+        cp = run(cmd, check=False)
+        if cp.returncode == 0:
+            return cp
+
         stdout = _clean_output(cp.stdout or '')
         stderr = _clean_output(cp.stderr or '')
+        combined = "\n".join(part for part in (stdout, stderr) if part)
+        if attempt < attempts and _is_transient_service_error(combined):
+            log(f"{description} hit a transient service-manager error; retrying ({attempt}/{attempts}).")
+            time.sleep(0.75 * attempt)
+            continue
+
         details = [f"{description} failed ({cp.returncode}).", f"Command: {_format_cmd(cmd)}"]
         if stdout:
             details.append(f"Output: {stdout}")
         if stderr:
             details.append(f"Error: {stderr}")
+        raise ServiceError("\n".join(details))
+
+    raise ServiceError(f"{description} failed without a result.")
+
+
+def _get_nssm_parameter(nssm: str, parameter: str) -> list[str] | None:
+    cp = run([nssm, 'get', AGENT_SERVICE_NAME, parameter], check=False)
+    if cp.returncode != 0:
+        output = _clean_output((cp.stdout or '') + (cp.stderr or ''))
         raise ServiceError(
-            "\n".join(details)
+            f"Read service setting {parameter} failed ({cp.returncode})."
+            + (f"\n{output}" if output else "")
         )
-    return cp
+    value = _clean_output((cp.stdout or '') + (cp.stderr or ''))
+    if not value:
+        return []
+    return [line.strip() for line in value.splitlines() if line.strip()]
+
+
+def _normalise_parameter_values(parameter: str, values: list[str] | None) -> list[str] | None:
+    if values is None:
+        return None
+    normalised = [str(value).strip() for value in values if str(value).strip()]
+    if parameter in {'Application', 'AppDirectory', 'AppStdout', 'AppStderr'}:
+        return [os.path.normcase(os.path.normpath(_long_path(value.strip('"')))) for value in normalised]
+    if parameter in {'AppEnvironment', 'AppEnvironmentExtra'}:
+        return sorted(normalised, key=str.casefold)
+    return normalised
+
+
+def _parameter_matches(parameter: str, actual: list[str] | None, desired: list[str]) -> bool:
+    return _normalise_parameter_values(parameter, actual) == _normalise_parameter_values(parameter, desired)
+
+
+def _write_nssm_parameter(nssm: str, parameter: str, values: list[str] | None, description: str) -> None:
+    if values:
+        _run_service_command(
+            [nssm, 'set', AGENT_SERVICE_NAME, parameter, *values],
+            description,
+        )
+    else:
+        _run_service_command(
+            [nssm, 'reset', AGENT_SERVICE_NAME, parameter],
+            description,
+        )
+
+
+def _apply_nssm_parameter(
+    nssm: str,
+    parameter: str,
+    desired: list[str],
+    snapshots: dict[str, list[str] | None],
+    changed: list[str],
+) -> None:
+    current = _get_nssm_parameter(nssm, parameter)
+    snapshots[parameter] = current
+    if _parameter_matches(parameter, current, desired):
+        log(f"Service setting {parameter} is already correct.")
+        return
+
+    _write_nssm_parameter(nssm, parameter, desired, f"Set service {parameter}")
+    changed.append(parameter)
+    verified = _get_nssm_parameter(nssm, parameter)
+    if not _parameter_matches(parameter, verified, desired):
+        raise ServiceError(
+            f"Service setting verification failed for {parameter}. "
+            f"Expected {desired!r}, found {verified!r}."
+        )
+
+
+def _rollback_nssm_parameters(
+    nssm: str,
+    snapshots: dict[str, list[str] | None],
+    changed: list[str],
+) -> None:
+    for parameter in reversed(changed):
+        previous = snapshots.get(parameter)
+        try:
+            _write_nssm_parameter(
+                nssm,
+                parameter,
+                previous,
+                f"Restore service {parameter}",
+            )
+        except Exception as exc:
+            log(f"Rollback failed for service setting {parameter}: {exc}")
+
+
+def _remove_new_service(nssm: str) -> None:
+    try:
+        run([nssm, 'stop', AGENT_SERVICE_NAME], check=False)
+        run([nssm, 'remove', AGENT_SERVICE_NAME, 'confirm'], check=False)
+        run(['sc', 'delete', AGENT_SERVICE_NAME], check=False)
+        _wait_until_service_removed(AGENT_SERVICE_NAME, 10)
+        log("Removed service created by failed configuration attempt.")
+    except Exception as exc:
+        log(f"Failed to remove service after configuration error: {exc}")
+
+
+def _require_service_stays_running(stability_seconds: int = 3) -> None:
+    deadline = time.time() + max(1, stability_seconds)
+    while time.time() < deadline:
+        state, _ = _query_service_state_and_pid()
+        if state != 'RUNNING':
+            raise ServiceError(
+                f"Service configuration was applied, but '{AGENT_SERVICE_NAME}' did not remain running "
+                f"(state={state}). Check the agent log and service diagnostics."
+            )
+        time.sleep(0.5)
+
+
+def _desired_service_settings(env_vars: Dict[str, str]) -> list[tuple[str, list[str]]]:
+    env_pairs = sorted(
+        (f"{key}={value}" for key, value in env_vars.items() if value),
+        key=str.casefold,
+    )
+    settings: list[tuple[str, list[str]]] = [
+        ('Application', [str(AGENT_EXE_PATH)]),
+        (
+            'Description',
+            [f"Beszel agent service managed by {PROJECT_NAME}. Configure and update via {PROJECT_NAME}."],
+        ),
+        ('AppDirectory', [str(AGENT_DIR)]),
+        ('AppStopMethodConsole', ['1500']),
+        ('AppStopMethodWindow', ['1500']),
+        ('AppStopMethodThreads', ['1500']),
+        ('AppStdout', [str(AGENT_LOG_CURRENT_PATH)]),
+        ('AppStderr', [str(AGENT_LOG_CURRENT_PATH)]),
+        ('AppRotation', ['1']),
+        ('AppRotateOnline', ['1']),
+        ('AppTimestampLog', ['1']),
+        ('AppEnvironment', []),
+        ('AppEnvironmentExtra', env_pairs),
+        ('Start', ['SERVICE_AUTO_START']),
+        ('AppRestartDelay', ['5000']),
+    ]
+    if AGENT_DISPLAY_NAME != AGENT_SERVICE_NAME:
+        settings.insert(0, ('DisplayName', [AGENT_DISPLAY_NAME]))
+    return settings
 
 
 def _require_service_exists() -> None:
@@ -294,6 +459,11 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
     if not AGENT_EXE_PATH.exists():
         raise ServiceError(f'Agent executable not found: {AGENT_EXE_PATH}')
     nssm = _find_nssm()
+    service_existed_at_start = _service_exists(AGENT_SERVICE_NAME)
+    initial_state = get_service_status() if service_existed_at_start else 'NOT FOUND'
+    created_service = False
+    snapshots: dict[str, list[str] | None] = {}
+    changed: list[str] = []
 
     if LEGACY_AGENT_SERVICE_NAME != AGENT_SERVICE_NAME and _service_exists(LEGACY_AGENT_SERVICE_NAME):
         run([nssm, 'stop', LEGACY_AGENT_SERVICE_NAME], check=False)
@@ -304,42 +474,47 @@ def create_or_update_service(env_vars: Dict[str, str]) -> None:
     if _service_exists(AGENT_SERVICE_NAME):
         _ensure_service_uses_nssm_path(nssm)
 
-    if not _service_exists(AGENT_SERVICE_NAME):
-        _run_service_command([nssm, 'install', AGENT_SERVICE_NAME, str(AGENT_EXE_PATH)], "NSSM service install")
-    else:
-        log(f"Service {AGENT_SERVICE_NAME} already exists; updating configuration.")
-    _require_service_exists()
+    try:
+        if not _service_exists(AGENT_SERVICE_NAME):
+            _run_service_command(
+                [nssm, 'install', AGENT_SERVICE_NAME, str(AGENT_EXE_PATH)],
+                "NSSM service install",
+            )
+            created_service = not service_existed_at_start
+            if not _wait_until_service_exists(AGENT_SERVICE_NAME, 5):
+                raise ServiceError(f"Service '{AGENT_SERVICE_NAME}' was not visible after NSSM installation.")
+        else:
+            log(f"Service {AGENT_SERVICE_NAME} already exists; updating configuration.")
+        _require_service_exists()
+    except Exception:
+        if not service_existed_at_start:
+            try:
+                if created_service or _service_exists(AGENT_SERVICE_NAME):
+                    _remove_new_service(nssm)
+            except Exception as cleanup_exc:
+                log(f"Service cleanup after installation failure could not be completed: {cleanup_exc}")
+        raise
 
-    if AGENT_DISPLAY_NAME != AGENT_SERVICE_NAME:
-        _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'DisplayName', AGENT_DISPLAY_NAME], "Set service display name")
-    _run_service_command(
-        [
-            nssm,
-            'set',
-            AGENT_SERVICE_NAME,
-            'Description',
-            f"Beszel agent service managed by {PROJECT_NAME}. Configure and update via {PROJECT_NAME}.",
-        ],
-        "Set service description",
-    )
-    _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'AppDirectory', str(AGENT_DIR)], "Set service app directory")
+    try:
+        _ensure_agent_log_dir()
+        for parameter, desired in _desired_service_settings(env_vars):
+            _apply_nssm_parameter(nssm, parameter, desired, snapshots, changed)
 
-    _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodConsole', '1500'], "Set service console stop timeout")
-    _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodWindow', '1500'], "Set service window stop timeout")
-    _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'AppStopMethodThreads', '1500'], "Set service thread stop timeout")
-
-    _configure_agent_logging(nssm)
-    env_pairs = [f"{k}={v}" for k, v in env_vars.items() if v]
-
-    run([nssm, 'reset', AGENT_SERVICE_NAME, 'AppEnvironment'], check=False)
-    run([nssm, 'reset', AGENT_SERVICE_NAME, 'AppEnvironmentExtra'], check=False)
-
-    if env_pairs:
-        _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'AppEnvironmentExtra', *env_pairs], "Set service environment")
-    _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'Start', 'SERVICE_AUTO_START'], "Set service start mode")
-    _run_service_command([nssm, 'set', AGENT_SERVICE_NAME, 'AppRestartDelay', '5000'], "Set service restart delay")
-
-    restart_service(timeout_seconds=15)
+        restart_service(timeout_seconds=15)
+        _require_service_stays_running()
+    except Exception:
+        if created_service:
+            _remove_new_service(nssm)
+        else:
+            _rollback_nssm_parameters(nssm, snapshots, changed)
+            try:
+                if initial_state == 'RUNNING':
+                    restart_service(timeout_seconds=15)
+                else:
+                    stop_service(timeout_seconds=15)
+            except Exception as exc:
+                log(f"Restoring service state after rollback failed: {exc}")
+        raise
 
 
 def rotate_service_logs() -> None:
