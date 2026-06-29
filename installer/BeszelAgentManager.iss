@@ -52,6 +52,7 @@ Type: filesandordirs; Name: "{app}\*"
 Type: files; Name: "{commonprograms}\{#AppName}.lnk"
 
 [UninstallRun]
+Filename: "{app}\app\BeszelAgentManager.Helper.exe"; Parameters: "--remove-background-service"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveBeszelAgentManagerBackgroundService"
 Filename: "{cmd}"; Parameters: "/C taskkill /IM ""BeszelAgentManager.exe"" /T /F"; Flags: runhidden waituntilterminated; RunOnceId: "StopBeszelAgentManager"
 Filename: "{cmd}"; Parameters: "/C ping 127.0.0.1 -n 3 >NUL & rmdir /S /Q ""{app}"""; Flags: runhidden nowait; RunOnceId: "RemoveBeszelAgentManagerFolder"
 
@@ -66,6 +67,7 @@ Name: "{commondesktop}\{#AppName}"; Filename: "{app}\app\BeszelAgentManager.exe"
 [Run]
 Filename: "{cmd}"; Parameters: "/C icacls ""{commonappdata}\{#AppName}"" /inheritance:e /grant *S-1-5-32-545:(OI)(CI)M *S-1-5-11:(OI)(CI)M /T /C"; Flags: runhidden waituntilterminated
 Filename: "{cmd}"; Parameters: "/C if exist ""{autopf}\Beszel-Agent"" icacls ""{autopf}\Beszel-Agent"" /inheritance:e /grant *S-1-5-32-545:(OI)(CI)RX *S-1-5-11:(OI)(CI)RX *S-1-5-32-544:(OI)(CI)F *S-1-5-18:(OI)(CI)F /T /C"; Flags: runhidden waituntilterminated
+Filename: "{app}\app\BeszelAgentManager.Helper.exe"; Parameters: "--install-background-service"; Flags: runhidden waituntilterminated
 Filename: "{app}\app\BeszelAgentManager.exe"; WorkingDir: "{app}\app"; Flags: nowait skipifsilent runasoriginaluser
 
 [Code]
@@ -86,6 +88,14 @@ var
   ResultCode: Integer;
 begin
   Result := '';
+  Exec(
+    ExpandConstant('{sys}\sc.exe'),
+    'stop "BeszelAgentManager Background"',
+    '',
+    SW_HIDE,
+    ewWaitUntilTerminated,
+    ResultCode
+  );
   if WizardIsTaskSelected('cleanlegacyroot') then
   begin
     Exec(

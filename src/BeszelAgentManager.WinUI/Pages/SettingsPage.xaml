@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="BeszelAgentManager.WinUI.Pages.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:local="using:BeszelAgentManager.WinUI.Pages"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Grid Padding="24,16,24,16" RowSpacing="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Settings" />
+        <TextBlock
+            Grid.Row="1"
+            MaxWidth="760"
+            HorizontalAlignment="Left"
+            Text="This WinUI migration starts with read-only status and update checks. Editable configuration and elevated service operations will move here after the backend is split from the current Python UI."
+            TextWrapping="Wrap" />
+        <StackPanel Grid.Row="2" Spacing="8">
+            <TextBlock FontWeight="SemiBold" Text="Migration target" />
+            <TextBlock Text="Run the main app without elevation, and elevate only the helper process for service, firewall, Defender, and Program Files changes." TextWrapping="Wrap" />
+        </StackPanel>
+    </Grid>
+</Page>

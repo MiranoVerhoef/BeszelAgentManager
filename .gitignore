@@ -25,6 +25,10 @@ TestResults.xml
 build/
 dist/
 installer-dist/
+winui-debug-dist/
+BeszelAgentManager-WinUI-debug.zip
+bin/
+obj/
 *.build/
 *.dist/
 *.onefile-build/

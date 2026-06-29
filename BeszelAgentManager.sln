@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{6E8FB8C5-C2EA-474F-AF04-B48BFB252B67}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BeszelAgentManager.WinUI", "src\BeszelAgentManager.WinUI\BeszelAgentManager.WinUI.csproj", "{F6C988FB-CD6E-4E15-9F19-A639CCB68741}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BeszelAgentManager.Helper", "src\BeszelAgentManager.Helper\BeszelAgentManager.Helper.csproj", "{D3A6533A-F683-48A6-BF6E-ABD6D224237F}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F6C988FB-CD6E-4E15-9F19-A639CCB68741}.Debug|x64.ActiveCfg = Debug|x64
+		{F6C988FB-CD6E-4E15-9F19-A639CCB68741}.Debug|x64.Build.0 = Debug|x64
+		{F6C988FB-CD6E-4E15-9F19-A639CCB68741}.Release|x64.ActiveCfg = Release|x64
+		{F6C988FB-CD6E-4E15-9F19-A639CCB68741}.Release|x64.Build.0 = Release|x64
+		{D3A6533A-F683-48A6-BF6E-ABD6D224237F}.Debug|x64.ActiveCfg = Debug|x64
+		{D3A6533A-F683-48A6-BF6E-ABD6D224237F}.Debug|x64.Build.0 = Debug|x64
+		{D3A6533A-F683-48A6-BF6E-ABD6D224237F}.Release|x64.ActiveCfg = Release|x64
+		{D3A6533A-F683-48A6-BF6E-ABD6D224237F}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{F6C988FB-CD6E-4E15-9F19-A639CCB68741} = {6E8FB8C5-C2EA-474F-AF04-B48BFB252B67}
+		{D3A6533A-F683-48A6-BF6E-ABD6D224237F} = {6E8FB8C5-C2EA-474F-AF04-B48BFB252B67}
+	EndGlobalSection
+EndGlobal

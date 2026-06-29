@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="BeszelAgentManager.WinUI.Pages.AgentPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <ScrollViewer>
+    <Grid Padding="24,16,24,24" RowSpacing="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Agent" />
+
+        <Grid Grid.Row="1" ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Padding="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8">
+                <StackPanel Spacing="8">
+                    <TextBlock FontWeight="SemiBold" Text="Service" />
+                    <TextBlock x:Name="ServiceNameText" />
+                    <TextBlock x:Name="ServiceStateText" />
+                    <TextBlock x:Name="ServicePidText" />
+                    <TextBlock x:Name="ServiceBinaryText" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="1" Padding="16" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="8">
+                <StackPanel Spacing="8">
+                    <TextBlock FontWeight="SemiBold" Text="Agent executable" />
+                    <TextBlock x:Name="AgentPathText" TextWrapping="Wrap" />
+                    <TextBlock x:Name="AgentExistsText" />
+                    <TextBlock x:Name="AgentVersionText" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="12">
+            <Button x:Name="RefreshButton" Click="RefreshButton_Click" Content="Refresh" />
+            <TextBlock VerticalAlignment="Center" Text="Read-only status. Install/update actions come after the elevated helper is added." />
+        </StackPanel>
+    </Grid>
+    </ScrollViewer>
+</Page>

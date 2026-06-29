@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "BeszelAgentManager.WinUI (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "BeszelAgentManager.WinUI (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
