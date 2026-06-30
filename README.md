@@ -124,7 +124,8 @@ Output:
 ```text
 installer-dist\BeszelAgentManagerSetup.exe
 ```
-## Windows binaries for BeszelAgentManager are digitally signed through the SignPath Foundation.
+Placeholder:
+#### Windows binaries for BeszelAgentManager are digitally signed through the SignPath Foundation.
 
 ## Credits
 
