@@ -5,6 +5,8 @@ BeszelAgentManager is a Windows app that makes it easy to **install, configure, 
 Vibe Coding is used.
 <img width="1000" height="810" alt="Schermafbeelding 2026-03-18 142806" src="https://github.com/user-attachments/assets/01192507-9b3d-4fa7-9107-c1dd825cdd8b" />
 
+### Windows binaries for BeszelAgentManager are digitally signed through the SignPath Foundation.
+
 ## What it does
 
 - Installs the Beszel agent to:  
