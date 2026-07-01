@@ -159,12 +159,6 @@ Output:
 installer-dist\BeszelAgentManagerSetup.exe
 ```
 
-## Code signing
-
-SignPath Foundation integration is reserved for the stable release. Treat RC artifacts as unsigned unless Windows reports a valid Authenticode signature.
-
-The GitHub Actions release workflow performs the same publish, NSSM validation, installer build, and checksum generation. Pull requests produce a test installer artifact; stable and RC releases are controlled by `VERSION` and `RELEASE_CHANNEL`.
-
 ## Repository layout
 
 ```text
@@ -175,10 +169,6 @@ tests/                         Unit and guarded integration validation
 installer/                     Inno Setup installer
 docs/                          Architecture, security, migration, and recovery
 ```
-
-## Development status
-
-Version `4.0.0` remains on the RC channel until the pull-request installer artifact and final release checklist pass.
 
 ## Credits
 
