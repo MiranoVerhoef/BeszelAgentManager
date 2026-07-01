@@ -9,6 +9,12 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BeszelAgentManager.WinUI", 
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BeszelAgentManager.Helper", "src\BeszelAgentManager.Helper\BeszelAgentManager.Helper.csproj", "{D3A6533A-F683-48A6-BF6E-ABD6D224237F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BeszelAgentManager.Core", "src\BeszelAgentManager.Core\BeszelAgentManager.Core.csproj", "{77B676A1-865A-4C8B-84E8-9E433170B445}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{61FF88AF-FE37-4C75-9C17-910D64E5BB01}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BeszelAgentManager.Core.Tests", "tests\BeszelAgentManager.Core.Tests\BeszelAgentManager.Core.Tests.csproj", "{A9F41AEF-9DAA-4DB9-8DF2-12D908DBB881}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -26,9 +32,19 @@ Global
 		{D3A6533A-F683-48A6-BF6E-ABD6D224237F}.Debug|x64.Build.0 = Debug|x64
 		{D3A6533A-F683-48A6-BF6E-ABD6D224237F}.Release|x64.ActiveCfg = Release|x64
 		{D3A6533A-F683-48A6-BF6E-ABD6D224237F}.Release|x64.Build.0 = Release|x64
+		{77B676A1-865A-4C8B-84E8-9E433170B445}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{77B676A1-865A-4C8B-84E8-9E433170B445}.Debug|x64.Build.0 = Debug|Any CPU
+		{77B676A1-865A-4C8B-84E8-9E433170B445}.Release|x64.ActiveCfg = Release|Any CPU
+		{77B676A1-865A-4C8B-84E8-9E433170B445}.Release|x64.Build.0 = Release|Any CPU
+		{A9F41AEF-9DAA-4DB9-8DF2-12D908DBB881}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A9F41AEF-9DAA-4DB9-8DF2-12D908DBB881}.Debug|x64.Build.0 = Debug|Any CPU
+		{A9F41AEF-9DAA-4DB9-8DF2-12D908DBB881}.Release|x64.ActiveCfg = Release|Any CPU
+		{A9F41AEF-9DAA-4DB9-8DF2-12D908DBB881}.Release|x64.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{F6C988FB-CD6E-4E15-9F19-A639CCB68741} = {6E8FB8C5-C2EA-474F-AF04-B48BFB252B67}
 		{D3A6533A-F683-48A6-BF6E-ABD6D224237F} = {6E8FB8C5-C2EA-474F-AF04-B48BFB252B67}
+		{77B676A1-865A-4C8B-84E8-9E433170B445} = {6E8FB8C5-C2EA-474F-AF04-B48BFB252B67}
+		{A9F41AEF-9DAA-4DB9-8DF2-12D908DBB881} = {61FF88AF-FE37-4C75-9C17-910D64E5BB01}
 	EndGlobalSection
 EndGlobal

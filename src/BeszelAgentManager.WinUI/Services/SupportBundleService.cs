@@ -103,6 +103,11 @@ internal sealed partial class SupportBundleService
         string[] arguments,
         CancellationToken cancellationToken)
     {
+        fileName = fileName.ToLowerInvariant() switch
+        {
+            "sc.exe" or "schtasks.exe" => Path.Combine(Environment.SystemDirectory, fileName),
+            _ => throw new InvalidOperationException($"Diagnostic executable is not allowlisted: {fileName}"),
+        };
         var startInfo = new ProcessStartInfo
         {
             FileName = fileName,

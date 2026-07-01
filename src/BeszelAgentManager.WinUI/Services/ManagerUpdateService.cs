@@ -14,11 +14,9 @@ internal sealed class ManagerUpdateService
         return releases.FirstOrDefault();
     }
 
-    private async Task<IReadOnlyList<ManagerRelease>> FetchReleasesAsync(bool includePrereleases, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<ManagerRelease>> FetchReleasesAsync(bool includePrereleases, CancellationToken cancellationToken = default)
     {
-        var url = includePrereleases
-            ? $"https://api.github.com/repos/{AppInfo.ManagerRepo}/releases?per_page=50"
-            : $"https://api.github.com/repos/{AppInfo.ManagerRepo}/releases/latest";
+        var url = $"https://api.github.com/repos/{AppInfo.ManagerRepo}/releases?per_page=50";
 
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         await ApplyGitHubHeadersAsync(request, cancellationToken);

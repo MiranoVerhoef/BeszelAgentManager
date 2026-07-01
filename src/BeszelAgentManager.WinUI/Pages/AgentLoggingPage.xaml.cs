@@ -54,15 +54,15 @@ public sealed partial class AgentLoggingPage : Page
         App.MainWindow.ShowActionStatus(
             InfoBarSeverity.Informational,
             "Rotating agent log",
-            "Approve the administrator prompt if Windows asks.");
+            "The background service is rotating the agent log.");
         try
         {
-            var exitCode = await App.ElevatedHelper.RotateAgentLogsAsync();
+            var exitCode = await App.Broker.RotateAgentLogsAsync();
             if (exitCode != 0)
             {
                 throw new InvalidOperationException(exitCode == 24
                     ? "The agent log could not be rotated. Close any program holding the log file and try again."
-                    : $"The elevated helper returned error code {exitCode}.");
+                    : $"The background service returned error code {exitCode}.");
             }
 
             App.Logger.Info("Manual agent log rotation completed");

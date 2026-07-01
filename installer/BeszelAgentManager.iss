@@ -36,25 +36,26 @@ VersionInfoProductVersion={#AppVersion}
 VersionInfoVersion={#AppVersion}.0
 
 [Files]
-Source: "{#DistDir}\*"; DestDir: "{app}\app"; Excludes: "nssm.exe"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "{#DistDir}\nssm.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#DistDir}\*"; DestDir: "{app}\app"; Excludes: "nssm.exe,*.pdb"; Flags: replacesameversion recursesubdirs createallsubdirs
+Source: "{#DistDir}\nssm.exe"; DestDir: "{commonappdata}\{#AppName}\nssm"; Flags: ignoreversion onlyifdoesntexist
 
 [Dirs]
-Name: "{commonappdata}\{#AppName}"; Permissions: users-modify
+Name: "{commonappdata}\{#AppName}"
 
 [Tasks]
-Name: "cleanlegacyroot"; Description: "Stop old manager and clean legacy Program Files layout"; GroupDescription: "Migration:"; Check: IsLegacyRootInstall; Flags: checkedonce
 Name: "startmenuicon"; Description: "Create a Start Menu shortcut"; GroupDescription: "Shortcuts:"; Flags: checkedonce
 Name: "desktopicon"; Description: "Create a Desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
 
 [InstallDelete]
-Type: filesandordirs; Name: "{app}\*"
+Type: filesandordirs; Name: "{app}\*"; Check: ShouldCleanApplicationDirectory
 Type: files; Name: "{commonprograms}\{#AppName}.lnk"
+Type: files; Name: "{app}\app\*.pdb"
+Type: files; Name: "{app}\app\helper\*.pdb"
+Type: files; Name: "{app}\app\BeszelAgentManager.Helper.*"
 
 [UninstallRun]
-Filename: "{app}\app\BeszelAgentManager.Helper.exe"; Parameters: "--remove-background-service"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveBeszelAgentManagerBackgroundService"
+Filename: "{app}\app\helper\BeszelAgentManager.Helper.exe"; Parameters: "{code:GetUninstallHelperParameters}"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveBeszelAgentManagerBackgroundService"
 Filename: "{cmd}"; Parameters: "/C taskkill /IM ""BeszelAgentManager.exe"" /T /F"; Flags: runhidden waituntilterminated; RunOnceId: "StopBeszelAgentManager"
-Filename: "{cmd}"; Parameters: "/C ping 127.0.0.1 -n 3 >NUL & rmdir /S /Q ""{app}"""; Flags: runhidden nowait; RunOnceId: "RemoveBeszelAgentManagerFolder"
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
@@ -65,22 +66,87 @@ Name: "{group}\{#AppName}"; Filename: "{app}\app\BeszelAgentManager.exe"; Workin
 Name: "{commondesktop}\{#AppName}"; Filename: "{app}\app\BeszelAgentManager.exe"; WorkingDir: "{app}\app"; Tasks: desktopicon
 
 [Run]
-Filename: "{cmd}"; Parameters: "/C icacls ""{commonappdata}\{#AppName}"" /inheritance:e /grant *S-1-5-32-545:(OI)(CI)M *S-1-5-11:(OI)(CI)M /T /C"; Flags: runhidden waituntilterminated
 Filename: "{cmd}"; Parameters: "/C if exist ""{autopf}\Beszel-Agent"" icacls ""{autopf}\Beszel-Agent"" /inheritance:e /grant *S-1-5-32-545:(OI)(CI)RX *S-1-5-11:(OI)(CI)RX *S-1-5-32-544:(OI)(CI)F *S-1-5-18:(OI)(CI)F /T /C"; Flags: runhidden waituntilterminated
-Filename: "{app}\app\BeszelAgentManager.Helper.exe"; Parameters: "--install-background-service"; Flags: runhidden waituntilterminated
-Filename: "{app}\app\BeszelAgentManager.exe"; WorkingDir: "{app}\app"; Flags: nowait skipifsilent runasoriginaluser
+Filename: "{app}\app\BeszelAgentManager.exe"; Description: "Open BeszelAgentManager"; WorkingDir: "{app}\app"; Flags: nowait postinstall skipifsilent unchecked runasoriginaluser
 
 [Code]
-function IsLegacyRootInstall(): Boolean;
+var
+  KeepAgentLogs: Boolean;
+
+function InitializeUninstall(): Boolean;
 begin
-  Result :=
+  if UninstallSilent then
+    KeepAgentLogs := True
+  else
+    KeepAgentLogs := MsgBox(
+      'Keep historical Beszel Agent logs?',
+      mbConfirmation,
+      MB_YESNO or MB_DEFBUTTON1) = IDYES;
+  Result := True;
+end;
+
+function GetUninstallHelperParameters(Param: String): String;
+begin
+  Result := '--remove-background-service';
+  if not KeepAgentLogs then
+    Result := Result + ' --remove-agent-logs';
+end;
+
+function ShouldCleanApplicationDirectory(): Boolean;
+var
+  InstalledVersion: Int64;
+  TargetVersion: Int64;
+  ManagerExecutable: String;
+  IsLegacyLayout: Boolean;
+  IsRollback: Boolean;
+begin
+  ManagerExecutable := ExpandConstant('{app}\app\BeszelAgentManager.exe');
+  IsLegacyLayout :=
     FileExists(ExpandConstant('{app}\BeszelAgentManager.exe')) or
-    FileExists(ExpandConstant('{app}\python3.dll')) or
-    FileExists(ExpandConstant('{app}\python312.dll')) or
-    FileExists(ExpandConstant('{app}\python313.dll')) or
-    FileExists(ExpandConstant('{app}\python314.dll')) or
-    DirExists(ExpandConstant('{app}\charset_normalizer')) or
-    DirExists(ExpandConstant('{app}\PIL'));
+    (DirExists(ExpandConstant('{app}\app')) and
+      not FileExists(ExpandConstant('{app}\app\BeszelAgentManager.Core.dll')));
+
+  IsRollback :=
+    GetPackedVersion(ManagerExecutable, InstalledVersion) and
+    StrToVersion('{#AppVersion}', TargetVersion) and
+    (ComparePackedVersion(InstalledVersion, TargetVersion) > 0);
+
+  Result := IsLegacyLayout or IsRollback;
+  if Result then
+    Log('A legacy, incomplete, or rollback installation requires a full application-directory refresh.')
+  else
+    Log('Using version-aware incremental application-file replacement.');
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ResultCode: Integer;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    if not Exec(
+      ExpandConstant('{app}\app\helper\BeszelAgentManager.Helper.exe'),
+      '--install-background-service',
+      '',
+      SW_HIDE,
+      ewWaitUntilTerminated,
+      ResultCode) then
+      RaiseException('Could not start the BeszelAgentManager background-service installer.');
+
+    if ResultCode <> 0 then
+      RaiseException(Format('The BeszelAgentManager background service could not be installed (exit code %d).', [ResultCode]));
+  end;
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    RegDeleteValue(
+      HKCU,
+      'Software\Microsoft\Windows\CurrentVersion\Run',
+      '{#AppName}');
+  end;
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -89,22 +155,19 @@ var
 begin
   Result := '';
   Exec(
-    ExpandConstant('{sys}\sc.exe'),
-    'stop "BeszelAgentManager Background"',
+    ExpandConstant('{sys}\net.exe'),
+    'stop "BeszelAgentManager Background" /y',
     '',
     SW_HIDE,
     ewWaitUntilTerminated,
     ResultCode
   );
-  if WizardIsTaskSelected('cleanlegacyroot') then
-  begin
-    Exec(
-      ExpandConstant('{cmd}'),
-      '/C taskkill /IM "BeszelAgentManager.exe" /T /F',
-      '',
-      SW_HIDE,
-      ewWaitUntilTerminated,
-      ResultCode
-    );
-  end;
+  Exec(
+    ExpandConstant('{cmd}'),
+    '/C taskkill /IM "BeszelAgentManager.exe" /T /F',
+    '',
+    SW_HIDE,
+    ewWaitUntilTerminated,
+    ResultCode
+  );
 end;

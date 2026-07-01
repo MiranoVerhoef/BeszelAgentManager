@@ -6,6 +6,8 @@ using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Dispatching;
 using Windows.Graphics;
 using H.NotifyIcon.Core;
+using System.Diagnostics;
+using Microsoft.UI.Xaml.Media;
 
 namespace BeszelAgentManager.WinUI;
 
@@ -20,11 +22,18 @@ public sealed partial class MainWindow : Window
     private readonly DispatcherQueueTimer _hubStatusTimer;
     private readonly DispatcherQueueTimer _serviceStatusTimer;
     private readonly DispatcherQueueTimer _globalNotificationTimer;
+    private readonly DispatcherQueueTimer _managerUpdateTimer;
     private string _hubUrl = string.Empty;
     private bool _refreshingServiceStatus;
     private string _lastServiceState = string.Empty;
     private string _lastHubState = string.Empty;
     private bool _exitRequested;
+    private bool _managerUpdateAvailable;
+    private bool _checkingManagerUpdate;
+    private bool _firstFrameRendered;
+    private bool _hiddenPrewarmInProgress;
+    private bool _showAfterHiddenPrewarm;
+    private PointInt32 _prewarmOriginalPosition;
 
     public MainWindow()
     {
@@ -44,6 +53,7 @@ public sealed partial class MainWindow : Window
         AppWindow.Resize(GetDefaultWindowSize());
         _trayIconService = new TrayIconService(
             ShowFromTray,
+            OpenHubFromTray,
             () => RunTrayServiceActionAsync("start", "Start service"),
             () => RunTrayServiceActionAsync("stop", "Stop service"),
             () => RunTrayServiceActionAsync("restart", "Restart service"),
@@ -76,6 +86,12 @@ public sealed partial class MainWindow : Window
             GlobalActionInfoBar.Visibility = Visibility.Collapsed;
         };
 
+        _managerUpdateTimer = DispatcherQueue.CreateTimer();
+        _managerUpdateTimer.Interval = TimeSpan.FromMinutes(15);
+        _managerUpdateTimer.Tick += async (_, _) => await CheckManagerUpdateInBackgroundAsync();
+        _managerUpdateTimer.Start();
+        _ = CheckManagerUpdateInBackgroundAsync();
+
     }
 
     private void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
@@ -102,9 +118,85 @@ public sealed partial class MainWindow : Window
     {
         DispatcherQueue.TryEnqueue(() =>
         {
+            if (!_firstFrameRendered)
+            {
+                ShowInitialWindow();
+                return;
+            }
+
             AppWindow.Show();
             Activate();
             App.Logger.Debug("Manager window restored from notification area");
+        });
+    }
+
+    public void ShowInitialWindow()
+    {
+        if (_firstFrameRendered)
+        {
+            AppWindow.Show();
+            Activate();
+            return;
+        }
+
+        if (_hiddenPrewarmInProgress)
+        {
+            _showAfterHiddenPrewarm = true;
+            return;
+        }
+
+        SubscribeToFirstFrame();
+        Activate();
+    }
+
+    public void PrepareHiddenWindow()
+    {
+        if (_firstFrameRendered || _hiddenPrewarmInProgress)
+        {
+            return;
+        }
+
+        _hiddenPrewarmInProgress = true;
+        _prewarmOriginalPosition = AppWindow.Position;
+        AppWindow.Move(new PointInt32(-32000, -32000));
+        SubscribeToFirstFrame();
+        Activate();
+    }
+
+    private void SubscribeToFirstFrame()
+    {
+        if (Content is FrameworkElement root)
+        {
+            root.Loaded -= MainContent_Loaded;
+            root.Loaded += MainContent_Loaded;
+        }
+    }
+
+    private void MainContent_Loaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement root)
+        {
+            root.Loaded -= MainContent_Loaded;
+        }
+
+        DispatcherQueue.TryEnqueue(DispatcherQueuePriority.Low, () =>
+        {
+            _firstFrameRendered = true;
+            if (_hiddenPrewarmInProgress)
+            {
+                AppWindow.Hide();
+                AppWindow.Move(_prewarmOriginalPosition);
+                _hiddenPrewarmInProgress = false;
+                if (!_showAfterHiddenPrewarm)
+                {
+                    App.Logger.Debug("Manager window pre-rendered for hidden startup");
+                    return;
+                }
+
+                _showAfterHiddenPrewarm = false;
+                AppWindow.Show();
+            }
+            Activate();
         });
     }
 
@@ -117,22 +209,37 @@ public sealed partial class MainWindow : Window
         });
     }
 
+    private void OpenHubFromTray()
+    {
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            if (string.IsNullOrWhiteSpace(_hubUrl))
+            {
+                _trayIconService.ShowNotification("Hub URL not configured", "Configure a Hub URL in the Connection tab.", NotificationIcon.Warning);
+                return;
+            }
+
+            App.Logger.Info("Opening hub URL from tray");
+            OpenUrl(_hubUrl);
+        });
+    }
+
     private async Task RunTrayServiceActionAsync(string action, string displayName)
     {
         App.Logger.Info($"{displayName} requested from tray");
         try
         {
-            var exitCode = await App.ElevatedHelper.RunServiceActionAsync(action);
+            var exitCode = await App.Broker.RunServiceActionAsync(action);
             if (exitCode != 0)
             {
-                throw new InvalidOperationException($"The elevated helper returned exit code {exitCode}.");
+                throw new InvalidOperationException($"The background service returned exit code {exitCode}.");
             }
 
             await RefreshServiceStatusNowAsync();
             var message = action switch
             {
-                "start" => "Beszel Agent is starting.",
-                "stop" => "Beszel Agent is stopping.",
+                "start" => "Beszel Agent is running.",
+                "stop" => "Beszel Agent is stopped.",
                 "restart" => "Beszel Agent was restarted.",
                 _ => "The service action completed.",
             };
@@ -173,10 +280,10 @@ public sealed partial class MainWindow : Window
                 return;
             }
 
-            var exitCode = await App.ElevatedHelper.UpdateAgentAsync();
+            var exitCode = await App.Broker.UpdateAgentAsync();
             if (exitCode != 0)
             {
-                throw new InvalidOperationException($"The elevated helper returned exit code {exitCode}.");
+                throw new InvalidOperationException($"The background service returned exit code {exitCode}.");
             }
 
             await RefreshServiceStatusNowAsync();
@@ -272,6 +379,7 @@ public sealed partial class MainWindow : Window
             var status = await _systemStatusService.GetAgentStatusAsync();
             HeaderServiceText.Text = $"Service: {status.ServiceState}";
             HeaderAgentText.Text = $"Agent: {status.AgentVersion}";
+            _trayIconService.SetStatus(status.ServiceState, _managerUpdateAvailable);
             if (!string.Equals(_lastServiceState, status.ServiceState, StringComparison.OrdinalIgnoreCase))
             {
                 App.Logger.Debug($"Service status changed: {_lastServiceState} -> {status.ServiceState}");
@@ -281,6 +389,61 @@ public sealed partial class MainWindow : Window
         finally
         {
             _refreshingServiceStatus = false;
+        }
+    }
+
+    private async Task CheckManagerUpdateInBackgroundAsync()
+    {
+        if (_checkingManagerUpdate)
+        {
+            return;
+        }
+
+        _checkingManagerUpdate = true;
+        try
+        {
+            var config = await _configService.LoadAsync();
+            if (!config.ManagerUpdateNotifyEnabled)
+            {
+                _managerUpdateAvailable = false;
+                _trayIconService.SetStatus(_lastServiceState, false);
+                return;
+            }
+
+            if (DateTimeOffset.TryParse(config.ManagerUpdateLastCheckAt, out var lastCheck)
+                && DateTimeOffset.Now - lastCheck < TimeSpan.FromHours(Math.Clamp(config.ManagerUpdateCheckIntervalHours, 1, 168)))
+            {
+                return;
+            }
+
+            var release = await _managerUpdateService.FetchLatestReleaseAsync(config.ManagerUpdateIncludePrereleases);
+            config.ManagerUpdateLastCheckAt = DateTimeOffset.Now.ToString("O");
+            _managerUpdateAvailable = release is not null
+                && !VersionComparer.IsSameOrOlder(AppInfo.Version, release.Version)
+                && !string.Equals(
+                    VersionComparer.Normalize(config.ManagerUpdateSkipVersion),
+                    VersionComparer.Normalize(release.Version),
+                    StringComparison.OrdinalIgnoreCase);
+            _trayIconService.SetStatus(_lastServiceState, _managerUpdateAvailable && config.ManagerUpdateTrayBadgeEnabled);
+            if (_managerUpdateAvailable
+                && release is not null
+                && !string.Equals(config.ManagerUpdateLastNotifiedVersion, release.Version, StringComparison.OrdinalIgnoreCase))
+            {
+                _trayIconService.ShowNotification(
+                    "BeszelAgentManager update available",
+                    $"Version {release.Version} is available.");
+                config.ManagerUpdateLastNotifiedVersion = release.Version;
+            }
+
+            await _configService.SaveAsync(config);
+        }
+        catch (Exception ex)
+        {
+            App.Logger.Debug($"Background manager update check failed: {ex.Message}");
+        }
+        finally
+        {
+            _checkingManagerUpdate = false;
         }
     }
 
@@ -360,8 +523,7 @@ public sealed partial class MainWindow : Window
             var result = await dialog.ShowAsync();
             if (result == ContentDialogResult.Primary)
             {
-                App.Logger.Info($"Opening manager installer download for {release.Tag}");
-                OpenUrl(release.DownloadUrl);
+                await InstallManagerReleaseAsync(release);
             }
         }
         catch (Exception ex)
@@ -395,7 +557,7 @@ public sealed partial class MainWindow : Window
             async () =>
             {
                 await SaveConnectionConfigIfActiveAsync();
-                var exitCode = await App.ElevatedHelper.InstallAgentAsync();
+                var exitCode = await App.Broker.InstallAgentAsync();
                 if (exitCode == 0)
                 {
                     await MarkCurrentSettingsAppliedAsync();
@@ -405,7 +567,8 @@ public sealed partial class MainWindow : Window
 
                 return exitCode;
             },
-            "Beszel Agent was installed and configured.");
+            "Beszel Agent was installed and configured.",
+            afterSuccess: OfferDefenderExclusionAsync);
     }
 
     private async void UpdateAgentButton_Click(object sender, RoutedEventArgs e)
@@ -452,7 +615,7 @@ public sealed partial class MainWindow : Window
             ShowGlobalStatus(
                 InfoBarSeverity.Warning,
                 "Could not check agent version",
-                "Continuing with the update will let the elevated helper install the latest stable agent.");
+                "Continuing with the update will let the background service install the latest stable agent.");
         }
         finally
         {
@@ -466,7 +629,7 @@ public sealed partial class MainWindow : Window
             "Update agent",
             "Update Beszel Agent?",
             "This will download the latest stable Beszel Agent and restart the service.",
-            App.ElevatedHelper.UpdateAgentAsync,
+            App.Broker.UpdateAgentAsync,
             "Beszel Agent was updated.",
             afterSuccess: LogInstalledAgentVersionAsync);
     }
@@ -497,7 +660,7 @@ public sealed partial class MainWindow : Window
             "Uninstall agent",
             "Uninstall Beszel Agent?",
             string.Empty,
-            () => App.ElevatedHelper.UninstallAgentAsync(keepAgentLogs.Value),
+            () => App.Broker.UninstallAgentAsync(keepAgentLogs.Value),
             keepAgentLogs.Value
                 ? "Beszel Agent was uninstalled. Historical agent logs were kept."
                 : "Beszel Agent was uninstalled. Historical agent logs were removed.",
@@ -578,7 +741,7 @@ public sealed partial class MainWindow : Window
                 "Install agent version",
                 $"Install Beszel Agent {selected.Version}?",
                 "This will install the selected version and restart the service.",
-                () => App.ElevatedHelper.InstallAgentVersionAsync(selected.Version),
+                () => App.Broker.InstallAgentVersionAsync(selected.Version),
                 $"Beszel Agent {selected.Version} was installed.",
                 skipConfirmation: true,
                 afterSuccess: LogInstalledAgentVersionAsync);
@@ -626,7 +789,7 @@ public sealed partial class MainWindow : Window
 
             if (serviceChangesPending)
             {
-                var exitCode = await App.ElevatedHelper.ApplyConfigurationAsync();
+                var exitCode = await App.Broker.ApplyConfigurationAsync();
                 if (exitCode != 0)
                 {
                     throw new InvalidOperationException(GetFriendlyApplyError(exitCode));
@@ -640,7 +803,7 @@ public sealed partial class MainWindow : Window
 
             if (managerTaskChangesPending)
             {
-                var exitCode = await App.ElevatedHelper.ApplyManagerTasksAsync();
+                var exitCode = await App.Broker.ApplyManagerTasksAsync();
                 if (exitCode != 0)
                 {
                     throw new InvalidOperationException($"The automatic update schedule could not be updated (helper exit code {exitCode}).");
@@ -715,7 +878,7 @@ public sealed partial class MainWindow : Window
         ShowGlobalStatus(
             InfoBarSeverity.Informational,
             $"{operationName} in progress",
-            "Approve the administrator prompt if Windows asks. This can take a moment while files are downloaded or services are updated.");
+            "The background service is completing the operation. This can take a moment while files are downloaded or services are updated.");
 
         try
         {
@@ -772,9 +935,9 @@ public sealed partial class MainWindow : Window
         return exitCode switch
         {
             3 => "The agent or configuration file could not be found.",
-            4 => "The elevated helper could not apply the Beszel Agent service configuration.",
+            4 => "The background service could not apply the Beszel Agent service configuration.",
             53 => "NSSM could not be found. Reinstall BeszelAgentManager or place nssm.exe next to the installed app.",
-            _ => $"The elevated helper returned exit code {exitCode}.",
+            _ => $"The background service returned exit code {exitCode}.",
         };
     }
 
@@ -836,6 +999,44 @@ public sealed partial class MainWindow : Window
         App.Logger.Info($"Beszel Agent installed version: {status.AgentVersion}");
     }
 
+    private async Task OfferDefenderExclusionAsync()
+    {
+        var config = await _configService.LoadAsync();
+        if (config.DefenderExclusionPrompted || config.DefenderExclusionEnabled)
+        {
+            return;
+        }
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = NavView.XamlRoot,
+            Title = "Optional Microsoft Defender exclusion",
+            Content = new TextBlock
+            {
+                Text = "Add an exclusion only for the BeszelAgentManager installation folder? This is optional and should only be enabled if Defender interferes with the application.",
+                TextWrapping = TextWrapping.Wrap,
+            },
+            PrimaryButtonText = "Add exclusion",
+            CloseButtonText = "Not now",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        var add = await dialog.ShowAsync() == ContentDialogResult.Primary;
+        config.DefenderExclusionPrompted = true;
+        if (add)
+        {
+            var exitCode = await App.Broker.SetDefenderExclusionAsync(true);
+            if (exitCode != 0)
+            {
+                throw new InvalidOperationException($"The background service could not add the Defender exclusion (code {exitCode}).");
+            }
+
+            config.DefenderExclusionEnabled = true;
+            App.Logger.Info("Windows Defender exclusion added after agent installation");
+        }
+
+        await _configService.SaveAsync(config);
+    }
+
     private void SetAgentButtonsEnabled(bool enabled)
     {
         InstallAgentButton.IsEnabled = enabled;
@@ -856,7 +1057,7 @@ public sealed partial class MainWindow : Window
             22 => "The agent could not be downloaded or installed. Check the log and antivirus quarantine.",
             23 => "One or more agent folders could not be removed. Stop the service and close any open agent logs or folders, then try again.",
             53 => "NSSM could not be found. Reinstall BeszelAgentManager or place nssm.exe next to the installed app.",
-            _ => $"The elevated helper returned error code {exitCode}.",
+            _ => $"The background service returned error code {exitCode}.",
         };
     }
 
@@ -884,10 +1085,249 @@ public sealed partial class MainWindow : Window
         return string.Join(Environment.NewLine, lines);
     }
 
-    private void ManageManagerVersionButton_Click(object sender, RoutedEventArgs e)
+    private async void ManageManagerVersionButton_Click(object sender, RoutedEventArgs e)
     {
-        App.Logger.Info("Opening manager releases page");
-        OpenUrl($"https://github.com/{AppInfo.ManagerRepo}/releases");
+        App.Logger.Info("Manager version manager requested");
+        try
+        {
+            var config = await _configService.LoadAsync();
+            var releases = await _managerUpdateService.FetchReleasesAsync(config.ManagerUpdateIncludePrereleases);
+            if (releases.Count == 0)
+            {
+                ShowGlobalStatus(InfoBarSeverity.Warning, "No manager versions found", "No usable installer releases were returned by GitHub.");
+                return;
+            }
+
+            var picker = new ComboBox
+            {
+                ItemsSource = releases.Select(static release => $"{release.Version} ({release.Tag})").ToList(),
+                SelectedIndex = 0,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+            };
+            var notes = new TextBlock
+            {
+                Text = FullReleaseNotes(releases[0].Body),
+                TextWrapping = TextWrapping.Wrap,
+            };
+            picker.SelectionChanged += (_, _) =>
+            {
+                if (picker.SelectedIndex >= 0)
+                {
+                    notes.Text = FullReleaseNotes(releases[picker.SelectedIndex].Body);
+                }
+            };
+
+            var force = new CheckBox { Content = "Force reinstall even when this version is already installed" };
+            var versionSection = new StackPanel { Spacing = 10 };
+            versionSection.Children.Add(new TextBlock { Text = "Install, roll back, or reinstall", FontSize = 17, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+            versionSection.Children.Add(new TextBlock
+            {
+                Text = "Choose a release to install. Installing an older release performs a rollback.",
+                Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+                TextWrapping = TextWrapping.Wrap,
+            });
+            versionSection.Children.Add(picker);
+            versionSection.Children.Add(new ScrollViewer
+            {
+                Content = notes,
+                Height = 330,
+                Padding = new Thickness(10),
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            });
+            versionSection.Children.Add(force);
+
+            var panel = new StackPanel { Width = 650 };
+            panel.Children.Add(new Border
+            {
+                Padding = new Thickness(14),
+                CornerRadius = new CornerRadius(8),
+                BorderThickness = new Thickness(1),
+                BorderBrush = (Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"],
+                Background = (Brush)Application.Current.Resources["CardBackgroundFillColorDefaultBrush"],
+                Child = versionSection,
+            });
+
+            var dialog = new ContentDialog
+            {
+                XamlRoot = NavView.XamlRoot,
+                Title = "Manage Manager Version",
+                Content = panel,
+                PrimaryButtonText = "Install selected version",
+                CloseButtonText = "Cancel",
+                DefaultButton = ContentDialogButton.Primary,
+            };
+            var result = await dialog.ShowAsync();
+            if (result != ContentDialogResult.Primary)
+            {
+                return;
+            }
+
+            var selected = releases[Math.Max(0, picker.SelectedIndex)];
+            if (!force.IsChecked.GetValueOrDefault()
+                && string.Equals(VersionComparer.Normalize(selected.Version), VersionComparer.Normalize(AppInfo.Version), StringComparison.OrdinalIgnoreCase))
+            {
+                ShowGlobalStatus(InfoBarSeverity.Warning, "Force reinstall required", "Enable force reinstall to install the currently installed manager version.");
+                return;
+            }
+
+            await InstallManagerReleaseAsync(selected);
+        }
+        catch (Exception ex)
+        {
+            App.Logger.Error($"Manager version manager failed: {ex}");
+            ShowGlobalStatus(InfoBarSeverity.Error, "Manager version manager failed", ex.Message);
+        }
+    }
+
+    public async Task ShowManagerUpdateSettingsAsync()
+    {
+        var config = await _configService.LoadAsync();
+        var notify = new CheckBox { Content = "Notify me when a manager update is available", IsChecked = config.ManagerUpdateNotifyEnabled };
+        var badge = new CheckBox { Content = "Show update availability in the tray status", IsChecked = config.ManagerUpdateTrayBadgeEnabled };
+        var prereleases = new CheckBox { Content = "Include release candidates and other prereleases", IsChecked = config.ManagerUpdateIncludePrereleases };
+        var skipVersion = new TextBox
+        {
+            Header = "Skip notifications for version (optional)",
+            Text = config.ManagerUpdateSkipVersion,
+            PlaceholderText = "Example: 4.0.1",
+        };
+        var interval = new NumberBox
+        {
+            Minimum = 1,
+            Maximum = 168,
+            Value = Math.Clamp(config.ManagerUpdateCheckIntervalHours, 1, 168),
+            SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Compact,
+            Width = 100,
+        };
+        var intervalRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
+        intervalRow.Children.Add(new TextBlock { Text = "Check every", VerticalAlignment = VerticalAlignment.Center });
+        intervalRow.Children.Add(interval);
+        intervalRow.Children.Add(new TextBlock { Text = "hour(s)", VerticalAlignment = VerticalAlignment.Center });
+        var panel = new StackPanel { Spacing = 10, Width = 520 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = "Control automatic GitHub checks and update notifications. Updates are installed only when you explicitly choose a version or approve Download manager.",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+        });
+        panel.Children.Add(notify);
+        panel.Children.Add(badge);
+        panel.Children.Add(prereleases);
+        panel.Children.Add(intervalRow);
+        panel.Children.Add(skipVersion);
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = NavView.XamlRoot,
+            Title = "Manager update settings",
+            Content = panel,
+            PrimaryButtonText = "Save settings",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        config.ManagerUpdateNotifyEnabled = notify.IsChecked == true;
+        config.ManagerUpdateTrayBadgeEnabled = badge.IsChecked == true;
+        config.ManagerUpdateIncludePrereleases = prereleases.IsChecked == true;
+        config.ManagerUpdateCheckIntervalHours = double.IsNaN(interval.Value)
+            ? 6
+            : Math.Clamp((int)interval.Value, 1, 168);
+        config.ManagerUpdateSkipVersion = skipVersion.Text.Trim();
+        config.ManagerUpdateLastCheckAt = string.Empty;
+        await _configService.SaveAsync(config);
+        App.Logger.Info("Manager update settings saved");
+        ShowGlobalStatus(InfoBarSeverity.Success, "Manager update settings saved", "The new update preferences are active.");
+        _ = CheckManagerUpdateInBackgroundAsync();
+    }
+
+    private static string FullReleaseNotes(string? body)
+    {
+        return string.IsNullOrWhiteSpace(body) ? "(No release notes.)" : body.Trim();
+    }
+
+    private async Task InstallManagerReleaseAsync(ManagerRelease release)
+    {
+        var confirm = new ContentDialog
+        {
+            XamlRoot = NavView.XamlRoot,
+            Title = $"Install BeszelAgentManager {release.Version}?",
+            Content = new TextBlock
+            {
+                Text = "The background service will download and verify the official installer, close this app, install silently, and reopen the manager.",
+                TextWrapping = TextWrapping.Wrap,
+            },
+            PrimaryButtonText = "Install",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+        if (await confirm.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        var relauncher = StartUpdateRelauncher();
+        try
+        {
+            ShowGlobalStatus(InfoBarSeverity.Informational, "Preparing manager update", "Downloading and verifying the official installer.");
+            var exitCode = await App.Broker.InstallManagerVersionAsync(release.Tag);
+            if (exitCode != 0)
+            {
+                throw new InvalidOperationException(exitCode switch
+                {
+                    30 => "The selected release or its required installer/checksum assets could not be found.",
+                    31 => "The downloaded manager installer failed SHA-256 verification.",
+                    _ => $"The background service could not stage the manager installer (code {exitCode}).",
+                });
+            }
+
+            App.Logger.Info($"Manager update {release.Tag} verified and scheduled");
+            _exitRequested = true;
+            Close();
+        }
+        catch
+        {
+            if (!relauncher.HasExited)
+            {
+                relauncher.Kill(entireProcessTree: true);
+            }
+            relauncher.Dispose();
+            throw;
+        }
+    }
+
+    private static Process StartUpdateRelauncher()
+    {
+        var scriptPath = Path.Combine(Path.GetTempPath(), $"BeszelAgentManager-relaunch-{Guid.NewGuid():N}.ps1");
+        var executable = (Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "BeszelAgentManager.exe")).Replace("'", "''", StringComparison.Ordinal);
+        var script = $$"""
+            $deadline = (Get-Date).AddMinutes(15)
+            while (Get-Process -Id {{Environment.ProcessId}} -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 1 }
+            Start-Sleep -Seconds 8
+            while ((Get-Date) -lt $deadline) {
+              if (Test-Path -LiteralPath '{{executable}}') {
+                try {
+                  $stream = [System.IO.File]::Open('{{executable}}', 'Open', 'Read', 'ReadWrite')
+                  $stream.Dispose()
+                  Start-Process -FilePath '{{executable}}'
+                  break
+                } catch { }
+              }
+              Start-Sleep -Seconds 2
+            }
+            Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
+            """;
+        File.WriteAllText(scriptPath, script);
+        return Process.Start(new ProcessStartInfo
+        {
+            FileName = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"),
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            ArgumentList = { "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-File", scriptPath },
+        }) ?? throw new InvalidOperationException("Could not start the manager update relauncher.");
     }
 
     private void ReleaseLink_Click(object sender, RoutedEventArgs e)
@@ -995,9 +1435,16 @@ public sealed partial class MainWindow : Window
 
     private static void OpenUrl(string url)
     {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri)
+            || uri.Scheme is not ("http" or "https"))
+        {
+            App.Logger.Warning($"Blocked non-HTTP URL launch: {url}");
+            return;
+        }
+
         System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
         {
-            FileName = url,
+            FileName = uri.AbsoluteUri,
             UseShellExecute = true,
         });
     }

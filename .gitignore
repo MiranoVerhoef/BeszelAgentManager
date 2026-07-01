@@ -26,6 +26,8 @@ build/
 dist/
 installer-dist/
 winui-debug-dist/
+winui-*-dist/
+.tools/
 BeszelAgentManager-WinUI-debug.zip
 bin/
 obj/

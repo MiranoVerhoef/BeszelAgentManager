@@ -88,6 +88,7 @@ jobs:
           New-Item -ItemType Directory -Path build-assets -Force | Out-Null
 
           function Test-NssmBinary($Path) {
+            $expectedSha256 = "f689ee9af94b00e9e3f0bb072b34caaf207f32dcb4f5782fc9ca351df9a06c97"
             $file = Get-Item -Path $Path
             if ($file.Length -lt 200000) {
               Write-Host "Rejected NSSM candidate because it is too small: $Path ($($file.Length) bytes)"
@@ -97,10 +98,18 @@ jobs:
             try {
               $bytes = New-Object byte[] 2
               [void]$stream.Read($bytes, 0, 2)
-              return ($bytes[0] -eq 0x4d -and $bytes[1] -eq 0x5a)
+              if (-not ($bytes[0] -eq 0x4d -and $bytes[1] -eq 0x5a)) {
+                return $false
+              }
             } finally {
               $stream.Dispose()
             }
+            $actualSha256 = (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actualSha256 -ne $expectedSha256) {
+              Write-Host "Rejected NSSM candidate because SHA-256 did not match NSSM 2.24 x64: $Path"
+              return $false
+            }
+            return $true
           }
 
           function Find-UsableNssm($ArchivePath, $SourceName) {
@@ -165,18 +174,21 @@ jobs:
         shell: pwsh
         run: |
           $distDir = Join-Path $PWD "build\winui-dist"
-          dotnet publish `
+          dotnet build `
             .\src\BeszelAgentManager.WinUI\BeszelAgentManager.WinUI.csproj `
             -c Release `
             -p:Platform=x64 `
             -r win-x64 `
-            --self-contained true `
-            -o $distDir
+            --self-contained true
           if ($LASTEXITCODE -ne 0) {
-            throw "WinUI publish failed"
+            throw "WinUI build failed"
           }
+          $buildDir = Join-Path $PWD "src\BeszelAgentManager.WinUI\bin\x64\Release\net10.0-windows10.0.26100.0\win-x64"
+          New-Item -ItemType Directory -Path $distDir -Force | Out-Null
+          Copy-Item -Path (Join-Path $buildDir "*") -Destination $distDir -Recurse -Force
+          Remove-Item -Path (Join-Path $distDir "BeszelAgentManager.Helper.*") -Force -ErrorAction SilentlyContinue
           Copy-Item -Path build-assets\nssm.exe -Destination (Join-Path $distDir "nssm.exe") -Force
-          foreach ($required in @("BeszelAgentManager.exe", "BeszelAgentManager.Helper.exe", "nssm.exe")) {
+          foreach ($required in @("BeszelAgentManager.exe", "helper\BeszelAgentManager.Helper.exe", "nssm.exe")) {
             if (-not (Test-Path -LiteralPath (Join-Path $distDir $required))) {
               throw "Published output is missing $required"
             }

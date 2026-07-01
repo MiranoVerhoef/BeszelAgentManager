@@ -19,9 +19,9 @@ public partial class App : Application
 {
     private AppInstance? _mainInstance;
     public static MainWindow MainWindow { get; private set; } = null!;
-    internal static ElevatedHelperService ElevatedHelper { get; } = new();
+    internal static BackgroundBrokerClient Broker { get; } = new();
     internal static ManagerLogger Logger { get; } = new();
-    
+
     /// <summary>
     /// Initializes the singleton application object.  This is the first line of authored code
     /// executed, and as such is the logical equivalent of main() or WinMain().
@@ -50,12 +50,20 @@ public partial class App : Application
         var config = await new ConfigService().LoadAsync();
         Logger.SetDebugEnabled(config.DebugLogging);
         Logger.Info($"Starting WinUI manager v{AppInfo.Version}");
-        MainWindow = new MainWindow();
-        MainWindow.Activate();
-        if (Environment.GetCommandLineArgs().Any(static argument =>
-                string.Equals(argument, "--hidden", StringComparison.OrdinalIgnoreCase)))
+        if (new AutostartService().MigrateLegacyInstallTarget())
         {
-            MainWindow.HideToTray();
+            Logger.Info("Migrated the v3 manager autostart target to the v4 application path.");
+        }
+        MainWindow = new MainWindow();
+        var startHidden = Environment.GetCommandLineArgs().Any(static argument =>
+            string.Equals(argument, "--hidden", StringComparison.OrdinalIgnoreCase));
+        if (!startHidden)
+        {
+            MainWindow.ShowInitialWindow();
+        }
+        else
+        {
+            MainWindow.PrepareHiddenWindow();
         }
     }
 

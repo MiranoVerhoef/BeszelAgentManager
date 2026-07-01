@@ -4,21 +4,30 @@ using System.IO.Pipes;
 using System.Net.Http.Headers;
 using System.Text.RegularExpressions;
 using System.Security.AccessControl;
+using System.Security.Cryptography;
 using System.Security.Principal;
 using System.ServiceProcess;
 using System.Text.Json;
 using System.Text;
+using BeszelAgentManager.Core;
 using Microsoft.Win32;
 
 const string serviceName = "Beszel Agent";
 const string legacyServiceName = "BeszelAgentManager";
 const string agentRepo = "henrygd/beszel";
+const string managerRepo = "MiranoVerhoef/BeszelAgentManager";
 const string agentZipName = "beszel-agent_windows_amd64.zip";
+const string managerInstallerName = "BeszelAgentManagerSetup.exe";
+const string managerChecksumName = "SHA256SUMS.txt";
 const string firewallRuleName = "Beszel Agent";
 const string updateTaskName = "BeszelAgentManagerUpdate";
 const string agentLogRotateTaskName = "BeszelAgentManagerAgentLogRotate";
 const string restartTaskName = "BeszelAgentManagerRestartService";
 const string backgroundServiceName = "BeszelAgentManager Background";
+const string brokerPipeName = "BeszelAgentManager.Background.v1";
+const string brokerPolicyFileName = "broker-policy.json";
+const string backgroundRuntimeStateFileName = "background-runtime-state.json";
+const int brokerProtocolVersion = 1;
 const string autoUpdateStampName = "last-auto-update-agent.txt";
 const int ServiceAlreadyRunning = 1056;
 const int ServiceNotRunning = 1062;
@@ -38,9 +47,11 @@ if (args.Length == 1 && string.Equals(args[0], "--install-background-service", S
     return await InstallOrUpdateBackgroundServiceAsync();
 }
 
-if (args.Length == 1 && string.Equals(args[0], "--remove-background-service", StringComparison.OrdinalIgnoreCase))
+if (args.Length is 1 or 2 && string.Equals(args[0], "--remove-background-service", StringComparison.OrdinalIgnoreCase))
 {
-    return await RemoveBackgroundServiceAsync();
+    var removeAgentLogs = args.Length == 2
+        && string.Equals(args[1], "--remove-agent-logs", StringComparison.OrdinalIgnoreCase);
+    return await RemoveBackgroundServiceAsync(removeAgentLogs);
 }
 
 if (args.Length == 2 && string.Equals(args[0], "--apply-hub-url", StringComparison.OrdinalIgnoreCase))
@@ -48,95 +59,16 @@ if (args.Length == 2 && string.Equals(args[0], "--apply-hub-url", StringComparis
     return await ApplyHubUrlOverrideAsync(serviceName, args[1]);
 }
 
-if (args.Length != 3
-    || !string.Equals(args[0], "--server", StringComparison.OrdinalIgnoreCase)
-    || !int.TryParse(args[2], out var parentProcessId))
+if (args.Length == 1 && string.Equals(args[0], "--edit-service", StringComparison.OrdinalIgnoreCase))
 {
-    return 2;
+    return OpenServiceEditor(serviceName);
 }
 
-var pipeName = args[1];
-var pipeSecurity = CreatePipeSecurity();
-while (IsProcessRunning(parentProcessId))
-{
-    await using var pipe = NamedPipeServerStreamAcl.Create(
-        pipeName,
-        PipeDirection.InOut,
-        1,
-        PipeTransmissionMode.Byte,
-        PipeOptions.Asynchronous,
-        0,
-        0,
-        pipeSecurity);
-
-    using var waitCancellation = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-    try
-    {
-        await pipe.WaitForConnectionAsync(waitCancellation.Token);
-    }
-    catch (OperationCanceledException)
-    {
-        continue;
-    }
-
-    using var reader = new StreamReader(pipe, leaveOpen: true);
-    await using var writer = new StreamWriter(pipe, leaveOpen: true) { AutoFlush = true };
-    var rawCommand = (await reader.ReadLineAsync())?.Trim() ?? string.Empty;
-    var command = rawCommand.ToLowerInvariant();
-    var exitCode = command switch
-    {
-        "service start" => await StartServiceAsync(serviceName),
-        "service stop" => await StopServiceAsync(serviceName),
-        "service restart" => await RestartServiceAsync(serviceName),
-        "service edit" => OpenServiceEditor(serviceName),
-        "config apply" => await ApplyConfigurationAsync(serviceName),
-        _ when command.StartsWith("config hub-url ", StringComparison.Ordinal) =>
-            await ApplyHubUrlOverrideAsync(serviceName, rawCommand["config hub-url ".Length..].Trim()),
-        "manager tasks apply" => await ApplyManagerTasksAsync(),
-        "agent install" => await InstallOrUpdateAgentAsync(),
-        "agent update" => await UpdateAgentAsync(null),
-        "agent uninstall" => await UninstallAgentAsync(removeAgentLogs: true),
-        "agent uninstall keep-logs" => await UninstallAgentAsync(removeAgentLogs: false),
-        "agent logs rotate" => await RotateAgentLogsAsync(),
-        "agent fingerprint reset" => await ResetAgentFingerprintAsync(),
-        _ when command.StartsWith("agent install-version ", StringComparison.Ordinal) =>
-            await UpdateAgentAsync(rawCommand["agent install-version ".Length..].Trim()),
-        _ => 2,
-    };
-    await writer.WriteLineAsync(exitCode.ToString());
-}
-
-return 0;
-
-static PipeSecurity CreatePipeSecurity()
-{
-    var security = new PipeSecurity();
-    security.AddAccessRule(new PipeAccessRule(
-        new SecurityIdentifier(WellKnownSidType.AuthenticatedUserSid, null),
-        PipeAccessRights.ReadWrite,
-        AccessControlType.Allow));
-    security.AddAccessRule(new PipeAccessRule(
-        new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
-        PipeAccessRights.FullControl,
-        AccessControlType.Allow));
-    return security;
-}
-
-static bool IsProcessRunning(int processId)
-{
-    try
-    {
-        return !Process.GetProcessById(processId).HasExited;
-    }
-    catch
-    {
-        return false;
-    }
-}
+return 2;
 
 static async Task<int> RestartServiceAsync(string name)
 {
-    var stopResult = await StopServiceAsync(name);
+    var stopResult = await StopServiceAsync(name, waitForCompletion: false);
     if (stopResult != 0)
     {
         return stopResult;
@@ -171,6 +103,11 @@ static async Task<int> RestartServiceAsync(string name)
         }
     }
 
+    if (!await WaitForServiceStateAsync(name, "STOPPED", TimeSpan.FromSeconds(8)))
+    {
+        return 4;
+    }
+
     return await StartServiceAsync(name);
 }
 
@@ -197,6 +134,7 @@ static string? FindNssmPath()
     var baseDirectory = AppContext.BaseDirectory;
     var candidates = new[]
     {
+        Path.Combine(ProgramDataPath(), "BeszelAgentManager", "nssm", "nssm.exe"),
         Path.Combine(baseDirectory, "nssm.exe"),
         Path.Combine(Path.GetFullPath(Path.Combine(baseDirectory, "..")), "nssm.exe"),
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "BeszelAgentManager", "nssm.exe"),
@@ -210,21 +148,18 @@ static string? FindNssmPath()
         }
     }
 
-    var path = Environment.GetEnvironmentVariable("PATH") ?? string.Empty;
-    foreach (var directory in path.Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries))
-    {
-        var candidate = Path.Combine(directory.Trim(), "nssm.exe");
-        if (File.Exists(candidate))
-        {
-            return candidate;
-        }
-    }
-
     return null;
 }
 
 static async Task<int> InstallOrUpdateBackgroundServiceAsync()
 {
+    var policyResult = EnsureBrokerPolicy();
+    if (policyResult != 0)
+    {
+        return policyResult;
+    }
+    CleanupLegacyManagerArtifacts();
+
     var executablePath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "BeszelAgentManager.Helper.exe");
     var binaryPath = $"\"{executablePath}\" --background-service";
     var configure = await RunProcessAsync(
@@ -244,20 +179,87 @@ static async Task<int> InstallOrUpdateBackgroundServiceAsync()
         "sc.exe",
         ["failure", backgroundServiceName, "reset=", "86400", "actions=", "restart/5000/restart/15000/restart/30000"]);
     await RunProcessAsync("sc.exe", ["failureflag", backgroundServiceName, "1"]);
+    await DeleteLegacyScheduledTasksAsync();
 
     return await RestartServiceAsync(backgroundServiceName);
 }
 
-static async Task<int> RemoveBackgroundServiceAsync()
+static void CleanupLegacyManagerArtifacts()
 {
-    if (!await ServiceExistsAsync(backgroundServiceName))
+    var dataDirectory = Path.Combine(ProgramDataPath(), "BeszelAgentManager");
+    var legacyUpdates = Path.Combine(dataDirectory, "updates");
+    if (Directory.Exists(legacyUpdates))
     {
-        return 0;
+        ResetPrivilegedWorkingDirectory(legacyUpdates);
+        Directory.Delete(legacyUpdates);
     }
 
-    await StopServiceAsync(backgroundServiceName);
-    await RunProcessAsync("sc.exe", ["delete", backgroundServiceName]);
-    return 0;
+    TryDeleteFile(Path.Combine(dataDirectory, "update-beszel-agent.ps1"));
+    TryDeleteFile(Path.Combine(dataDirectory, "update-manager.ps1"));
+    TryDeleteFile(Path.Combine(dataDirectory, "acl_done.flag"));
+}
+
+static async Task<int> RemoveBackgroundServiceAsync(bool removeAgentLogs)
+{
+    try
+    {
+        await SetDefenderExclusionAsync(false);
+    }
+    catch
+    {
+    }
+
+    await DeleteLegacyScheduledTasksAsync();
+    if (await ServiceExistsAsync(backgroundServiceName))
+    {
+        await StopServiceAsync(backgroundServiceName);
+        await RunProcessAsync("sc.exe", ["delete", backgroundServiceName]);
+    }
+
+    try
+    {
+        CleanupManagerDataForUninstall(removeAgentLogs);
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        WriteHelperLastError(ex);
+        return 4;
+    }
+}
+
+static void CleanupManagerDataForUninstall(bool removeAgentLogs)
+{
+    var dataDirectory = Path.Combine(ProgramDataPath(), "BeszelAgentManager");
+    if (!Directory.Exists(dataDirectory))
+    {
+        return;
+    }
+
+    foreach (var name in new[] { "manager_logs", "support_bundles", "updates", "manager-update", "tmp_agent" })
+    {
+        DeletePrivilegedDirectory(Path.Combine(dataDirectory, name));
+    }
+    if (removeAgentLogs)
+    {
+        DeletePrivilegedDirectory(Path.Combine(dataDirectory, "agent_logs"));
+    }
+
+    foreach (var file in Directory.EnumerateFiles(dataDirectory))
+    {
+        File.Delete(file);
+    }
+}
+
+static void DeletePrivilegedDirectory(string path)
+{
+    if (!Directory.Exists(path))
+    {
+        return;
+    }
+
+    ResetPrivilegedWorkingDirectory(path);
+    Directory.Delete(path);
 }
 
 static int RunBackgroundWindowsService()
@@ -268,15 +270,16 @@ static int RunBackgroundWindowsService()
 
 static async Task RunBackgroundLoopAsync(CancellationToken cancellationToken)
 {
-    var state = LoadBackgroundState();
+    var failoverStore = new JsonDnsFailoverStateStore(
+        Path.Combine(ProgramDataPath(), "BeszelAgentManager", "dns-fallback-state.json"));
+    var state = failoverStore.Load();
+    var runtimeState = LoadBackgroundRuntimeState();
     WriteBackgroundLog("INFO", "Background service started");
     try
     {
-        while (!cancellationToken.IsCancellationRequested)
-        {
-            await CheckHubFailoverAsync(state, cancellationToken);
-            await Task.Delay(TimeSpan.FromMinutes(1), cancellationToken);
-        }
+        await Task.WhenAll(
+            RunBackgroundMonitoringLoopAsync(state, failoverStore, runtimeState, cancellationToken),
+            RunBrokerServerAsync(cancellationToken));
     }
     catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
     {
@@ -292,7 +295,426 @@ static async Task RunBackgroundLoopAsync(CancellationToken cancellationToken)
     }
 }
 
-static async Task CheckHubFailoverAsync(BackgroundState state, CancellationToken cancellationToken)
+static async Task RunBackgroundMonitoringLoopAsync(
+    DnsFailoverState state,
+    IDnsFailoverStateStore failoverStore,
+    BackgroundRuntimeState runtimeState,
+    CancellationToken cancellationToken)
+{
+    while (!cancellationToken.IsCancellationRequested)
+    {
+        await CheckHubFailoverAsync(state, failoverStore, cancellationToken);
+        await RunDueBackgroundSchedulesAsync(runtimeState, cancellationToken);
+
+        using var cycleCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var delay = Task.Delay(TimeSpan.FromMinutes(1), cycleCancellation.Token);
+        var reload = BrokerRuntime.ReloadSignal.WaitAsync(cycleCancellation.Token);
+        await Task.WhenAny(delay, reload);
+        cycleCancellation.Cancel();
+        try
+        {
+            await Task.WhenAll(delay, reload);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+        }
+    }
+}
+
+static async Task RunDueBackgroundSchedulesAsync(
+    BackgroundRuntimeState state,
+    CancellationToken cancellationToken)
+{
+    using var config = await LoadConfigurationAsync();
+    if (config is null)
+    {
+        return;
+    }
+
+    var now = DateTimeOffset.Now;
+    var changed = ReconcileScheduleState(config.RootElement, state, now);
+
+    if (state.NextAgentUpdateAt is { } updateDue && updateDue <= now)
+    {
+        await BrokerRuntime.MutationGate.WaitAsync(cancellationToken);
+        try
+        {
+            WriteBackgroundLog("INFO", "Scheduled agent update check started.");
+            var result = await UpdateAgentIfNewerAsync(config.RootElement);
+            state.LastAgentUpdateAt = now;
+            state.NextAgentUpdateAt = now.AddHours(state.AgentUpdateIntervalHours);
+            state.LastOperation = result == 0 ? "agent-update:success" : $"agent-update:failed:{result}";
+            WriteBackgroundLog(
+                result == 0 ? "INFO" : "ERROR",
+                result == 0
+                    ? $"Scheduled agent update check completed. Next check: {state.NextAgentUpdateAt:O}."
+                    : $"Scheduled agent update check failed with code {result}. Next check: {state.NextAgentUpdateAt:O}.");
+            changed = true;
+        }
+        finally
+        {
+            BrokerRuntime.MutationGate.Release();
+        }
+    }
+
+    if (state.NextPeriodicRestartAt is { } restartDue && restartDue <= now)
+    {
+        await BrokerRuntime.MutationGate.WaitAsync(cancellationToken);
+        try
+        {
+            WriteBackgroundLog("INFO", "Scheduled Beszel Agent restart started.");
+            var result = await RestartServiceAsync(serviceName);
+            state.LastPeriodicRestartAt = now;
+            state.NextPeriodicRestartAt = now.AddMinutes(state.PeriodicRestartIntervalMinutes);
+            state.LastOperation = result == 0 ? "periodic-restart:success" : $"periodic-restart:failed:{result}";
+            WriteBackgroundLog(
+                result == 0 ? "INFO" : "ERROR",
+                result == 0
+                    ? $"Scheduled Beszel Agent restart completed. Next restart: {state.NextPeriodicRestartAt:O}."
+                    : $"Scheduled Beszel Agent restart failed with code {result}. Next restart: {state.NextPeriodicRestartAt:O}.");
+            changed = true;
+        }
+        finally
+        {
+            BrokerRuntime.MutationGate.Release();
+        }
+    }
+
+    if (state.NextAgentLogRotationAt is { } rotationDue && rotationDue <= now)
+    {
+        await BrokerRuntime.MutationGate.WaitAsync(cancellationToken);
+        try
+        {
+            WriteBackgroundLog("INFO", "Scheduled agent log rotation started.");
+            var result = await RotateAgentLogsAsync();
+            state.LastAgentLogRotationAt = now;
+            state.NextAgentLogRotationAt = NextDailyAgentLogRotation(now);
+            state.LastOperation = result == 0 ? "agent-log-rotation:success" : $"agent-log-rotation:failed:{result}";
+            WriteBackgroundLog(
+                result == 0 ? "INFO" : "ERROR",
+                result == 0
+                    ? $"Scheduled agent log rotation completed. Next rotation: {state.NextAgentLogRotationAt:O}."
+                    : $"Scheduled agent log rotation failed with code {result}. Next rotation: {state.NextAgentLogRotationAt:O}.");
+            changed = true;
+        }
+        finally
+        {
+            BrokerRuntime.MutationGate.Release();
+        }
+    }
+
+    if (changed)
+    {
+        await SaveBackgroundRuntimeStateAsync(state);
+    }
+}
+
+static bool ReconcileScheduleState(JsonElement config, BackgroundRuntimeState state, DateTimeOffset now)
+{
+    var changed = false;
+    var updateEnabled = IsAutoUpdateEnabled(config);
+    var updateInterval = GetUpdateIntervalHours(config);
+    if (!updateEnabled)
+    {
+        if (state.NextAgentUpdateAt is not null || state.AgentUpdateIntervalHours != updateInterval)
+        {
+            state.NextAgentUpdateAt = null;
+            state.AgentUpdateIntervalHours = updateInterval;
+            changed = true;
+        }
+    }
+    else if (state.NextAgentUpdateAt is null || state.AgentUpdateIntervalHours != updateInterval)
+    {
+        state.AgentUpdateIntervalHours = updateInterval;
+        state.NextAgentUpdateAt = now.AddHours(updateInterval);
+        changed = true;
+    }
+
+    var restartEnabled = config.TryGetProperty("auto_restart_enabled", out var restartEnabledValue)
+        && restartEnabledValue.ValueKind == JsonValueKind.True;
+    var restartIntervalMinutes = GetPeriodicRestartIntervalMinutes(config);
+    if (!restartEnabled)
+    {
+        if (state.NextPeriodicRestartAt is not null || state.PeriodicRestartIntervalMinutes != restartIntervalMinutes)
+        {
+            state.NextPeriodicRestartAt = null;
+            state.PeriodicRestartIntervalMinutes = restartIntervalMinutes;
+            changed = true;
+        }
+    }
+    else if (state.NextPeriodicRestartAt is null || state.PeriodicRestartIntervalMinutes != restartIntervalMinutes)
+    {
+        state.PeriodicRestartIntervalMinutes = restartIntervalMinutes;
+        state.NextPeriodicRestartAt = now.AddMinutes(restartIntervalMinutes);
+        changed = true;
+    }
+
+    if (state.NextAgentLogRotationAt is null)
+    {
+        state.NextAgentLogRotationAt = NextDailyAgentLogRotation(now);
+        changed = true;
+    }
+
+    return changed;
+}
+
+static int GetPeriodicRestartIntervalMinutes(JsonElement config)
+{
+    var unit = config.TryGetProperty("auto_restart_interval_unit", out var unitProperty)
+        && unitProperty.ValueKind == JsonValueKind.String
+        && string.Equals(unitProperty.GetString(), "minutes", StringComparison.OrdinalIgnoreCase)
+            ? "minutes"
+            : "hours";
+    if (config.TryGetProperty("auto_restart_interval_value", out var valueProperty))
+    {
+        var selectedValue = valueProperty.ValueKind == JsonValueKind.Number && valueProperty.TryGetInt32(out var numericValue)
+            ? numericValue
+            : valueProperty.ValueKind == JsonValueKind.String && int.TryParse(valueProperty.GetString(), out var textValue)
+                ? textValue
+                : 0;
+        if (selectedValue > 0)
+        {
+            return unit == "minutes"
+                ? Math.Clamp(selectedValue, 1, 10080)
+                : Math.Clamp(selectedValue, 1, 168) * 60;
+        }
+    }
+
+    if (!config.TryGetProperty("auto_restart_interval_hours", out var legacyProperty))
+    {
+        return 24 * 60;
+    }
+
+    var legacyHours = legacyProperty.ValueKind == JsonValueKind.Number && legacyProperty.TryGetInt32(out var numeric)
+        ? numeric
+        : legacyProperty.ValueKind == JsonValueKind.String && int.TryParse(legacyProperty.GetString(), out var legacyTextValue)
+            ? legacyTextValue
+            : 24;
+    return Math.Clamp(legacyHours, 1, 168) * 60;
+}
+
+static DateTimeOffset NextDailyAgentLogRotation(DateTimeOffset now)
+{
+    var localNow = now.LocalDateTime;
+    var next = localNow.Date.AddMinutes(5);
+    if (next <= localNow)
+    {
+        next = next.AddDays(1);
+    }
+
+    return new DateTimeOffset(next, TimeZoneInfo.Local.GetUtcOffset(next));
+}
+
+static async Task RunBrokerServerAsync(CancellationToken cancellationToken)
+{
+    var policy = LoadBrokerPolicy();
+    if (policy is null
+        || policy.ProtocolVersion != brokerProtocolVersion
+        || !IsValidSid(policy.AuthorizedSid))
+    {
+        throw new InvalidOperationException("The background broker policy is missing or invalid.");
+    }
+
+    var pipeSecurity = CreateBrokerPipeSecurity(policy.AuthorizedSid);
+    WriteBackgroundLog(
+        "INFO",
+        $"Privileged broker listening for authorized account {DisplayAccountName(policy.AuthorizedSid)}.");
+
+    while (!cancellationToken.IsCancellationRequested)
+    {
+        var pipe = NamedPipeServerStreamAcl.Create(
+            brokerPipeName,
+            PipeDirection.InOut,
+            NamedPipeServerStream.MaxAllowedServerInstances,
+            PipeTransmissionMode.Byte,
+            PipeOptions.Asynchronous,
+            0,
+            0,
+            pipeSecurity);
+        try
+        {
+            await pipe.WaitForConnectionAsync(cancellationToken);
+            _ = HandleBrokerConnectionAsync(pipe, policy.AuthorizedSid, cancellationToken);
+        }
+        catch
+        {
+            await pipe.DisposeAsync();
+            throw;
+        }
+    }
+}
+
+static string DisplayAccountName(string sid)
+{
+    try
+    {
+        return new SecurityIdentifier(sid)
+            .Translate(typeof(NTAccount))
+            .Value;
+    }
+    catch
+    {
+        return "the configured installer account";
+    }
+}
+
+static async Task HandleBrokerConnectionAsync(
+    NamedPipeServerStream pipe,
+    string authorizedSid,
+    CancellationToken cancellationToken)
+{
+    await using (pipe)
+    {
+        BrokerRequest? request = null;
+        try
+        {
+            var callerSid = GetConnectedClientSid(pipe);
+            if (!string.Equals(callerSid, authorizedSid, StringComparison.OrdinalIgnoreCase))
+            {
+                await WriteBrokerResponseAsync(pipe, BrokerResponse.Failed(string.Empty, 5, "Access denied."));
+                return;
+            }
+
+            var utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+            using var reader = new StreamReader(pipe, utf8, leaveOpen: true);
+            using var requestTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            requestTimeout.CancelAfter(TimeSpan.FromSeconds(10));
+            var payload = await ReadBoundedLineAsync(reader, 16 * 1024, requestTimeout.Token);
+            if (string.IsNullOrWhiteSpace(payload))
+            {
+                await WriteBrokerResponseAsync(pipe, BrokerResponse.Failed(string.Empty, 2, "Invalid broker request."));
+                return;
+            }
+
+            request = JsonSerializer.Deserialize<BrokerRequest>(payload);
+            if (request is null
+                || request.ProtocolVersion != brokerProtocolVersion
+                || string.IsNullOrWhiteSpace(request.RequestId)
+                || request.RequestId.Length > 80)
+            {
+                await WriteBrokerResponseAsync(pipe, BrokerResponse.Failed(request?.RequestId ?? string.Empty, 2, "Unsupported broker request."));
+                return;
+            }
+
+            await BrokerRuntime.MutationGate.WaitAsync(cancellationToken);
+            try
+            {
+                var exitCode = await ExecuteBrokerActionAsync(request);
+                var response = exitCode == 0
+                    ? BrokerResponse.Completed(request.RequestId)
+                    : BrokerResponse.Failed(request.RequestId, exitCode, "The privileged action failed.");
+                await WriteBrokerResponseAsync(pipe, response);
+            }
+            finally
+            {
+                BrokerRuntime.MutationGate.Release();
+            }
+        }
+        catch (Exception ex)
+        {
+            WriteBackgroundLog("ERROR", $"Broker request failed: {ex}");
+            if (pipe.IsConnected)
+            {
+                await WriteBrokerResponseAsync(
+                    pipe,
+                    BrokerResponse.Failed(request?.RequestId ?? string.Empty, 1, "The privileged broker failed."));
+            }
+        }
+    }
+}
+
+static async Task<string?> ReadBoundedLineAsync(
+    StreamReader reader,
+    int maximumCharacters,
+    CancellationToken cancellationToken)
+{
+    var builder = new StringBuilder(Math.Min(maximumCharacters, 1024));
+    var character = new char[1];
+    while (builder.Length <= maximumCharacters)
+    {
+        var read = await reader.ReadAsync(character.AsMemory(), cancellationToken);
+        if (read == 0)
+        {
+            return builder.Length == 0 ? null : builder.ToString();
+        }
+
+        if (character[0] == '\n')
+        {
+            return builder.ToString().TrimEnd('\r');
+        }
+
+        builder.Append(character[0]);
+    }
+
+    return null;
+}
+
+static async Task<int> ExecuteBrokerActionAsync(BrokerRequest request)
+{
+    var arguments = request.Arguments ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    return request.Action switch
+    {
+        "service.start" => await StartServiceAsync(serviceName),
+        "service.stop" => await StopServiceAsync(serviceName),
+        "service.restart" => await RestartServiceAsync(serviceName),
+        "config.apply" => await ApplyConfigurationAndReloadAsync(),
+        "schedules.apply" => await ApplyManagerTasksAsync(),
+        "agent.install" => await InstallOrUpdateAgentAsync(),
+        "agent.update" => await UpdateAgentAsync(null),
+        "agent.installVersion" when TryReadVersion(arguments, out var version) => await UpdateAgentAsync(version),
+        "agent.uninstall" when TryReadBoolean(arguments, "keepLogs", out var keepLogs) => await UninstallAgentAsync(!keepLogs),
+        "agent.logs.rotate" => await RotateAgentLogsAsync(),
+        "agent.fingerprint.reset" => await ResetAgentFingerprintAsync(),
+        "defender.set" when TryReadBoolean(arguments, "enabled", out var enabled) => await SetDefenderExclusionAsync(enabled),
+        "manager.installVersion" when TryReadManagerTag(arguments, out var tag) => await InstallManagerVersionAsync(tag),
+        _ => 2,
+    };
+}
+
+static async Task WriteBrokerResponseAsync(NamedPipeServerStream pipe, BrokerResponse response)
+{
+    await using var writer = new StreamWriter(
+        pipe,
+        new UTF8Encoding(encoderShouldEmitUTF8Identifier: false),
+        leaveOpen: true)
+    { AutoFlush = true };
+    await writer.WriteLineAsync(JsonSerializer.Serialize(response));
+}
+
+static string? GetConnectedClientSid(NamedPipeServerStream pipe)
+{
+    string? sid = null;
+    pipe.RunAsClient(() =>
+    {
+        using var identity = WindowsIdentity.GetCurrent(true);
+        sid = identity?.User?.Value;
+    });
+    return sid;
+}
+
+static PipeSecurity CreateBrokerPipeSecurity(string authorizedSid)
+{
+    var security = new PipeSecurity();
+    security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+    security.AddAccessRule(new PipeAccessRule(
+        new SecurityIdentifier(WellKnownSidType.NetworkSid, null),
+        PipeAccessRights.FullControl,
+        AccessControlType.Deny));
+    security.AddAccessRule(new PipeAccessRule(
+        new SecurityIdentifier(authorizedSid),
+        PipeAccessRights.ReadWrite,
+        AccessControlType.Allow));
+    security.AddAccessRule(new PipeAccessRule(
+        new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+        PipeAccessRights.FullControl,
+        AccessControlType.Allow));
+    return security;
+}
+
+static async Task CheckHubFailoverAsync(
+    DnsFailoverState state,
+    IDnsFailoverStateStore stateStore,
+    CancellationToken cancellationToken)
 {
     using var config = await LoadConfigurationAsync();
     if (config is null)
@@ -304,76 +726,50 @@ static async Task CheckHubFailoverAsync(BackgroundState state, CancellationToken
     var primary = ReadConfigString(root, "hub_url");
     var fallback = ReadConfigString(root, "hub_url_ip_fallback");
     var enabled = root.TryGetProperty("hub_url_ip_fallback_enabled", out var enabledValue)
-        && enabledValue.ValueKind == JsonValueKind.True
-        && primary.Length > 0
-        && fallback.Length > 0;
+        && enabledValue.ValueKind == JsonValueKind.True;
+    var coordinator = new DnsFailoverCoordinator(
+        new DelegateDnsResolver(CanResolveHostAsync),
+        new DelegateAgentHubUrlConfiguration(ApplyBackgroundHubUrlAsync),
+        stateStore,
+        SystemFailoverClock.Instance);
+    var events = await coordinator.CheckAsync(
+        new(enabled, primary, fallback),
+        state,
+        cancellationToken);
 
-    if (!enabled)
+    foreach (var failoverEvent in events)
     {
-        if (state.Active && primary.Length > 0)
+        switch (failoverEvent.Kind)
         {
-            WriteBackgroundLog("INFO", "Hub URL IP fallback disabled. Switching Beszel Agent HUB_URL back to primary.");
-            if (await ApplyBackgroundHubUrlAsync(primary, "primary"))
-            {
-                state.Active = false;
-                state.SuccessStreak = 0;
-            }
-        }
-
-        await WriteDnsFallbackStateAsync(root, state.Active, state.SuccessStreak);
-        return;
-    }
-
-    var host = ExtractHost(primary);
-    if (host.Length == 0)
-    {
-        await WriteDnsFallbackStateAsync(root, state.Active, state.SuccessStreak);
-        return;
-    }
-
-    var dnsAvailable = await CanResolveHostAsync(host, cancellationToken);
-    if (!state.Active)
-    {
-        if (!dnsAvailable)
-        {
-            WriteBackgroundLog("WARN", $"Hub DNS resolution failed for {host}. Switching Beszel Agent HUB_URL to fallback.");
-            if (await ApplyBackgroundHubUrlAsync(fallback, "fallback"))
-            {
-                state.Active = true;
-                state.SuccessStreak = 0;
-            }
+            case DnsFailoverEventKind.FallbackActivated:
+                WriteBackgroundLog("WARN", $"Hub DNS resolution failed for {failoverEvent.Host}. Beszel Agent HUB_URL is using fallback.");
+                break;
+            case DnsFailoverEventKind.RecoveryProgress:
+                WriteBackgroundLog("INFO", $"Hub DNS resolution recovered for {failoverEvent.Host} ({failoverEvent.SuccessStreak}/5).");
+                break;
+            case DnsFailoverEventKind.PrimaryRestored:
+                WriteBackgroundLog("INFO", "Hub DNS is stable again. Beszel Agent HUB_URL is using primary.");
+                break;
+            case DnsFailoverEventKind.DisabledPrimaryRestored:
+                WriteBackgroundLog("INFO", "Hub URL IP fallback disabled. Beszel Agent HUB_URL is using primary.");
+                break;
         }
     }
-    else if (!dnsAvailable)
-    {
-        state.SuccessStreak = 0;
-    }
-    else
-    {
-        state.SuccessStreak++;
-        if (state.SuccessStreak is 1 or 5)
-        {
-            WriteBackgroundLog("INFO", $"Hub DNS resolution recovered for {host} ({state.SuccessStreak}/5).");
-        }
-
-        if (state.SuccessStreak >= 5)
-        {
-            WriteBackgroundLog("INFO", "Hub DNS is stable again. Switching Beszel Agent HUB_URL back to primary.");
-            if (await ApplyBackgroundHubUrlAsync(primary, "primary"))
-            {
-                state.Active = false;
-                state.SuccessStreak = 0;
-            }
-        }
-    }
-
-    await WriteDnsFallbackStateAsync(root, state.Active, state.SuccessStreak);
 }
 
 static async Task<bool> ApplyBackgroundHubUrlAsync(string hubUrl, string destination)
 {
     var encodedUrl = Convert.ToBase64String(Encoding.UTF8.GetBytes(hubUrl));
-    var exitCode = await ApplyHubUrlOverrideAsync(serviceName, encodedUrl);
+    await BrokerRuntime.MutationGate.WaitAsync();
+    int exitCode;
+    try
+    {
+        exitCode = await ApplyHubUrlOverrideAsync(serviceName, encodedUrl);
+    }
+    finally
+    {
+        BrokerRuntime.MutationGate.Release();
+    }
     if (exitCode != 0)
     {
         WriteBackgroundLog("ERROR", $"Hub URL switch to {destination} failed with helper exit code {exitCode}.");
@@ -398,29 +794,35 @@ static async Task<bool> CanResolveHostAsync(string host, CancellationToken cance
     }
 }
 
-static BackgroundState LoadBackgroundState()
+static BackgroundRuntimeState LoadBackgroundRuntimeState()
 {
     try
     {
-        var path = Path.Combine(ProgramDataPath(), "BeszelAgentManager", "dns-fallback-state.json");
+        var path = Path.Combine(ProgramDataPath(), "BeszelAgentManager", backgroundRuntimeStateFileName);
         if (File.Exists(path))
         {
-            using var document = JsonDocument.Parse(File.ReadAllText(path));
-            var root = document.RootElement;
-            return new BackgroundState
-            {
-                Active = root.TryGetProperty("active", out var active) && active.ValueKind == JsonValueKind.True,
-                SuccessStreak = root.TryGetProperty("success_streak", out var streak) && streak.TryGetInt32(out var value)
-                    ? Math.Clamp(value, 0, 5)
-                    : 0,
-            };
+            return JsonSerializer.Deserialize<BackgroundRuntimeState>(File.ReadAllText(path))
+                ?? new BackgroundRuntimeState();
         }
     }
-    catch
+    catch (Exception ex)
     {
+        WriteBackgroundLog("WARN", $"Could not load background runtime state: {ex.Message}");
     }
 
-    return new BackgroundState();
+    return new BackgroundRuntimeState();
+}
+
+static async Task SaveBackgroundRuntimeStateAsync(BackgroundRuntimeState state)
+{
+    var directory = Path.Combine(ProgramDataPath(), "BeszelAgentManager");
+    Directory.CreateDirectory(directory);
+    var path = Path.Combine(directory, backgroundRuntimeStateFileName);
+    var temporaryPath = $"{path}.{Environment.ProcessId}.tmp";
+    await File.WriteAllTextAsync(
+        temporaryPath,
+        JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true }));
+    File.Move(temporaryPath, path, overwrite: true);
 }
 
 static void WriteBackgroundLog(string level, string message)
@@ -456,13 +858,13 @@ static async Task<int> StartServiceAsync(string name)
     var result = await RunScAsync("start", name);
     if (result == 0 || result == ServiceAlreadyRunning)
     {
-        return 0;
+        return await WaitForServiceStateAsync(name, "RUNNING", TimeSpan.FromSeconds(30)) ? 0 : 4;
     }
 
     return result;
 }
 
-static async Task<int> StopServiceAsync(string name)
+static async Task<int> StopServiceAsync(string name, bool waitForCompletion = true)
 {
     var snapshot = await QueryServiceAsync(name);
     if (snapshot.Exists && IsStoppedState(snapshot.State))
@@ -473,10 +875,30 @@ static async Task<int> StopServiceAsync(string name)
     var result = await RunScAsync("stop", name);
     if (result == 0 || result == ServiceNotRunning)
     {
-        return 0;
+        return !waitForCompletion || await WaitForServiceStateAsync(name, "STOPPED", TimeSpan.FromSeconds(30)) ? 0 : 4;
     }
 
     return result;
+}
+
+static async Task<bool> WaitForServiceStateAsync(string name, string expectedState, TimeSpan timeout)
+{
+    var deadline = DateTime.UtcNow + timeout;
+    while (DateTime.UtcNow < deadline)
+    {
+        var snapshot = await QueryServiceAsync(name);
+        if (snapshot.Exists
+            && string.Equals(snapshot.State, expectedState, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        await Task.Delay(500);
+    }
+
+    var finalSnapshot = await QueryServiceAsync(name);
+    return finalSnapshot.Exists
+        && string.Equals(finalSnapshot.State, expectedState, StringComparison.OrdinalIgnoreCase);
 }
 
 static async Task<int> ApplyConfigurationAsync(string serviceName)
@@ -603,12 +1025,236 @@ static async Task<JsonDocument?> LoadConfigurationAsync()
         return null;
     }
 
-    return JsonDocument.Parse(await File.ReadAllTextAsync(configPath));
+    await using var stream = new FileStream(
+        configPath,
+        FileMode.Open,
+        FileAccess.Read,
+        FileShare.ReadWrite | FileShare.Delete,
+        bufferSize: 16 * 1024,
+        useAsync: true);
+    return await JsonDocument.ParseAsync(stream);
 }
 
 static string ProgramDataPath()
 {
     return Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+}
+
+static string BrokerPolicyPath()
+{
+    return Path.Combine(ProgramDataPath(), "BeszelAgentManager", brokerPolicyFileName);
+}
+
+static int EnsureBrokerPolicy()
+{
+    try
+    {
+        var path = BrokerPolicyPath();
+        var dataDirectory = Path.GetDirectoryName(path)!;
+        if (Directory.Exists(dataDirectory)
+            && File.GetAttributes(dataDirectory).HasFlag(FileAttributes.ReparsePoint))
+        {
+            throw new IOException("Manager data directory cannot be a reparse point.");
+        }
+
+        var existing = LoadBrokerPolicy();
+        var currentSid = WindowsIdentity.GetCurrent().User?.Value;
+        var authorizedSid = existing is not null && IsValidAccountSid(existing.AuthorizedSid)
+            ? existing.AuthorizedSid
+            : currentSid;
+        if (!IsValidAccountSid(authorizedSid))
+        {
+            return 5;
+        }
+
+        Directory.CreateDirectory(dataDirectory);
+        ApplyManagerDataSecurity(dataDirectory, authorizedSid!);
+        File.WriteAllText(
+            path,
+            JsonSerializer.Serialize(
+                new BrokerPolicy { ProtocolVersion = brokerProtocolVersion, AuthorizedSid = authorizedSid! },
+                new JsonSerializerOptions { WriteIndented = true }));
+
+        var security = new FileSecurity();
+        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        security.SetOwner(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null));
+        security.AddAccessRule(new FileSystemAccessRule(
+            new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+            FileSystemRights.FullControl,
+            AccessControlType.Allow));
+        security.AddAccessRule(new FileSystemAccessRule(
+            new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
+            FileSystemRights.FullControl,
+            AccessControlType.Allow));
+        security.AddAccessRule(new FileSystemAccessRule(
+            new SecurityIdentifier(authorizedSid!),
+            FileSystemRights.Read,
+            AccessControlType.Allow));
+        new FileInfo(path).SetAccessControl(security);
+        return 0;
+    }
+    catch (Exception ex)
+    {
+        WriteBackgroundLog("ERROR", $"Could not create broker policy: {ex}");
+        return 5;
+    }
+}
+
+static void ApplyManagerDataSecurity(string dataDirectory, string authorizedSid)
+{
+    var user = new SecurityIdentifier(authorizedSid);
+    var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+    var administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+
+    SecureTree(dataDirectory);
+    foreach (var restrictedName in new[] { "manager-update", "tmp_agent", "nssm" })
+    {
+        var restrictedPath = Path.Combine(dataDirectory, restrictedName);
+        if (Directory.Exists(restrictedPath))
+        {
+            SecurePrivilegedWorkingDirectory(restrictedPath);
+        }
+    }
+
+    void ApplyDirectory(string directory)
+    {
+        var inheritance = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+        var directorySecurity = new DirectorySecurity();
+        directorySecurity.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        directorySecurity.SetOwner(administrators);
+        directorySecurity.AddAccessRule(new FileSystemAccessRule(system, FileSystemRights.FullControl, inheritance, PropagationFlags.None, AccessControlType.Allow));
+        directorySecurity.AddAccessRule(new FileSystemAccessRule(administrators, FileSystemRights.FullControl, inheritance, PropagationFlags.None, AccessControlType.Allow));
+        directorySecurity.AddAccessRule(new FileSystemAccessRule(user, FileSystemRights.Modify, inheritance, PropagationFlags.None, AccessControlType.Allow));
+        new DirectoryInfo(directory).SetAccessControl(directorySecurity);
+    }
+
+    void SecureTree(string directory)
+    {
+        ApplyDirectory(directory);
+        foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
+        {
+            var attributes = File.GetAttributes(entry);
+            if (attributes.HasFlag(FileAttributes.ReparsePoint))
+            {
+                throw new IOException($"Refusing to secure reparse point in manager data: {entry}");
+            }
+
+            if (attributes.HasFlag(FileAttributes.Directory))
+            {
+                SecureTree(entry);
+                continue;
+            }
+
+            var fileSecurity = new FileSecurity();
+            fileSecurity.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+            fileSecurity.SetOwner(administrators);
+            fileSecurity.AddAccessRule(new FileSystemAccessRule(system, FileSystemRights.FullControl, AccessControlType.Allow));
+            fileSecurity.AddAccessRule(new FileSystemAccessRule(administrators, FileSystemRights.FullControl, AccessControlType.Allow));
+            fileSecurity.AddAccessRule(new FileSystemAccessRule(user, FileSystemRights.Modify, AccessControlType.Allow));
+            new FileInfo(entry).SetAccessControl(fileSecurity);
+        }
+    }
+}
+
+static BrokerPolicy? LoadBrokerPolicy()
+{
+    try
+    {
+        var path = BrokerPolicyPath();
+        return File.Exists(path)
+            ? JsonSerializer.Deserialize<BrokerPolicy>(File.ReadAllText(path))
+            : null;
+    }
+    catch
+    {
+        return null;
+    }
+}
+
+static bool IsValidSid(string? sid)
+{
+    if (string.IsNullOrWhiteSpace(sid))
+    {
+        return false;
+    }
+
+    try
+    {
+        _ = new SecurityIdentifier(sid);
+        return true;
+    }
+    catch
+    {
+        return false;
+    }
+}
+
+static bool IsValidAccountSid(string? sid)
+{
+    if (!IsValidSid(sid))
+    {
+        return false;
+    }
+
+    var identifier = new SecurityIdentifier(sid!);
+    return identifier.IsAccountSid()
+        && !identifier.IsWellKnown(WellKnownSidType.LocalSystemSid)
+        && !identifier.IsWellKnown(WellKnownSidType.LocalServiceSid)
+        && !identifier.IsWellKnown(WellKnownSidType.NetworkServiceSid);
+}
+
+static bool TryReadVersion(Dictionary<string, string> arguments, out string version)
+{
+    version = arguments.GetValueOrDefault("version")?.Trim() ?? string.Empty;
+    return Regex.IsMatch(version, @"^v?\d+\.\d+\.\d+$", RegexOptions.CultureInvariant);
+}
+
+static bool TryReadManagerTag(Dictionary<string, string> arguments, out string tag)
+{
+    tag = arguments.GetValueOrDefault("tag")?.Trim() ?? string.Empty;
+    return Regex.IsMatch(tag, @"^v?\d+\.\d+\.\d+(?:-rc\d+)?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+}
+
+static bool TryReadBoolean(Dictionary<string, string> arguments, string key, out bool value)
+{
+    return bool.TryParse(arguments.GetValueOrDefault(key), out value);
+}
+
+static async Task<int> SetDefenderExclusionAsync(bool enabled)
+{
+    var managerDirectoryInfo = new DirectoryInfo(Path.GetFullPath(AppContext.BaseDirectory));
+    if (string.Equals(managerDirectoryInfo.Name, "helper", StringComparison.OrdinalIgnoreCase))
+    {
+        managerDirectoryInfo = managerDirectoryInfo.Parent ?? managerDirectoryInfo;
+    }
+    if (string.Equals(managerDirectoryInfo.Name, "app", StringComparison.OrdinalIgnoreCase))
+    {
+        managerDirectoryInfo = managerDirectoryInfo.Parent ?? managerDirectoryInfo;
+    }
+
+    var managerDirectory = managerDirectoryInfo.FullName.TrimEnd(Path.DirectorySeparatorChar);
+    var escapedPath = managerDirectory.Replace("'", "''", StringComparison.Ordinal);
+    var command = enabled
+        ? $"Add-MpPreference -ExclusionPath '{escapedPath}'"
+        : $"Remove-MpPreference -ExclusionPath '{escapedPath}' -ErrorAction SilentlyContinue";
+    var result = await RunProcessAsync(
+        Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"),
+        ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", command]);
+    return result.ExitCode == 0 ? 0 : 4;
+}
+
+static void TryDeleteFile(string path)
+{
+    try
+    {
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+    }
+    catch
+    {
+    }
 }
 
 static string AgentPath()
@@ -639,13 +1285,27 @@ static async Task<int> ApplyManagerTasksAsync()
         return 3;
     }
 
-    if (IsAutoUpdateEnabled(config.RootElement))
+    await DeleteLegacyScheduledTasksAsync();
+    BrokerRuntime.SignalReload();
+    return 0;
+}
+
+static async Task<int> ApplyConfigurationAndReloadAsync()
+{
+    var result = await ApplyConfigurationAsync(serviceName);
+    if (result == 0)
     {
-        return await CreateOrUpdateAutoUpdateTaskAsync(GetUpdateIntervalHours(config.RootElement));
+        BrokerRuntime.SignalReload();
     }
 
+    return result;
+}
+
+static async Task DeleteLegacyScheduledTasksAsync()
+{
     await DeleteScheduledTaskAsync(updateTaskName);
-    return 0;
+    await DeleteScheduledTaskAsync(agentLogRotateTaskName);
+    await DeleteScheduledTaskAsync(restartTaskName);
 }
 
 static async Task<int> RunScheduledAgentUpdateAsync()
@@ -771,25 +1431,6 @@ static int GetUpdateIntervalHours(JsonElement config)
             ? textValue
             : 24;
     return Math.Clamp(value, 1, 720);
-}
-
-static async Task<int> CreateOrUpdateAutoUpdateTaskAsync(int intervalHours)
-{
-    var helperPath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "BeszelAgentManager.Helper.exe");
-    var action = $"\"{helperPath}\" --auto-update-agent";
-    var result = await RunProcessAsync(
-        "schtasks.exe",
-        [
-            "/Create",
-            "/F",
-            "/SC", "HOURLY",
-            "/MO", "1",
-            "/TN", updateTaskName,
-            "/RL", "HIGHEST",
-            "/RU", "SYSTEM",
-            "/TR", action,
-        ]);
-    return result.ExitCode == 0 ? 0 : 4;
 }
 
 static async Task<int> RunAgentProcessAsync(string agentPath, string[] arguments, JsonElement config)
@@ -951,6 +1592,8 @@ static async Task<int> ConfigureServiceAsync(
     var existedAtStart = await ServiceExistsAsync(serviceName);
     var initialState = existedAtStart ? (await QueryServiceAsync(serviceName)).State : "NOT FOUND";
     var createdService = false;
+    string? originalServiceBinaryPath = null;
+    var serviceBinaryPathChanged = false;
     var snapshots = new Dictionary<string, string[]?>(StringComparer.OrdinalIgnoreCase);
     var changed = new List<string>();
 
@@ -968,6 +1611,27 @@ static async Task<int> ConfigureServiceAsync(
             await RemoveNewServiceAsync(nssmPath, serviceName);
             return 4;
         }
+    }
+
+    originalServiceBinaryPath = ReadServiceBinaryPath(serviceName);
+    if (!string.IsNullOrWhiteSpace(originalServiceBinaryPath)
+        && !string.Equals(
+            NormalizeServiceBinaryPath(originalServiceBinaryPath),
+            Path.GetFullPath(nssmPath),
+            StringComparison.OrdinalIgnoreCase))
+    {
+        var migrateBinaryPath = await RunProcessAsync(
+            "sc.exe",
+            ["config", serviceName, "binPath=", $"\"{Path.GetFullPath(nssmPath)}\""]);
+        if (migrateBinaryPath.ExitCode != 0
+            || !string.Equals(
+                NormalizeServiceBinaryPath(ReadServiceBinaryPath(serviceName)),
+                Path.GetFullPath(nssmPath),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return 4;
+        }
+        serviceBinaryPathChanged = true;
     }
 
     var logPath = Path.Combine(programData, "BeszelAgentManager", "agent_logs", "beszel-agent.log");
@@ -1029,6 +1693,10 @@ static async Task<int> ConfigureServiceAsync(
         else
         {
             await RollbackNssmParametersAsync(nssmPath, serviceName, snapshots, changed);
+            if (serviceBinaryPathChanged && !string.IsNullOrWhiteSpace(originalServiceBinaryPath))
+            {
+                await RunProcessAsync("sc.exe", ["config", serviceName, "binPath=", originalServiceBinaryPath]);
+            }
             if (string.Equals(initialState, "RUNNING", StringComparison.OrdinalIgnoreCase))
             {
                 await RestartServiceAsync(serviceName);
@@ -1041,6 +1709,17 @@ static async Task<int> ConfigureServiceAsync(
 
         return 4;
     }
+}
+
+static string? ReadServiceBinaryPath(string serviceName)
+{
+    using var key = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\{serviceName}");
+    return key?.GetValue("ImagePath")?.ToString();
+}
+
+static string NormalizeServiceBinaryPath(string? binaryPath)
+{
+    return (binaryPath ?? string.Empty).Trim().Trim('"');
 }
 
 static void WriteHelperLastError(Exception exception)
@@ -1259,16 +1938,16 @@ static async Task<bool> RequireServiceStaysRunningAsync(string serviceName, Time
         await Task.Delay(500);
     }
 
-    return true;
+    return false;
 }
 
 static string[] BuildAgentEnvironment(JsonElement config)
 {
     var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-    AddCore("KEY", "key");
-    AddCore("TOKEN", "token");
-    AddCore("HUB_URL", "hub_url");
-    AddCore("LISTEN", "listen");
+    AddValue("KEY", "key");
+    AddValue("TOKEN", "token");
+    AddValue("HUB_URL", "hub_url");
+    AddValue("LISTEN", "listen");
 
     var mapping = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
@@ -1333,6 +2012,8 @@ static string[] BuildAgentEnvironment(JsonElement config)
             var value = valueProperty.ToString().Trim();
             if (!string.IsNullOrWhiteSpace(name)
                 && !string.IsNullOrWhiteSpace(value)
+                && Regex.IsMatch(name, @"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant)
+                && value.IndexOfAny(['\0', '\r', '\n']) < 0
                 && name is not ("KEY" or "TOKEN" or "HUB_URL" or "LISTEN")
                 && !values.ContainsKey(name))
             {
@@ -1342,8 +2023,6 @@ static string[] BuildAgentEnvironment(JsonElement config)
     }
 
     return values.Select(pair => $"{pair.Key}={pair.Value}").ToArray();
-
-    void AddCore(string environmentName, string configName) => AddValue(environmentName, configName);
 
     void AddValue(string environmentName, string configName)
     {
@@ -1470,18 +2149,15 @@ static async Task<int> InstallAgentBinaryAsync(string version, string downloadUr
     try
     {
         Directory.CreateDirectory(agentDir);
-        if (Directory.Exists(tempDir))
+        ResetPrivilegedWorkingDirectory(tempDir);
+        Directory.CreateDirectory(extractDir);
+        if (!IsTrustedGitHubAssetUrl(downloadUrl))
         {
-            Directory.Delete(tempDir, recursive: true);
+            return 21;
         }
 
-        Directory.CreateDirectory(extractDir);
         using var http = CreateGitHubClient();
-        await using (var input = await http.GetStreamAsync(downloadUrl))
-        await using (var output = File.Create(zipPath))
-        {
-            await input.CopyToAsync(output);
-        }
+        await DownloadFileAsync(http, downloadUrl, zipPath, 250L * 1024 * 1024);
 
         ZipFile.ExtractToDirectory(zipPath, extractDir, overwriteFiles: true);
         var extracted = Directory
@@ -1511,7 +2187,8 @@ static async Task<int> InstallAgentBinaryAsync(string version, string downloadUr
         {
             if (Directory.Exists(tempDir))
             {
-                Directory.Delete(tempDir, recursive: true);
+                ResetPrivilegedWorkingDirectory(tempDir);
+                Directory.Delete(tempDir);
             }
         }
         catch
@@ -1526,6 +2203,254 @@ static async Task<AgentRelease?> FetchLatestAgentReleaseAsync()
     await using var stream = await http.GetStreamAsync($"https://api.github.com/repos/{agentRepo}/releases/latest");
     using var document = await JsonDocument.ParseAsync(stream);
     return ParseAgentRelease(document.RootElement);
+}
+
+static async Task<int> InstallManagerVersionAsync(string tag)
+{
+    try
+    {
+        using var http = CreateGitHubClient();
+        var releaseUrl = $"https://api.github.com/repos/{managerRepo}/releases/tags/{Uri.EscapeDataString(tag)}";
+        await using var releaseStream = await http.GetStreamAsync(releaseUrl);
+        using var release = await JsonDocument.ParseAsync(releaseStream);
+        if (!TryGetReleaseAssetUrl(release.RootElement, managerInstallerName, out var installerUrl)
+            || !TryGetReleaseAssetUrl(release.RootElement, managerChecksumName, out var checksumUrl))
+        {
+            return 30;
+        }
+
+        var stagingRoot = Path.Combine(ProgramDataPath(), "BeszelAgentManager", "manager-update");
+        ResetPrivilegedWorkingDirectory(stagingRoot);
+
+        var installerPath = Path.Combine(stagingRoot, managerInstallerName);
+        var checksumPath = Path.Combine(stagingRoot, managerChecksumName);
+        await DownloadFileAsync(http, installerUrl, installerPath, 512L * 1024 * 1024);
+        await DownloadFileAsync(http, checksumUrl, checksumPath, 1024 * 1024);
+        if (new FileInfo(installerPath).Attributes.HasFlag(FileAttributes.ReparsePoint)
+            || !VerifyManagerInstallerChecksum(installerPath, checksumPath)
+            || !await VerifyManagerInstallerSignatureAsync(installerPath))
+        {
+            TryDeleteFile(installerPath);
+            return 31;
+        }
+
+        var escapedInstaller = installerPath.Replace("'", "''", StringComparison.Ordinal);
+        var command =
+            $"Start-Sleep -Seconds 3; Start-Process -FilePath '{escapedInstaller}' " +
+            "-ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CLOSEAPPLICATIONS')";
+        Process.Start(new ProcessStartInfo
+        {
+            FileName = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"),
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            ArgumentList =
+            {
+                "-NoProfile",
+                "-NonInteractive",
+                "-WindowStyle", "Hidden",
+                "-Command", command,
+            },
+        });
+        return 0;
+    }
+    catch (HttpRequestException)
+    {
+        return 30;
+    }
+    catch (Exception ex)
+    {
+        WriteBackgroundLog("ERROR", $"Manager installer staging failed: {ex}");
+        return 32;
+    }
+}
+
+static void ResetPrivilegedWorkingDirectory(string path)
+{
+    var fullPath = Path.GetFullPath(path);
+    if (Directory.Exists(fullPath))
+    {
+        SecurePrivilegedWorkingDirectory(fullPath);
+    }
+    else
+    {
+        Directory.CreateDirectory(fullPath);
+        SecurePrivilegedWorkingDirectory(fullPath);
+    }
+
+    foreach (var entry in Directory.EnumerateFileSystemEntries(fullPath))
+    {
+        if (Directory.Exists(entry))
+        {
+            Directory.Delete(entry, recursive: true);
+        }
+        else
+        {
+            File.Delete(entry);
+        }
+    }
+
+}
+
+static void SecurePrivilegedWorkingDirectory(string path)
+{
+    var fullPath = Path.GetFullPath(path);
+    var managerData = Path.GetFullPath(Path.Combine(ProgramDataPath(), "BeszelAgentManager"))
+        .TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+    if (!fullPath.StartsWith(managerData, StringComparison.OrdinalIgnoreCase))
+    {
+        throw new IOException("Privileged working directory is outside manager data.");
+    }
+    if (!Directory.Exists(fullPath)
+        || File.GetAttributes(fullPath).HasFlag(FileAttributes.ReparsePoint))
+    {
+        throw new IOException("Privileged working directory is missing or is a reparse point.");
+    }
+
+    SecureAndValidate(fullPath);
+
+    void SecureAndValidate(string directory)
+    {
+        ApplyRestrictedDirectorySecurity(directory);
+        foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
+        {
+            var attributes = File.GetAttributes(entry);
+            if (attributes.HasFlag(FileAttributes.ReparsePoint))
+            {
+                throw new IOException($"Reparse point rejected in privileged working directory: {entry}");
+            }
+
+            if (attributes.HasFlag(FileAttributes.Directory))
+            {
+                SecureAndValidate(entry);
+            }
+            else
+            {
+                ApplyRestrictedFileSecurity(entry);
+            }
+        }
+    }
+}
+
+static void ApplyRestrictedDirectorySecurity(string path)
+{
+    var inheritance = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+    var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+    var administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+    var security = new DirectorySecurity();
+    security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+    security.SetOwner(administrators);
+    security.AddAccessRule(new FileSystemAccessRule(system, FileSystemRights.FullControl, inheritance, PropagationFlags.None, AccessControlType.Allow));
+    security.AddAccessRule(new FileSystemAccessRule(administrators, FileSystemRights.FullControl, inheritance, PropagationFlags.None, AccessControlType.Allow));
+    new DirectoryInfo(path).SetAccessControl(security);
+}
+
+static void ApplyRestrictedFileSecurity(string path)
+{
+    var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+    var administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+    var security = new FileSecurity();
+    security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+    security.SetOwner(administrators);
+    security.AddAccessRule(new FileSystemAccessRule(system, FileSystemRights.FullControl, AccessControlType.Allow));
+    security.AddAccessRule(new FileSystemAccessRule(administrators, FileSystemRights.FullControl, AccessControlType.Allow));
+    new FileInfo(path).SetAccessControl(security);
+}
+
+static bool TryGetReleaseAssetUrl(JsonElement release, string expectedName, out string url)
+{
+    url = string.Empty;
+    if (!release.TryGetProperty("assets", out var assets) || assets.ValueKind != JsonValueKind.Array)
+    {
+        return false;
+    }
+
+    foreach (var asset in assets.EnumerateArray())
+    {
+        var name = asset.TryGetProperty("name", out var nameProperty) ? nameProperty.GetString() : null;
+        if (!string.Equals(name, expectedName, StringComparison.OrdinalIgnoreCase))
+        {
+            continue;
+        }
+
+        url = asset.TryGetProperty("browser_download_url", out var urlProperty)
+            ? urlProperty.GetString() ?? string.Empty
+            : string.Empty;
+        return IsTrustedGitHubAssetUrl(url);
+    }
+
+    return false;
+}
+
+static bool IsTrustedGitHubAssetUrl(string url)
+{
+    return Uri.TryCreate(url, UriKind.Absolute, out var parsed)
+        && string.Equals(parsed.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(parsed.Host, "github.com", StringComparison.OrdinalIgnoreCase)
+        && parsed.AbsolutePath.StartsWith("/", StringComparison.Ordinal);
+}
+
+static async Task DownloadFileAsync(HttpClient http, string url, string path, long maximumBytes)
+{
+    using var response = await http.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
+    response.EnsureSuccessStatusCode();
+    if (response.Content.Headers.ContentLength is { } contentLength && contentLength > maximumBytes)
+    {
+        throw new IOException("Download exceeds the allowed size.");
+    }
+
+    await using var source = await response.Content.ReadAsStreamAsync();
+    await using var destination = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 64 * 1024, useAsync: true);
+    var buffer = new byte[64 * 1024];
+    long total = 0;
+    while (true)
+    {
+        var read = await source.ReadAsync(buffer);
+        if (read == 0)
+        {
+            break;
+        }
+
+        total += read;
+        if (total > maximumBytes)
+        {
+            throw new IOException("Download exceeds the allowed size.");
+        }
+
+        await destination.WriteAsync(buffer.AsMemory(0, read));
+    }
+}
+
+static bool VerifyManagerInstallerChecksum(string installerPath, string checksumPath)
+{
+    var expected = File.ReadLines(checksumPath)
+        .Select(static line => Regex.Match(line, @"^\s*([a-fA-F0-9]{64})\s+\*?BeszelAgentManagerSetup\.exe\s*$"))
+        .FirstOrDefault(static match => match.Success)?
+        .Groups[1].Value;
+    if (string.IsNullOrWhiteSpace(expected))
+    {
+        return false;
+    }
+
+    using var stream = File.OpenRead(installerPath);
+    var actual = Convert.ToHexString(SHA256.HashData(stream));
+    return string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase);
+}
+
+static async Task<bool> VerifyManagerInstallerSignatureAsync(string installerPath)
+{
+    var escapedPath = installerPath.Replace("'", "''", StringComparison.Ordinal);
+    var result = await RunProcessAsync(
+        Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"),
+        [
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            $"(Get-AuthenticodeSignature -LiteralPath '{escapedPath}').Status.ToString()",
+        ]);
+    var status = result.Output.Trim();
+    return result.ExitCode == 0
+        && (string.Equals(status, "Valid", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, "NotSigned", StringComparison.OrdinalIgnoreCase));
 }
 
 static async Task<AgentRelease?> FetchAgentReleaseAsync(string version)
@@ -1587,7 +2512,7 @@ static AgentRelease? ParseAgentRelease(JsonElement release)
         var downloadUrl = asset.TryGetProperty("browser_download_url", out var urlProperty)
             ? urlProperty.GetString() ?? string.Empty
             : string.Empty;
-        return string.IsNullOrWhiteSpace(downloadUrl) ? null : new AgentRelease(version, downloadUrl);
+        return IsTrustedGitHubAssetUrl(downloadUrl) ? new AgentRelease(version, downloadUrl) : null;
     }
 
     return null;
@@ -1763,6 +2688,16 @@ static async Task<int> RunScAsync(string command, string name)
 
 static async Task<(int ExitCode, string Output)> RunProcessAsync(string fileName, string[] arguments)
 {
+    if (!Path.IsPathRooted(fileName))
+    {
+        fileName = fileName.ToLowerInvariant() switch
+        {
+            "icacls.exe" or "netsh.exe" or "sc.exe" or "schtasks.exe" or "takeown.exe" or "taskkill.exe"
+                => Path.Combine(Environment.SystemDirectory, fileName),
+            _ => throw new InvalidOperationException($"System executable is not allowlisted: {fileName}"),
+        };
+    }
+
     var startInfo = new ProcessStartInfo
     {
         FileName = fileName,
@@ -1791,10 +2726,38 @@ static async Task<(int ExitCode, string Output)> RunProcessAsync(string fileName
 
 internal readonly record struct AgentRelease(string Version, string DownloadUrl);
 
-internal sealed class BackgroundState
+internal sealed class BrokerPolicy
 {
-    public bool Active { get; set; }
-    public int SuccessStreak { get; set; }
+    public int ProtocolVersion { get; set; }
+    public string AuthorizedSid { get; set; } = string.Empty;
+}
+
+internal static class BrokerRuntime
+{
+    public static SemaphoreSlim MutationGate { get; } = new(1, 1);
+    public static SemaphoreSlim ReloadSignal { get; } = new(0, 1);
+
+    public static void SignalReload()
+    {
+        if (ReloadSignal.CurrentCount == 0)
+        {
+            ReloadSignal.Release();
+        }
+    }
+}
+
+internal sealed class BackgroundRuntimeState
+{
+    public int AgentUpdateIntervalHours { get; set; } = 24;
+    public DateTimeOffset? LastAgentUpdateAt { get; set; }
+    public DateTimeOffset? NextAgentUpdateAt { get; set; }
+    public int PeriodicRestartIntervalHours { get; set; } = 24;
+    public int PeriodicRestartIntervalMinutes { get; set; }
+    public DateTimeOffset? LastPeriodicRestartAt { get; set; }
+    public DateTimeOffset? NextPeriodicRestartAt { get; set; }
+    public DateTimeOffset? LastAgentLogRotationAt { get; set; }
+    public DateTimeOffset? NextAgentLogRotationAt { get; set; }
+    public string LastOperation { get; set; } = string.Empty;
 }
 
 internal sealed class BackgroundWindowsService : ServiceBase

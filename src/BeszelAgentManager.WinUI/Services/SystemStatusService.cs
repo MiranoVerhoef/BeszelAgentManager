@@ -68,7 +68,7 @@ internal sealed partial class SystemStatusService
     {
         var startInfo = new ProcessStartInfo
         {
-            FileName = "sc.exe",
+            FileName = Path.Combine(Environment.SystemDirectory, "sc.exe"),
             UseShellExecute = false,
             RedirectStandardOutput = true,
             RedirectStandardError = true,

@@ -81,7 +81,18 @@ internal sealed class ConfigService
                 cancellationToken);
         }
 
-        File.Move(temporaryPath, ManagerPaths.ConfigPath, overwrite: true);
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                File.Move(temporaryPath, ManagerPaths.ConfigPath, overwrite: true);
+                break;
+            }
+            catch (Exception ex) when (attempt < 6 && ex is IOException or UnauthorizedAccessException)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(attempt * 100), cancellationToken);
+            }
+        }
     }
 
     public IReadOnlyList<(string Name, string ConfigKey, string Value)> GetActiveEnvironmentRows(AgentConfig config)
@@ -128,9 +139,24 @@ internal sealed class ConfigService
             UpdateIntervalHours = config.UpdateIntervalHours > 0 ? Math.Clamp(config.UpdateIntervalHours, 1, 720) : 24,
             AutoRestartEnabled = config.AutoRestartEnabled,
             AutoRestartIntervalHours = config.AutoRestartIntervalHours > 0 ? config.AutoRestartIntervalHours : 24,
+            AutoRestartIntervalValue = config.AutoRestartIntervalValue > 0
+                ? config.AutoRestartIntervalValue
+                : config.AutoRestartIntervalHours > 0 ? config.AutoRestartIntervalHours : 24,
+            AutoRestartIntervalUnit = string.Equals(config.AutoRestartIntervalUnit, "minutes", StringComparison.OrdinalIgnoreCase)
+                ? "minutes"
+                : "hours",
             DebugLogging = config.DebugLogging,
             GitHubTokenEncrypted = config.GitHubTokenEncrypted ?? string.Empty,
             StartHidden = config.StartHidden,
+            ManagerUpdateNotifyEnabled = config.ManagerUpdateNotifyEnabled,
+            ManagerUpdateCheckIntervalHours = Math.Clamp(config.ManagerUpdateCheckIntervalHours, 1, 168),
+            ManagerUpdateSkipVersion = config.ManagerUpdateSkipVersion ?? string.Empty,
+            ManagerUpdateTrayBadgeEnabled = config.ManagerUpdateTrayBadgeEnabled,
+            ManagerUpdateIncludePrereleases = config.ManagerUpdateIncludePrereleases,
+            ManagerUpdateLastCheckAt = config.ManagerUpdateLastCheckAt ?? string.Empty,
+            ManagerUpdateLastNotifiedVersion = config.ManagerUpdateLastNotifiedVersion ?? string.Empty,
+            DefenderExclusionEnabled = config.DefenderExclusionEnabled,
+            DefenderExclusionPrompted = config.DefenderExclusionPrompted,
             LastAppliedFingerprint = config.LastAppliedFingerprint ?? string.Empty,
             LastAppliedAt = config.LastAppliedAt ?? string.Empty,
             LastAppliedManagerTasksFingerprint = config.LastAppliedManagerTasksFingerprint ?? string.Empty,
@@ -148,29 +174,8 @@ internal sealed class ConfigService
         try
         {
             var local = JsonNode.Parse(await File.ReadAllTextAsync(ManagerPaths.LocalSettingsPath, cancellationToken)) as JsonObject;
-            var debug = local?["debug_logging"]?.GetValue<bool>() ?? config.DebugLogging;
-            return new AgentConfig
-            {
-                Key = config.Key,
-                Token = config.Token,
-                HubUrl = config.HubUrl,
-                HubUrlIpFallback = config.HubUrlIpFallback,
-                HubUrlIpFallbackEnabled = config.HubUrlIpFallbackEnabled,
-                Listen = config.Listen,
-                EnvActiveNames = config.EnvActiveNames,
-                EnvCustom = config.EnvCustom,
-                AutoUpdateEnabled = config.AutoUpdateEnabled,
-                UpdateIntervalHours = config.UpdateIntervalHours,
-                AutoRestartEnabled = config.AutoRestartEnabled,
-                AutoRestartIntervalHours = config.AutoRestartIntervalHours,
-                DebugLogging = debug,
-                GitHubTokenEncrypted = config.GitHubTokenEncrypted,
-                StartHidden = config.StartHidden,
-                LastAppliedFingerprint = config.LastAppliedFingerprint,
-                LastAppliedAt = config.LastAppliedAt,
-                LastAppliedManagerTasksFingerprint = config.LastAppliedManagerTasksFingerprint,
-                ExtraFields = config.ExtraFields,
-            };
+            config.DebugLogging = local?["debug_logging"]?.GetValue<bool>() ?? config.DebugLogging;
+            return config;
         }
         catch
         {
@@ -180,37 +185,6 @@ internal sealed class ConfigService
 
     private static string EnvNameToConfigKey(string envName)
     {
-        return envName.Trim().ToLowerInvariant() switch
-        {
-            "data_dir" => "data_dir",
-            "docker_host" => "docker_host",
-            "exclude_containers" => "exclude_containers",
-            "exclude_smart" => "exclude_smart",
-            "extra_filesystems" => "extra_filesystems",
-            "filesystem" => "filesystem",
-            "intel_gpu_device" => "intel_gpu_device",
-            "key_file" => "key_file",
-            "token_file" => "token_file",
-            "lhm" => "lhm",
-            "log_level" => "log_level",
-            "mem_calc" => "mem_calc",
-            "network" => "network",
-            "nics" => "nics",
-            "sensors" => "sensors",
-            "sensors_timeout" => "sensors_timeout",
-            "primary_sensor" => "primary_sensor",
-            "sys_sensors" => "sys_sensors",
-            "service_patterns" => "service_patterns",
-            "smart_devices" => "smart_devices",
-            "system_name" => "system_name",
-            "skip_gpu" => "skip_gpu",
-            "gpu_collector" => "gpu_collector",
-            "disable_ssh" => "disable_ssh",
-            "nvml" => "nvml",
-            "smart_interval" => "smart_interval",
-            "disk_usage_cache" => "disk_usage_cache",
-            "skip_systemd" => "skip_systemd",
-            _ => envName.Trim().ToLowerInvariant(),
-        };
+        return envName.Trim().ToLowerInvariant();
     }
 }

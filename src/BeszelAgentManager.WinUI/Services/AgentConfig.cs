@@ -43,6 +43,12 @@ internal sealed class AgentConfig
     [JsonPropertyName("auto_restart_interval_hours")]
     public int AutoRestartIntervalHours { get; set; } = 24;
 
+    [JsonPropertyName("auto_restart_interval_value")]
+    public int AutoRestartIntervalValue { get; set; }
+
+    [JsonPropertyName("auto_restart_interval_unit")]
+    public string AutoRestartIntervalUnit { get; set; } = "hours";
+
     [JsonPropertyName("debug_logging")]
     public bool DebugLogging { get; set; }
 
@@ -51,6 +57,33 @@ internal sealed class AgentConfig
 
     [JsonPropertyName("start_hidden")]
     public bool StartHidden { get; set; } = true;
+
+    [JsonPropertyName("manager_update_notify_enabled")]
+    public bool ManagerUpdateNotifyEnabled { get; set; } = true;
+
+    [JsonPropertyName("manager_update_check_interval_hours")]
+    public int ManagerUpdateCheckIntervalHours { get; set; } = 6;
+
+    [JsonPropertyName("manager_update_skip_version")]
+    public string ManagerUpdateSkipVersion { get; set; } = string.Empty;
+
+    [JsonPropertyName("manager_update_tray_badge_enabled")]
+    public bool ManagerUpdateTrayBadgeEnabled { get; set; } = true;
+
+    [JsonPropertyName("manager_update_include_prereleases")]
+    public bool ManagerUpdateIncludePrereleases { get; set; }
+
+    [JsonPropertyName("manager_update_last_check_at")]
+    public string ManagerUpdateLastCheckAt { get; set; } = string.Empty;
+
+    [JsonPropertyName("manager_update_last_notified_version")]
+    public string ManagerUpdateLastNotifiedVersion { get; set; } = string.Empty;
+
+    [JsonPropertyName("defender_exclusion_enabled")]
+    public bool DefenderExclusionEnabled { get; set; }
+
+    [JsonPropertyName("defender_exclusion_prompted")]
+    public bool DefenderExclusionPrompted { get; set; }
 
     [JsonPropertyName("last_applied_fingerprint")]
     public string LastAppliedFingerprint { get; set; } = string.Empty;
@@ -144,7 +177,12 @@ internal sealed class AgentConfig
 
     public string ManagerTasksFingerprint()
     {
-        var payload = $"auto_update_enabled={AutoUpdateEnabled}\nupdate_interval_hours={UpdateIntervalHours}\n";
+        var payload =
+            $"auto_update_enabled={AutoUpdateEnabled}\n" +
+            $"update_interval_hours={UpdateIntervalHours}\n" +
+            $"auto_restart_enabled={AutoRestartEnabled}\n" +
+            $"auto_restart_interval_value={AutoRestartIntervalValue}\n" +
+            $"auto_restart_interval_unit={AutoRestartIntervalUnit}\n";
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(payload));
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }

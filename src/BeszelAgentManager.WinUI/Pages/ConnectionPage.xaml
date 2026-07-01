@@ -78,8 +78,15 @@
 
                 <Border Grid.Column="1" Padding="10,8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4">
                     <StackPanel Spacing="6">
-                        <TextBlock FontWeight="SemiBold" Text="Manager startup" />
-                        <CheckBox x:Name="AutostartCheckBox" Content="Start BeszelAgentManager with Windows" IsChecked="True" Click="SettingControl_Changed" />
+                        <TextBlock FontWeight="SemiBold" Text="Manager Settings" />
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <CheckBox x:Name="AutostartCheckBox" Content="Start BeszelAgentManager with Windows" IsChecked="True" Click="SettingControl_Changed" />
+                            <Button Grid.Column="1" Content="Update settings…" Click="ManagerUpdateSettingsButton_Click" />
+                        </Grid>
                         <CheckBox x:Name="StartVisibleCheckBox" Content="Show window when starting with Windows" Click="SettingControl_Changed" />
                     </StackPanel>
                 </Border>

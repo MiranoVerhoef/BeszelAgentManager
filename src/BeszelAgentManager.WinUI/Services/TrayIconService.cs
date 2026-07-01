@@ -13,6 +13,7 @@ internal sealed class TrayIconService : IDisposable
 
     public TrayIconService(
         Action open,
+        Action openHub,
         Func<Task> startService,
         Func<Task> stopService,
         Func<Task> restartService,
@@ -20,6 +21,7 @@ internal sealed class TrayIconService : IDisposable
         Action exit)
     {
         var openCommand = new TrayCommand(open);
+        var openHubCommand = new TrayCommand(openHub);
         var startCommand = new TrayCommand(startService);
         var stopCommand = new TrayCommand(stopService);
         var restartCommand = new TrayCommand(restartService);
@@ -34,6 +36,7 @@ internal sealed class TrayIconService : IDisposable
             Icon = new SymbolIcon(Symbol.OpenFile),
         };
         var startItem = new MenuFlyoutItem { Text = "Start service", Command = startCommand, Icon = new SymbolIcon(Symbol.Play) };
+        var openHubItem = new MenuFlyoutItem { Text = "Open hub URL", Command = openHubCommand, Icon = new SymbolIcon(Symbol.Globe) };
         var stopItem = new MenuFlyoutItem { Text = "Stop service", Command = stopCommand, Icon = new SymbolIcon(Symbol.Stop) };
         var restartItem = new MenuFlyoutItem { Text = "Restart service", Command = restartCommand, Icon = new SymbolIcon(Symbol.Refresh) };
         var updateItem = new MenuFlyoutItem { Text = "Update agent", Command = updateCommand, Icon = new SymbolIcon(Symbol.Download) };
@@ -44,6 +47,7 @@ internal sealed class TrayIconService : IDisposable
             Icon = new SymbolIcon(Symbol.Cancel),
         };
         menu.Items.Add(openItem);
+        menu.Items.Add(openHubItem);
         menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(startItem);
         menu.Items.Add(stopItem);
@@ -69,6 +73,13 @@ internal sealed class TrayIconService : IDisposable
     public void ShowNotification(string title, string message, NotificationIcon icon = NotificationIcon.Info)
     {
         _taskbarIcon.ShowNotification(title, message, icon);
+    }
+
+    public void SetStatus(string serviceState, bool managerUpdateAvailable)
+    {
+        _taskbarIcon.ToolTipText = managerUpdateAvailable
+            ? $"BeszelAgentManager ({serviceState}) - Update available"
+            : $"BeszelAgentManager ({serviceState})";
     }
 
     public void Dispose()

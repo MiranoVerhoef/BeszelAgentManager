@@ -265,6 +265,11 @@ public sealed partial class ConnectionPage : Page
         await SaveControlChangeAsync("Automatic update interval");
     }
 
+    private async void ManagerUpdateSettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        await App.MainWindow.ShowManagerUpdateSettingsAsync();
+    }
+
     private async void StartServiceButton_Click(object sender, RoutedEventArgs e)
     {
         await RunServiceActionAsync("start", "Start service");
@@ -291,7 +296,7 @@ public sealed partial class ConnectionPage : Page
 
         try
         {
-            var exitCode = await App.ElevatedHelper.OpenServiceEditorAsync();
+            var exitCode = await App.Broker.OpenServiceEditorAsync();
             if (exitCode == 0)
             {
                 ShowServiceStatus(
@@ -335,10 +340,10 @@ public sealed partial class ConnectionPage : Page
         ShowServiceStatus(
             InfoBarSeverity.Informational,
             $"{displayName} in progress",
-            "Approve the administrator prompt if Windows asks.");
+            "The background service is completing the requested action.");
         try
         {
-            var exitCode = await App.ElevatedHelper.RunServiceActionAsync(action);
+            var exitCode = await App.Broker.RunServiceActionAsync(action);
             if (exitCode == 0)
             {
                 await App.MainWindow.RefreshServiceStatusNowAsync();
@@ -431,10 +436,10 @@ public sealed partial class ConnectionPage : Page
         ShowServiceStatus(
             InfoBarSeverity.Informational,
             disabling ? "Disabling listen port" : "Enabling listen port",
-            "Approve the administrator prompt if Windows asks.");
+            "The background service is applying the service and firewall configuration.");
         try
         {
-            var exitCode = await App.ElevatedHelper.ApplyConfigurationAsync();
+            var exitCode = await App.Broker.ApplyConfigurationAsync();
             if (exitCode == 0)
             {
                 await MarkCurrentSettingsAppliedAsync();

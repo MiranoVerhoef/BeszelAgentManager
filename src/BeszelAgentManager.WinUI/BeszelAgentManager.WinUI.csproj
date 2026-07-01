@@ -7,77 +7,41 @@
     <AssemblyName>BeszelAgentManager</AssemblyName>
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <Platforms>x86;x64;ARM64</Platforms>
-    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-$([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString().ToLowerInvariant())</RuntimeIdentifier>
+    <Platforms>x64</Platforms>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
     <PublishProfile Condition="Exists('Properties\PublishProfiles\win-$(Platform).pubxml')">win-$(Platform).pubxml</PublishProfile>
     <UseWinUI>true</UseWinUI>
     <WinUISDKReferences>false</WinUISDKReferences>
-    <EnableMsixTooling>true</EnableMsixTooling>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <Version>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\..\..\VERSION').Trim())</Version>
+    <AssemblyVersion>$(Version).0</AssemblyVersion>
+    <FileVersion>$(Version).0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="Assets\SplashScreen.scale-200.png" />
-    <Content Include="Assets\LockScreenLogo.scale-200.png" />
-    <Content Include="Assets\Square150x150Logo.scale-200.png" />
-    <Content Include="Assets\Square44x44Logo.scale-200.png" />
-    <Content Include="Assets\Square44x44Logo.targetsize-24_altform-unplated.png" />
-    <Content Include="Assets\Square44x44Logo.targetsize-48_altform-lightunplated.png" />
-    <Content Include="Assets\StoreLogo.png" />
     <Content Include="Assets\AppIcon.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" TargetPath="Assets\AppIcon.ico" />
     <Content Include="Assets\AppIcon.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" TargetPath="Assets\AppIcon.png" />
-    <Content Include="Assets\Wide310x150Logo.scale-200.png" />
     <Content Include="..\..\VERSION" Link="VERSION" CopyToOutputDirectory="Always" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BeszelAgentManager.Core\BeszelAgentManager.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <Manifest Include="$(ApplicationManifest)" />
   </ItemGroup>
 
-  <!--
-    Defining the "Msix" ProjectCapability here allows the Single-project MSIX Packaging
-    Tools extension to be activated for this project even if the Windows App SDK Nuget
-    package has not yet been restored.
-  -->
-  <ItemGroup Condition="'$(DisableMsixProjectCapabilityAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
-    <ProjectCapability Include="Msix" />
-  </ItemGroup>
-
-  <!--
-    Microsoft.Windows.SDK.BuildTools.WinApp adds first-class support for
-    `dotnet run` on packaged WinUI apps: it hooks the .NET CLI Run target to
-    register a debug identity via the winapp CLI and launch the app with
-    package identity (AUMID).
-    Set <EnableWinAppRunSupport>false</EnableWinAppRunSupport> in a
-    <PropertyGroup> above to opt out.
-  -->
   <ItemGroup>
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.1839" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.2.0" />
-    <PackageReference Include="Microsoft.Windows.SDK.BuildTools.WinApp" Version="0.3.2" />
     <PackageReference Include="H.NotifyIcon.WinUI" Version="2.4.1" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
   </ItemGroup>
-
-  <!--
-    Defining the "HasPackageAndPublishMenuAddedByProject" property here allows the Solution
-    Explorer "Package and Publish" context menu entry to be enabled for this project even if
-    the Windows App SDK Nuget package has not yet been restored.
-  -->
-  <PropertyGroup Condition="'$(DisableHasPackageAndPublishMenuAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
-    <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
-  </PropertyGroup>
-
-  <!-- Publish Properties -->
-  <PropertyGroup>
-    <PublishReadyToRun Condition="'$(Configuration)' == 'Debug'">False</PublishReadyToRun>
-    <PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">True</PublishReadyToRun>
-    <PublishTrimmed Condition="'$(Configuration)' == 'Debug'">False</PublishTrimmed>
-    <PublishTrimmed Condition="'$(Configuration)' != 'Debug'">True</PublishTrimmed>
-  </PropertyGroup>
 
   <Target Name="BuildElevatedHelper" BeforeTargets="Build">
     <MSBuild
@@ -88,29 +52,19 @@
 
   <Target Name="CopyElevatedHelperToBuildOutput" AfterTargets="Build" DependsOnTargets="BuildElevatedHelper">
     <ItemGroup>
-      <ElevatedHelperFiles Include="..\BeszelAgentManager.Helper\bin\x64\$(Configuration)\net10.0-windows\win-x64\BeszelAgentManager.Helper.exe" />
-      <ElevatedHelperFiles Include="..\BeszelAgentManager.Helper\bin\x64\$(Configuration)\net10.0-windows\win-x64\BeszelAgentManager.Helper.dll" />
-      <ElevatedHelperFiles Include="..\BeszelAgentManager.Helper\bin\x64\$(Configuration)\net10.0-windows\win-x64\BeszelAgentManager.Helper.deps.json" />
-      <ElevatedHelperFiles Include="..\BeszelAgentManager.Helper\bin\x64\$(Configuration)\net10.0-windows\win-x64\BeszelAgentManager.Helper.runtimeconfig.json" />
-      <ElevatedHelperFiles Include="..\BeszelAgentManager.Helper\bin\x64\$(Configuration)\net10.0-windows\win-x64\System.ServiceProcess.dll" />
-      <ElevatedHelperFiles Include="..\BeszelAgentManager.Helper\bin\x64\$(Configuration)\net10.0-windows\win-x64\System.ServiceProcess.ServiceController.dll" />
-      <ElevatedHelperFiles Include="..\BeszelAgentManager.Helper\bin\x64\$(Configuration)\net10.0-windows\win-x64\System.Diagnostics.EventLog.dll" />
-      <ElevatedHelperFiles Include="..\BeszelAgentManager.Helper\bin\x64\$(Configuration)\net10.0-windows\win-x64\System.Diagnostics.EventLog.Messages.dll" />
+      <ElevatedHelperFiles Include="..\BeszelAgentManager.Helper\bin\x64\$(Configuration)\net10.0-windows\win-x64\**\*" />
     </ItemGroup>
-    <Copy SourceFiles="@(ElevatedHelperFiles)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(ElevatedHelperFiles)"
+          DestinationFiles="@(ElevatedHelperFiles->'$(OutDir)helper\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
   </Target>
 
   <Target Name="CopyElevatedHelperToPublishOutput" AfterTargets="Publish" DependsOnTargets="BuildElevatedHelper">
     <ItemGroup>
-      <ElevatedHelperPublishFiles Include="..\BeszelAgentManager.Helper\bin\x64\$(Configuration)\net10.0-windows\win-x64\BeszelAgentManager.Helper.exe" />
-      <ElevatedHelperPublishFiles Include="..\BeszelAgentManager.Helper\bin\x64\$(Configuration)\net10.0-windows\win-x64\BeszelAgentManager.Helper.dll" />
-      <ElevatedHelperPublishFiles Include="..\BeszelAgentManager.Helper\bin\x64\$(Configuration)\net10.0-windows\win-x64\BeszelAgentManager.Helper.deps.json" />
-      <ElevatedHelperPublishFiles Include="..\BeszelAgentManager.Helper\bin\x64\$(Configuration)\net10.0-windows\win-x64\BeszelAgentManager.Helper.runtimeconfig.json" />
-      <ElevatedHelperPublishFiles Include="..\BeszelAgentManager.Helper\bin\x64\$(Configuration)\net10.0-windows\win-x64\System.ServiceProcess.dll" />
-      <ElevatedHelperPublishFiles Include="..\BeszelAgentManager.Helper\bin\x64\$(Configuration)\net10.0-windows\win-x64\System.ServiceProcess.ServiceController.dll" />
-      <ElevatedHelperPublishFiles Include="..\BeszelAgentManager.Helper\bin\x64\$(Configuration)\net10.0-windows\win-x64\System.Diagnostics.EventLog.dll" />
-      <ElevatedHelperPublishFiles Include="..\BeszelAgentManager.Helper\bin\x64\$(Configuration)\net10.0-windows\win-x64\System.Diagnostics.EventLog.Messages.dll" />
+      <ElevatedHelperPublishFiles Include="..\BeszelAgentManager.Helper\bin\x64\$(Configuration)\net10.0-windows\win-x64\**\*" />
     </ItemGroup>
-    <Copy SourceFiles="@(ElevatedHelperPublishFiles)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(ElevatedHelperPublishFiles)"
+          DestinationFiles="@(ElevatedHelperPublishFiles->'$(PublishDir)helper\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
   </Target>
 </Project>
