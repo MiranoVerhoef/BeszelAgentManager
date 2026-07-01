@@ -30,7 +30,7 @@
                         <ColumnDefinition Width="96" />
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock VerticalAlignment="Center" Text="Key:" />
+                    <TextBlock VerticalAlignment="Center" Text="Public Key:" />
                     <TextBox Grid.Column="1" x:Name="KeyTextBox" IsReadOnly="True" Text="ssh-ed25519 AAAAA..." />
                     <Button Grid.Column="2" x:Name="KeyChangeButton" HorizontalAlignment="Stretch" Content="Change" Click="KeyChangeButton_Click" />
 
@@ -47,7 +47,7 @@
                     <Button Grid.Row="3" Grid.Column="2" x:Name="FallbackChangeButton" HorizontalAlignment="Stretch" Content="Change" Click="FallbackChangeButton_Click" />
                     <Button Grid.Row="3" Grid.Column="3" x:Name="FallbackToggleButton" Content="Disable" Click="FallbackToggleButton_Click" />
 
-                    <TextBlock Grid.Row="4" VerticalAlignment="Center" Text="Listen (port):" />
+                    <TextBlock Grid.Row="4" VerticalAlignment="Center" Text="Listen Port:" />
                     <NumberBox Grid.Row="4" Grid.Column="1" x:Name="PortNumberBox" IsEnabled="False" Minimum="1" Maximum="65535" SpinButtonPlacementMode="Hidden" Value="45876" />
                     <Button Grid.Row="4" Grid.Column="2" x:Name="PortChangeButton" HorizontalAlignment="Stretch" Content="Change" Click="PortChangeButton_Click" />
                     <Button Grid.Row="4" Grid.Column="3" x:Name="ListenToggleButton" Content="Disable" Click="ListenToggleButton_Click" />
@@ -96,10 +96,10 @@
                 <StackPanel Spacing="8">
                     <TextBlock FontWeight="SemiBold" Text="Service control" />
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button x:Name="StartServiceButton" Content="Start service" Click="StartServiceButton_Click" />
-                        <Button x:Name="StopServiceButton" Content="Stop service" Click="StopServiceButton_Click" />
-                        <Button x:Name="RestartServiceButton" Content="Restart service" Click="RestartServiceButton_Click" />
-                        <Button x:Name="EditServiceButton" Content="Edit service..." Click="EditServiceButton_Click" />
+                        <Button x:Name="StartServiceButton" Content="Start service" IsEnabled="False" Click="StartServiceButton_Click" />
+                        <Button x:Name="StopServiceButton" Content="Stop service" IsEnabled="False" Click="StopServiceButton_Click" />
+                        <Button x:Name="RestartServiceButton" Content="Restart service" IsEnabled="False" Click="RestartServiceButton_Click" />
+                        <Button x:Name="EditServiceButton" Content="Edit service..." IsEnabled="False" Click="EditServiceButton_Click" />
                     </StackPanel>
                 </StackPanel>
             </Border>

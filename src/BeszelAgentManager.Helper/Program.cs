@@ -596,6 +596,33 @@ static async Task HandleBrokerConnectionAsync(
                 return;
             }
 
+            if (request.Action == "agent.version")
+            {
+                var installedAgentPath = AgentPath();
+                if (!File.Exists(installedAgentPath))
+                {
+                    await WriteBrokerResponseAsync(
+                        pipe,
+                        BrokerResponse.Failed(request.RequestId, 3, "The Beszel Agent executable was not found."));
+                    return;
+                }
+
+                var installedVersion = await GetInstalledAgentVersionAsync(installedAgentPath);
+                var versionMatch = Regex.Match(installedVersion, @"^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$");
+                if (!versionMatch.Success)
+                {
+                    await WriteBrokerResponseAsync(
+                        pipe,
+                        BrokerResponse.Failed(request.RequestId, 4, "The Beszel Agent version could not be detected."));
+                    return;
+                }
+
+                await WriteBrokerResponseAsync(
+                    pipe,
+                    BrokerResponse.Completed(request.RequestId, versionMatch.Value));
+                return;
+            }
+
             await BrokerRuntime.MutationGate.WaitAsync(cancellationToken);
             try
             {
@@ -1368,7 +1395,10 @@ static async Task<string> GetInstalledAgentVersionAsync(string agentPath)
     {
         try
         {
-            var result = await RunProcessAsync(agentPath, [argument]);
+            var result = await RunProcessWithTimeoutAsync(
+                agentPath,
+                [argument],
+                TimeSpan.FromSeconds(10));
             var match = Regex.Match(result.Output, @"\d+\.\d+\.\d+");
             if (match.Success)
             {
@@ -2722,6 +2752,58 @@ static async Task<(int ExitCode, string Output)> RunProcessAsync(string fileName
     var stderr = await process.StandardError.ReadToEndAsync();
     await process.WaitForExitAsync();
     return (process.ExitCode, $"{stdout}{Environment.NewLine}{stderr}".Trim());
+}
+
+static async Task<(int ExitCode, string Output)> RunProcessWithTimeoutAsync(
+    string fileName,
+    string[] arguments,
+    TimeSpan timeout)
+{
+    if (!Path.IsPathRooted(fileName))
+    {
+        throw new InvalidOperationException("A fully qualified executable path is required.");
+    }
+
+    var startInfo = new ProcessStartInfo
+    {
+        FileName = fileName,
+        UseShellExecute = false,
+        RedirectStandardOutput = true,
+        RedirectStandardError = true,
+        CreateNoWindow = true,
+    };
+
+    foreach (var argument in arguments)
+    {
+        startInfo.ArgumentList.Add(argument);
+    }
+
+    using var process = Process.Start(startInfo);
+    if (process is null)
+    {
+        return (1, "Could not start process.");
+    }
+
+    using var timeoutSource = new CancellationTokenSource(timeout);
+    try
+    {
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(timeoutSource.Token);
+        var stderrTask = process.StandardError.ReadToEndAsync(timeoutSource.Token);
+        await process.WaitForExitAsync(timeoutSource.Token);
+        return (process.ExitCode, $"{await stdoutTask}{Environment.NewLine}{await stderrTask}".Trim());
+    }
+    catch (OperationCanceledException)
+    {
+        try
+        {
+            process.Kill(entireProcessTree: true);
+        }
+        catch
+        {
+        }
+
+        return (1460, "The process timed out.");
+    }
 }
 
 internal readonly record struct AgentRelease(string Version, string DownloadUrl);

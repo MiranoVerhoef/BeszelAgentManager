@@ -63,7 +63,6 @@ public sealed partial class MainWindow : Window
         Closed += (_, _) => _trayIconService.Dispose();
 
         VersionBadgeText.Text = $"v{AppInfo.Version}";
-        ReleaseLink.Content = $"BeszelAgentManager v{AppInfo.Version}";
         NavFrame.Navigate(typeof(ConnectionPage));
         _ = RefreshStatusAsync();
 
@@ -379,6 +378,10 @@ public sealed partial class MainWindow : Window
             var status = await _systemStatusService.GetAgentStatusAsync();
             HeaderServiceText.Text = $"Service: {status.ServiceState}";
             HeaderAgentText.Text = $"Agent: {status.AgentVersion}";
+            if (NavFrame.Content is ConnectionPage connectionPage)
+            {
+                connectionPage.ApplyServiceStatus(status);
+            }
             _trayIconService.SetStatus(status.ServiceState, _managerUpdateAvailable);
             if (!string.Equals(_lastServiceState, status.ServiceState, StringComparison.OrdinalIgnoreCase))
             {
@@ -1330,7 +1333,7 @@ public sealed partial class MainWindow : Window
         }) ?? throw new InvalidOperationException("Could not start the manager update relauncher.");
     }
 
-    private void ReleaseLink_Click(object sender, RoutedEventArgs e)
+    private void VersionBadgeButton_Click(object sender, RoutedEventArgs e)
     {
         App.Logger.Info("Opening manager release link");
         OpenUrl($"https://github.com/{AppInfo.ManagerRepo}/releases");

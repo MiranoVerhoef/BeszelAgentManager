@@ -17,11 +17,11 @@ public sealed class BrokerResponse
     public int ErrorCode { get; set; }
     public string Message { get; set; } = string.Empty;
 
-    public static BrokerResponse Completed(string requestId) => new()
+    public static BrokerResponse Completed(string requestId, string? message = null) => new()
     {
         RequestId = requestId,
         Success = true,
-        Message = "The privileged action completed.",
+        Message = message ?? "The privileged action completed.",
     };
 
     public static BrokerResponse Failed(string requestId, int errorCode, string message) => new()

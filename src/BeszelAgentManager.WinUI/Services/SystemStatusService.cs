@@ -101,7 +101,22 @@ internal sealed partial class SystemStatusService
     private static string ParseState(string output)
     {
         var match = ServiceStateRegex().Match(output);
-        return match.Success ? match.Groups["name"].Value.Trim() : "Unknown";
+        if (!match.Success || !int.TryParse(match.Groups["code"].Value, out var code))
+        {
+            return "Unknown";
+        }
+
+        return code switch
+        {
+            1 => "STOPPED",
+            2 => "START_PENDING",
+            3 => "STOP_PENDING",
+            4 => "RUNNING",
+            5 => "CONTINUE_PENDING",
+            6 => "PAUSE_PENDING",
+            7 => "PAUSED",
+            _ => "Unknown",
+        };
     }
 
     private static int? ParsePid(string output)
@@ -157,7 +172,25 @@ internal sealed partial class SystemStatusService
             return _cachedAgentVersion;
         }
 
-        _cachedAgentVersion = await GetAgentVersionAsync(path, cancellationToken);
+        var detectedVersion = await GetAgentVersionAsync(path, cancellationToken);
+        if (string.Equals(detectedVersion, "Unknown", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                detectedVersion = await App.Broker.GetAgentVersionAsync() ?? detectedVersion;
+            }
+            catch (Exception ex)
+            {
+                App.Logger.Debug($"Background service agent version query failed: {ex.Message}");
+            }
+        }
+
+        if (string.Equals(detectedVersion, "Unknown", StringComparison.OrdinalIgnoreCase))
+        {
+            return detectedVersion;
+        }
+
+        _cachedAgentVersion = detectedVersion;
         _cachedAgentLength = file.Length;
         _cachedAgentWriteTimeUtc = file.LastWriteTimeUtc;
         return _cachedAgentVersion;
@@ -197,7 +230,7 @@ internal sealed partial class SystemStatusService
         return (process.ExitCode, $"{await stdoutTask}{Environment.NewLine}{await stderrTask}".Trim());
     }
 
-    [GeneratedRegex(@"STATE\s*:\s*\d+\s+(?<name>[A-Z_]+)", RegexOptions.IgnoreCase)]
+    [GeneratedRegex(@"STATE\s*:\s*(?<code>\d+)(?:\s+[A-Z_]+)?", RegexOptions.IgnoreCase)]
     private static partial Regex ServiceStateRegex();
 
     [GeneratedRegex(@"PID\s*:\s*(?<pid>\d+)", RegexOptions.IgnoreCase)]

@@ -75,14 +75,72 @@ var
 
 function InitializeUninstall(): Boolean;
 begin
-  if UninstallSilent then
-    KeepAgentLogs := True
-  else
-    KeepAgentLogs := MsgBox(
-      'Keep historical Beszel Agent logs?',
-      mbConfirmation,
-      MB_YESNO or MB_DEFBUTTON1) = IDYES;
+  KeepAgentLogs := True;
   Result := True;
+end;
+
+procedure InitializeUninstallProgressForm();
+var
+  UninstallOptionsPage: TNewNotebookPage;
+  KeepAgentLogsCheckBox: TNewCheckBox;
+  UninstallButton: TNewButton;
+  OriginalPageName: String;
+  OriginalPageDescription: String;
+  OriginalCancelEnabled: Boolean;
+  OriginalCancelModalResult: Integer;
+begin
+  if UninstallSilent then
+    Exit;
+
+  UninstallButton := TNewButton.Create(UninstallProgressForm);
+  UninstallButton.Parent := UninstallProgressForm;
+  UninstallButton.Left := UninstallProgressForm.CancelButton.Left -
+    UninstallProgressForm.CancelButton.Width - ScaleX(10);
+  UninstallButton.Top := UninstallProgressForm.CancelButton.Top;
+  UninstallButton.Width := UninstallProgressForm.CancelButton.Width;
+  UninstallButton.Height := UninstallProgressForm.CancelButton.Height;
+  UninstallButton.TabOrder := UninstallProgressForm.CancelButton.TabOrder;
+  UninstallButton.Caption := 'Uninstall';
+  UninstallButton.ModalResult := mrOK;
+
+  UninstallOptionsPage := TNewNotebookPage.Create(UninstallProgressForm);
+  UninstallOptionsPage.Notebook := UninstallProgressForm.InnerNotebook;
+  UninstallOptionsPage.Parent := UninstallProgressForm.InnerNotebook;
+  UninstallOptionsPage.Align := alClient;
+  UninstallProgressForm.InnerNotebook.ActivePage := UninstallOptionsPage;
+
+  KeepAgentLogsCheckBox := TNewCheckBox.Create(UninstallProgressForm);
+  KeepAgentLogsCheckBox.Parent := UninstallOptionsPage;
+  KeepAgentLogsCheckBox.Left := UninstallProgressForm.StatusLabel.Left;
+  KeepAgentLogsCheckBox.Top := UninstallProgressForm.StatusLabel.Top;
+  KeepAgentLogsCheckBox.Width := UninstallProgressForm.StatusLabel.Width;
+  KeepAgentLogsCheckBox.Height := ScaleY(30);
+  KeepAgentLogsCheckBox.Caption := 'Keep historical Beszel Agent logs';
+  KeepAgentLogsCheckBox.Checked := True;
+
+  OriginalPageName := UninstallProgressForm.PageNameLabel.Caption;
+  OriginalPageDescription := UninstallProgressForm.PageDescriptionLabel.Caption;
+  OriginalCancelEnabled := UninstallProgressForm.CancelButton.Enabled;
+  OriginalCancelModalResult := UninstallProgressForm.CancelButton.ModalResult;
+
+  UninstallProgressForm.PageNameLabel.Caption := 'Uninstall options';
+  UninstallProgressForm.PageDescriptionLabel.Caption :=
+    'Choose what should remain after BeszelAgentManager is removed.';
+  UninstallProgressForm.CancelButton.Enabled := True;
+  UninstallProgressForm.CancelButton.ModalResult := mrCancel;
+  UninstallProgressForm.CancelButton.TabOrder := UninstallButton.TabOrder + 1;
+
+  if UninstallProgressForm.ShowModal = mrCancel then
+    Abort;
+
+  KeepAgentLogs := KeepAgentLogsCheckBox.Checked;
+  UninstallButton.Visible := False;
+  UninstallProgressForm.PageNameLabel.Caption := OriginalPageName;
+  UninstallProgressForm.PageDescriptionLabel.Caption := OriginalPageDescription;
+  UninstallProgressForm.CancelButton.Enabled := OriginalCancelEnabled;
+  UninstallProgressForm.CancelButton.ModalResult := OriginalCancelModalResult;
+  UninstallProgressForm.InnerNotebook.ActivePage :=
+    UninstallProgressForm.InstallingPage;
 end;
 
 function GetUninstallHelperParameters(Param: String): String;

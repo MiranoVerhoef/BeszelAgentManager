@@ -74,7 +74,8 @@
                 <TextBlock Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="|" />
                 <TextBlock x:Name="HeaderAgentText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Agent: Checking..." />
             </StackPanel>
-            <Border
+            <Button
+                x:Name="VersionBadgeButton"
                 Grid.Column="2"
                 MinWidth="64"
                 Height="28"
@@ -82,15 +83,18 @@
                 Margin="14,0,0,0"
                 HorizontalAlignment="Right"
                 VerticalAlignment="Center"
-                Background="{ThemeResource AccentFillColorDefaultBrush}"
-                CornerRadius="6">
+                AutomationProperties.Name="Open BeszelAgentManager releases"
+                CornerRadius="6"
+                Click="VersionBadgeButton_Click"
+                Style="{StaticResource AccentButtonStyle}"
+                ToolTipService.ToolTip="Open BeszelAgentManager releases">
                 <TextBlock
                     x:Name="VersionBadgeText"
                     HorizontalAlignment="Center"
                     VerticalAlignment="Center"
                     FontWeight="SemiBold"
                     Foreground="White" />
-            </Border>
+            </Button>
         </Grid>
 
         <NavigationView
@@ -154,15 +158,13 @@
 
         <Grid Grid.Row="5" Padding="20,0,20,8" ColumnSpacing="12">
             <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <HyperlinkButton x:Name="ReleaseLink" Padding="0" Content="BeszelAgentManager v4.0.0" Click="ReleaseLink_Click" />
-            <HyperlinkButton Grid.Column="1" x:Name="HubStatusLink" Padding="0" Content="Hub: Not checked" Click="HubStatusLink_Click" />
-            <HyperlinkButton Grid.Column="2" Padding="0" Content="About" Click="AboutLink_Click" />
-            <HyperlinkButton Grid.Column="3" Padding="0" Content="About Beszel" Click="AboutBeszelLink_Click" />
+            <HyperlinkButton x:Name="HubStatusLink" Padding="0" Content="Hub: Not checked" Click="HubStatusLink_Click" />
+            <HyperlinkButton Grid.Column="1" Padding="0" Content="About" Click="AboutLink_Click" />
+            <HyperlinkButton Grid.Column="2" Padding="0" Content="About Beszel" Click="AboutBeszelLink_Click" />
         </Grid>
     </Grid>
 </Window>

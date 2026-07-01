@@ -10,8 +10,11 @@ public sealed partial class ConnectionPage : Page
 {
     private readonly ConfigService _configService = new();
     private readonly AutostartService _autostartService = new();
+    private readonly SystemStatusService _systemStatusService = new();
     private AgentConfig _config = new();
+    private AgentStatus? _serviceStatus;
     private bool _loading = true;
+    private bool _serviceControlsBusy;
     private bool _autostartEnabled;
     private bool _autostartHidden;
 
@@ -27,6 +30,13 @@ public sealed partial class ConnectionPage : Page
         _config = await _configService.LoadAsync();
         PopulateConfig(_config);
         _loading = false;
+        await App.MainWindow.RefreshServiceStatusNowAsync();
+    }
+
+    internal void ApplyServiceStatus(AgentStatus status)
+    {
+        _serviceStatus = status;
+        UpdateServiceButtons();
     }
 
     private void PopulateConfig(AgentConfig config)
@@ -142,7 +152,7 @@ public sealed partial class ConnectionPage : Page
 
     private async void KeyChangeButton_Click(object sender, RoutedEventArgs e)
     {
-        await ToggleTextEditAsync(KeyTextBox, KeyChangeButton, "Key");
+        await ToggleTextEditAsync(KeyTextBox, KeyChangeButton, "Public Key");
     }
 
     private async void TokenChangeButton_Click(object sender, RoutedEventArgs e)
@@ -182,7 +192,7 @@ public sealed partial class ConnectionPage : Page
 
         PortNumberBox.IsEnabled = false;
         PortChangeButton.Content = "Change";
-        await SaveControlChangeAsync("Listen port");
+        await SaveControlChangeAsync("Listen Port");
     }
 
     private async Task ToggleTextEditAsync(TextBox textBox, Button button, string description)
@@ -218,7 +228,7 @@ public sealed partial class ConnectionPage : Page
         ShowServiceStatus(
             InfoBarSeverity.Informational,
             enable ? "Fallback enabled" : "Fallback disabled",
-            "Apply settings when you are ready to restart the service with this change.");
+            GetServiceChangeNextStepMessage());
     }
 
     private async void ListenToggleButton_Click(object sender, RoutedEventArgs e)
@@ -235,7 +245,18 @@ public sealed partial class ConnectionPage : Page
             ListenToggleButton.Content = "Disable";
         }
 
-        await SaveControlChangeAsync("Listen port state");
+        await SaveControlChangeAsync("Listen Port state");
+        var currentStatus = await _systemStatusService.GetAgentStatusAsync();
+        ApplyServiceStatus(currentStatus);
+        if (!currentStatus.ServiceExists || !currentStatus.AgentExeExists)
+        {
+            ShowServiceStatus(
+                InfoBarSeverity.Success,
+                "Listen Port state saved",
+                "Choose Install agent to install and configure Beszel Agent with these settings.");
+            return;
+        }
+
         await ApplyListenChangeAsync(disabling);
     }
 
@@ -336,13 +357,25 @@ public sealed partial class ConnectionPage : Page
     private async Task RunServiceActionAsync(string action, string displayName)
     {
         SetServiceButtonsEnabled(false);
-        App.Logger.Info($"{displayName} requested");
-        ShowServiceStatus(
-            InfoBarSeverity.Informational,
-            $"{displayName} in progress",
-            "The background service is completing the requested action.");
         try
         {
+            var currentStatus = await _systemStatusService.GetAgentStatusAsync();
+            ApplyServiceStatus(currentStatus);
+            if (!CanRunServiceAction(action, currentStatus))
+            {
+                App.Logger.Info($"{displayName} skipped because service state is {currentStatus.ServiceState}");
+                ShowServiceStatus(
+                    InfoBarSeverity.Informational,
+                    $"{displayName} not required",
+                    GetUnavailableServiceActionMessage(action, currentStatus));
+                return;
+            }
+
+            App.Logger.Info($"{displayName} requested");
+            ShowServiceStatus(
+                InfoBarSeverity.Informational,
+                $"{displayName} in progress",
+                "The background service is completing the requested action.");
             var exitCode = await App.Broker.RunServiceActionAsync(action);
             if (exitCode == 0)
             {
@@ -383,10 +416,57 @@ public sealed partial class ConnectionPage : Page
 
     private void SetServiceButtonsEnabled(bool enabled)
     {
-        StartServiceButton.IsEnabled = enabled;
-        StopServiceButton.IsEnabled = enabled;
-        RestartServiceButton.IsEnabled = enabled;
-        EditServiceButton.IsEnabled = enabled;
+        _serviceControlsBusy = !enabled;
+        UpdateServiceButtons();
+    }
+
+    private void UpdateServiceButtons()
+    {
+        var status = _serviceStatus;
+        if (_serviceControlsBusy || status is null)
+        {
+            StartServiceButton.IsEnabled = false;
+            StopServiceButton.IsEnabled = false;
+            RestartServiceButton.IsEnabled = false;
+            EditServiceButton.IsEnabled = false;
+            return;
+        }
+
+        var running = string.Equals(status.ServiceState, "RUNNING", StringComparison.OrdinalIgnoreCase);
+        var stopped = string.Equals(status.ServiceState, "STOPPED", StringComparison.OrdinalIgnoreCase);
+        StartServiceButton.IsEnabled = status.ServiceExists && stopped;
+        StopServiceButton.IsEnabled = status.ServiceExists && running;
+        RestartServiceButton.IsEnabled = status.ServiceExists && running;
+        EditServiceButton.IsEnabled = status.ServiceExists;
+    }
+
+    private static bool CanRunServiceAction(string action, AgentStatus status)
+    {
+        var running = string.Equals(status.ServiceState, "RUNNING", StringComparison.OrdinalIgnoreCase);
+        var stopped = string.Equals(status.ServiceState, "STOPPED", StringComparison.OrdinalIgnoreCase);
+        return status.ServiceExists && action switch
+        {
+            "start" => stopped,
+            "stop" or "restart" => running,
+            _ => false,
+        };
+    }
+
+    private static string GetUnavailableServiceActionMessage(string action, AgentStatus status)
+    {
+        if (!status.ServiceExists)
+        {
+            return "The Beszel Agent service is not installed.";
+        }
+
+        return action switch
+        {
+            "start" when string.Equals(status.ServiceState, "RUNNING", StringComparison.OrdinalIgnoreCase)
+                => "The Beszel Agent service is already running.",
+            "stop" or "restart" when string.Equals(status.ServiceState, "STOPPED", StringComparison.OrdinalIgnoreCase)
+                => "The Beszel Agent service is already stopped.",
+            _ => $"The action is unavailable while the service state is {status.ServiceState}.",
+        };
     }
 
     private void ShowServiceStatus(InfoBarSeverity severity, string title, string message)
@@ -410,8 +490,16 @@ public sealed partial class ConnectionPage : Page
             InfoBarSeverity.Success,
             $"{description} saved",
             serviceAffecting
-                ? "Apply settings when you are ready to restart the Beszel Agent service with this change."
+                ? GetServiceChangeNextStepMessage()
                 : "This setting was saved.");
+    }
+
+    private string GetServiceChangeNextStepMessage()
+    {
+        var agentInstalled = _serviceStatus?.AgentExeExists == true || File.Exists(ManagerPaths.AgentExePath);
+        return agentInstalled
+            ? "Apply settings when you are ready to restart the Beszel Agent service with this change."
+            : "Choose Install agent to install and configure Beszel Agent with these settings.";
     }
 
     private static bool IsManagerOnlySetting(string description)
@@ -528,12 +616,12 @@ public sealed partial class ConnectionPage : Page
     private bool LogConnectionChanges(ConnectionSnapshot before, ConnectionSnapshot after, bool logNoChanges)
     {
         var changes = new List<string>();
-        AddSensitive("Key", before.Key, after.Key);
+        AddSensitive("Public Key", before.Key, after.Key);
         AddSensitive("Token", before.Token, after.Token);
         AddValue("Hub URL", before.HubUrl, after.HubUrl);
         AddValue("Hub URL IP fallback", before.HubFallback, after.HubFallback);
         AddValue("Hub URL IP fallback enabled", before.HubFallbackEnabled, after.HubFallbackEnabled);
-        AddValue("Listen port", before.Listen, after.Listen);
+        AddValue("Listen Port", before.Listen, after.Listen);
         AddValue("Automatic updates", before.AutoUpdateEnabled, after.AutoUpdateEnabled);
         AddValue("Update interval hours", before.UpdateIntervalHours, after.UpdateIntervalHours);
         AddValue("Manager autostart", before.AutostartEnabled, after.AutostartEnabled);

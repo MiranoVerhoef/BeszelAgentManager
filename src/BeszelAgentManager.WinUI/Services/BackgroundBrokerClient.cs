@@ -62,7 +62,23 @@ internal sealed class BackgroundBrokerClient
     public Task<int> InstallManagerVersionAsync(string tag) =>
         SendAsync("manager.installVersion", new Dictionary<string, string> { ["tag"] = tag });
 
+    public async Task<string?> GetAgentVersionAsync()
+    {
+        var response = await SendResponseAsync("agent.version");
+        return response.Success && IsAgentVersion(response.Message)
+            ? response.Message
+            : null;
+    }
+
     private async Task<int> SendAsync(string action, Dictionary<string, string>? arguments = null)
+    {
+        var response = await SendResponseAsync(action, arguments);
+        return response.Success ? 0 : response.ErrorCode == 0 ? 1 : response.ErrorCode;
+    }
+
+    private async Task<BrokerResponse> SendResponseAsync(
+        string action,
+        Dictionary<string, string>? arguments = null)
     {
         await _gate.WaitAsync();
         try
@@ -106,12 +122,21 @@ internal sealed class BackgroundBrokerClient
                 throw new InvalidOperationException("The background service returned a mismatched broker response.");
             }
 
-            return response.Success ? 0 : response.ErrorCode == 0 ? 1 : response.ErrorCode;
+            return response;
         }
         finally
         {
             _gate.Release();
         }
+    }
+
+    private static bool IsAgentVersion(string value)
+    {
+        var parts = value.Split('.', 4, StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 3
+            && int.TryParse(parts[0], out _)
+            && int.TryParse(parts[1], out _)
+            && int.TryParse(parts[2].Split('-', '+')[0], out _);
     }
 
     private static string GetHelperPath()
