@@ -36,6 +36,9 @@ Version 4 replaces the Python/Tk application with a native .NET 10 and WinUI 3 d
 - Reparse-point rejection before recursive privileged cleanup
 - Bounded GitHub downloads and validated release asset URLs
 - Final-state service completion checks
+- Idempotent NSSM configuration with read-back verification
+- Supported NSSM rotation settings and localized service-state handling
+- Rollback after failed updates and transient service-manager retries
 - Background-service crash recovery
 - Clean install, v3 upgrade, v4 replacement, uninstall, DNS recovery, and reboot validation
 
