@@ -5,8 +5,8 @@ on:
     paths:
       - VERSION
       - RELEASE_CHANNEL
-      - main.py
-      - beszel_agent_manager/**
+      - BeszelAgentManager.sln
+      - src/**
       - tests/**
       - installer/**
       - .github/workflows/release.yml
@@ -72,44 +72,26 @@ jobs:
           "release_name=$releaseName" >> $env:GITHUB_OUTPUT
           "is_prerelease=$isPrerelease" >> $env:GITHUB_OUTPUT
 
-      - name: Verify version metadata
-        shell: pwsh
-        run: |
-          $version = "${{ steps.version.outputs.version }}"
-          $constants = Get-Content -Path beszel_agent_manager\constants.py -Raw
-          $versionInfo = Get-Content -Path file_version_info.txt -Raw
-          $tuple = ($version -replace '\.', ', ') + ', 0'
-
-          if ($constants -notmatch "APP_VERSION\s*=\s*`"$([regex]::Escape($version))`"") {
-            throw "beszel_agent_manager/constants.py APP_VERSION does not match VERSION=$version"
-          }
-          if ($versionInfo -notmatch "filevers=\($tuple\)") {
-            throw "file_version_info.txt filevers does not match VERSION=$version"
-          }
-          if ($versionInfo -notmatch "prodvers=\($tuple\)") {
-            throw "file_version_info.txt prodvers does not match VERSION=$version"
-          }
-          if ($versionInfo -notmatch "StringStruct\('FileVersion', '$([regex]::Escape($version))'\)") {
-            throw "file_version_info.txt FileVersion does not match VERSION=$version"
-          }
-          if ($versionInfo -notmatch "StringStruct\('ProductVersion', '$([regex]::Escape($version))'\)") {
-            throw "file_version_info.txt ProductVersion does not match VERSION=$version"
-          }
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v5
         with:
-          python-version: "3.12"
+          dotnet-version: "10.0.x"
 
-      - name: Install build dependencies
+      - name: Restore and test
         shell: pwsh
         run: |
-          python -m pip install --upgrade pip
-          pip install nuitka ordered-set zstandard requests pystray pillow
-
-      - name: Run service configuration tests
-        shell: pwsh
-        run: python -m unittest discover -s tests -v
+          dotnet restore .\BeszelAgentManager.sln
+          if ($LASTEXITCODE -ne 0) {
+            throw "Solution restore failed"
+          }
+          dotnet test `
+            .\tests\BeszelAgentManager.Core.Tests\BeszelAgentManager.Core.Tests.csproj `
+            -c Release `
+            --no-restore `
+            -v minimal
+          if ($LASTEXITCODE -ne 0) {
+            throw "Core tests failed"
+          }
 
       - name: Install Inno Setup
         shell: pwsh
@@ -123,6 +105,7 @@ jobs:
           New-Item -ItemType Directory -Path build-assets -Force | Out-Null
 
           function Test-NssmBinary($Path) {
+            $expectedSha256 = "f689ee9af94b00e9e3f0bb072b34caaf207f32dcb4f5782fc9ca351df9a06c97"
             $file = Get-Item -Path $Path
             if ($file.Length -lt 200000) {
               Write-Host "Rejected NSSM candidate because it is too small: $Path ($($file.Length) bytes)"
@@ -132,10 +115,18 @@ jobs:
             try {
               $bytes = New-Object byte[] 2
               [void]$stream.Read($bytes, 0, 2)
-              return ($bytes[0] -eq 0x4d -and $bytes[1] -eq 0x5a)
+              if (-not ($bytes[0] -eq 0x4d -and $bytes[1] -eq 0x5a)) {
+                return $false
+              }
             } finally {
               $stream.Dispose()
             }
+            $actualSha256 = (Get-FileHash -Path $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($actualSha256 -ne $expectedSha256) {
+              Write-Host "Rejected NSSM candidate because SHA-256 did not match NSSM 2.24 x64: $Path"
+              return $false
+            }
+            return $true
           }
 
           function Find-UsableNssm($ArchivePath, $SourceName) {
@@ -196,38 +187,35 @@ jobs:
             throw "Staged nssm.exe is not a usable win64 NSSM binary"
           }
 
-      - name: Build standalone app
+      - name: Build WinUI application
         shell: pwsh
         run: |
-          $version = "${{ steps.version.outputs.version }}"
-          python -m nuitka `
-            --standalone `
-            --assume-yes-for-downloads `
-            --enable-plugin=tk-inter `
-            --windows-console-mode=disable `
-            --windows-icon-from-ico=BeszelAgentManager_icon.ico `
-            --windows-company-name="Verhoef" `
-            --windows-product-name="BeszelAgentManager" `
-            --windows-file-description="BeszelAgentManager" `
-            --windows-file-version="$version.0" `
-            --windows-product-version="$version.0" `
-            --include-package=pystray `
-            --include-package=PIL `
-            --include-data-files=BeszelAgentManager_icon.ico=BeszelAgentManager_icon.ico `
-            --include-data-files=BeszelAgentManager_icon_512.png=BeszelAgentManager_icon_512.png `
-            --include-data-files=build-assets\nssm.exe=nssm.exe `
-            --output-dir=build `
-            --output-filename=BeszelAgentManager.exe `
-            main.py
+          $distDir = Join-Path $PWD "build\winui-dist"
+          dotnet build `
+            .\src\BeszelAgentManager.WinUI\BeszelAgentManager.WinUI.csproj `
+            -c Release `
+            -p:Platform=x64 `
+            -r win-x64 `
+            --self-contained true
+          if ($LASTEXITCODE -ne 0) {
+            throw "WinUI build failed"
+          }
+          $buildDir = Join-Path $PWD "src\BeszelAgentManager.WinUI\bin\x64\Release\net10.0-windows10.0.26100.0\win-x64"
+          New-Item -ItemType Directory -Path $distDir -Force | Out-Null
+          Copy-Item -Path (Join-Path $buildDir "*") -Destination $distDir -Recurse -Force
+          Remove-Item -Path (Join-Path $distDir "BeszelAgentManager.Helper.*") -Force -ErrorAction SilentlyContinue
+          Copy-Item -Path build-assets\nssm.exe -Destination (Join-Path $distDir "nssm.exe") -Force
+          foreach ($required in @("BeszelAgentManager.exe", "helper\BeszelAgentManager.Helper.exe", "nssm.exe")) {
+            if (-not (Test-Path -LiteralPath (Join-Path $distDir $required))) {
+              throw "Published output is missing $required"
+            }
+          }
 
       - name: Build installer
         shell: pwsh
         run: |
           $version = "${{ steps.version.outputs.version }}"
-          $distDir = (Get-ChildItem -Path build -Directory -Filter "*.dist" | Select-Object -First 1).FullName
-          if (-not $distDir) {
-            throw "Nuitka standalone .dist directory was not created"
-          }
+          $distDir = (Resolve-Path "build\winui-dist").Path
           if (-not (Test-Path -Path (Join-Path $distDir "BeszelAgentManager.exe"))) {
             throw "BeszelAgentManager.exe was not created in $distDir"
           }

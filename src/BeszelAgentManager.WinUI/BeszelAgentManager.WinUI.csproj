@@ -1,0 +1,70 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>BeszelAgentManager.WinUI</RootNamespace>
+    <AssemblyName>BeszelAgentManager</AssemblyName>
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x64</Platforms>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishProfile Condition="Exists('Properties\PublishProfiles\win-$(Platform).pubxml')">win-$(Platform).pubxml</PublishProfile>
+    <UseWinUI>true</UseWinUI>
+    <WinUISDKReferences>false</WinUISDKReferences>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Version>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)\..\..\VERSION').Trim())</Version>
+    <AssemblyVersion>$(Version).0</AssemblyVersion>
+    <FileVersion>$(Version).0</FileVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\AppIcon.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" TargetPath="Assets\AppIcon.ico" />
+    <Content Include="Assets\AppIcon.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" TargetPath="Assets\AppIcon.png" />
+    <Content Include="..\..\VERSION" Link="VERSION" CopyToOutputDirectory="Always" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BeszelAgentManager.Core\BeszelAgentManager.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Manifest Include="$(ApplicationManifest)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.1839" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.2.0" />
+    <PackageReference Include="H.NotifyIcon.WinUI" Version="2.4.1" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
+  </ItemGroup>
+
+  <Target Name="BuildElevatedHelper" BeforeTargets="Build">
+    <MSBuild
+      Projects="..\BeszelAgentManager.Helper\BeszelAgentManager.Helper.csproj"
+      Targets="Build"
+      Properties="Configuration=$(Configuration);Platform=x64;RuntimeIdentifier=win-x64" />
+  </Target>
+
+  <Target Name="CopyElevatedHelperToBuildOutput" AfterTargets="Build" DependsOnTargets="BuildElevatedHelper">
+    <ItemGroup>
+      <ElevatedHelperFiles Include="..\BeszelAgentManager.Helper\bin\x64\$(Configuration)\net10.0-windows\win-x64\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ElevatedHelperFiles)"
+          DestinationFiles="@(ElevatedHelperFiles->'$(OutDir)helper\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+  <Target Name="CopyElevatedHelperToPublishOutput" AfterTargets="Publish" DependsOnTargets="BuildElevatedHelper">
+    <ItemGroup>
+      <ElevatedHelperPublishFiles Include="..\BeszelAgentManager.Helper\bin\x64\$(Configuration)\net10.0-windows\win-x64\**\*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(ElevatedHelperPublishFiles)"
+          DestinationFiles="@(ElevatedHelperPublishFiles->'$(PublishDir)helper\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+</Project>

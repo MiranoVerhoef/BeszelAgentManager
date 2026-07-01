@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="BeszelAgentManager.WinUI.Pages.AgentLoggingPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Grid Padding="12" RowSpacing="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Text="Agent log folder: C:\ProgramData\BeszelAgentManager\agent_logs" />
+
+        <Grid Grid.Row="1" ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="120" />
+                <ColumnDefinition Width="92" />
+                <ColumnDefinition Width="92" />
+            </Grid.ColumnDefinitions>
+            <TextBlock VerticalAlignment="Center" Text="File:" />
+            <ComboBox Grid.Column="1" x:Name="LogSelector" SelectionChanged="LogSelector_SelectionChanged" />
+            <TextBlock Grid.Column="2" VerticalAlignment="Center" Text="Type:" />
+            <ComboBox Grid.Column="3" x:Name="TypeFilterComboBox" SelectionChanged="TypeFilterComboBox_SelectionChanged" SelectedIndex="0">
+                <ComboBoxItem Content="All" />
+                <ComboBoxItem Content="Info" />
+                <ComboBoxItem Content="Warnings" />
+                <ComboBoxItem Content="Errors" />
+            </ComboBox>
+            <Button Grid.Column="4" x:Name="RefreshButton" Content="Refresh" Click="RefreshButton_Click" />
+            <Button Grid.Column="5" x:Name="RotateNowButton" Content="Rotate now" Click="RotateNowButton_Click" />
+        </Grid>
+
+        <TextBlock Grid.Row="2" x:Name="LogPathText" Text="Current capture file: C:\ProgramData\BeszelAgentManager\agent_logs\beszel-agent.log" />
+
+        <ScrollViewer
+            x:Name="LogScrollViewer"
+            Grid.Row="3"
+            HorizontalScrollBarVisibility="Auto"
+            VerticalScrollBarVisibility="Auto">
+            <RichTextBlock
+                x:Name="LogTextBlock"
+                FontFamily="Consolas"
+                FontSize="12"
+                IsTextSelectionEnabled="True"
+                TextWrapping="NoWrap" />
+        </ScrollViewer>
+    </Grid>
+</Page>
