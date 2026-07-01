@@ -22,7 +22,7 @@ Version 4 is a native .NET 10 and WinUI 3 application. Routine administrative ac
 
 ## Supported systems
 
-- Windows 10 or Windows 11, x64
+- Windows 10, Windows 11, Server 2019, 2022 and 2025 X64
 - Administrator access for initial installation, upgrade, uninstall, and **Edit service…**
 - Network access to GitHub releases and the configured Beszel Hub
 
