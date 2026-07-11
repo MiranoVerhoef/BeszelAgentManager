@@ -63,14 +63,7 @@ Normal privileged actions use the installed broker. UAC remains for:
 - manager upgrade/uninstall when invoked interactively;
 - the interactive NSSM **Edit service…** command.
 
-## Residual risks and release requirements
-
-- Unsigned releases rely on the repository-hosted SHA-256 manifest and GitHub account security. Signing manager installers is recommended.
-- Administrators and SYSTEM remain trusted and can replace installed files or policy.
-- The CI pull-request installer artifact must pass the same VM matrix before stable release.
-- `4.0.0` remains an RC until the final matrix passes.
-
-## 4.0.0 RC audit status
+## 4.0.0 audit status
 
 The final source audit covered broker authentication, command and URL allowlists, privileged process resolution, download verification and limits, archive staging, reparse-point handling, ProgramData ACLs, secret redaction, uninstall cleanup, and dependency advisories.
 
