@@ -23,6 +23,7 @@ public sealed partial class MainWindow : Window
     private readonly DispatcherQueueTimer _serviceStatusTimer;
     private readonly DispatcherQueueTimer _globalNotificationTimer;
     private readonly DispatcherQueueTimer _managerUpdateTimer;
+    private readonly CancellationTokenSource _shutdown = new();
     private string _hubUrl = string.Empty;
     private bool _refreshingServiceStatus;
     private string _lastServiceState = string.Empty;
@@ -60,7 +61,12 @@ public sealed partial class MainWindow : Window
             RunTrayAgentUpdateAsync,
             ExitFromTray);
         AppWindow.Closing += AppWindow_Closing;
-        Closed += (_, _) => _trayIconService.Dispose();
+        Closed += (_, _) =>
+        {
+            StopBackgroundWork();
+            _trayIconService.Dispose();
+            _shutdown.Dispose();
+        };
 
         VersionBadgeText.Text = $"v{AppInfo.Version}";
         NavFrame.Navigate(typeof(ConnectionPage));
@@ -204,8 +210,22 @@ public sealed partial class MainWindow : Window
         DispatcherQueue.TryEnqueue(() =>
         {
             _exitRequested = true;
+            StopBackgroundWork();
             Close();
         });
+    }
+
+    private void StopBackgroundWork()
+    {
+        if (!_shutdown.IsCancellationRequested)
+        {
+            _shutdown.Cancel();
+        }
+
+        _hubStatusTimer.Stop();
+        _serviceStatusTimer.Stop();
+        _globalNotificationTimer.Stop();
+        _managerUpdateTimer.Stop();
     }
 
     private void OpenHubFromTray()
@@ -262,7 +282,7 @@ public sealed partial class MainWindow : Window
         App.Logger.Info("Agent update check requested from tray");
         try
         {
-            var status = await _systemStatusService.GetAgentStatusAsync();
+            var status = await _systemStatusService.GetAgentStatusAsync(_shutdown.Token);
             if (!status.AgentExeExists)
             {
                 _trayIconService.ShowNotification("Beszel Agent is not installed", "Open BeszelAgentManager and install the agent first.", NotificationIcon.Warning);
@@ -286,7 +306,7 @@ public sealed partial class MainWindow : Window
             }
 
             await RefreshServiceStatusNowAsync();
-            var updated = await _systemStatusService.GetAgentStatusAsync();
+            var updated = await _systemStatusService.GetAgentStatusAsync(_shutdown.Token);
             App.Logger.Info($"Agent update completed successfully from tray: {updated.AgentVersion}");
             _trayIconService.ShowNotification("Beszel Agent updated", $"Installed version: {updated.AgentVersion}");
         }
@@ -367,7 +387,7 @@ public sealed partial class MainWindow : Window
 
     private async Task RefreshServiceStatusAsync()
     {
-        if (_refreshingServiceStatus)
+        if (_refreshingServiceStatus || _shutdown.IsCancellationRequested)
         {
             return;
         }
@@ -375,7 +395,7 @@ public sealed partial class MainWindow : Window
         _refreshingServiceStatus = true;
         try
         {
-            var status = await _systemStatusService.GetAgentStatusAsync();
+            var status = await _systemStatusService.GetAgentStatusAsync(_shutdown.Token);
             HeaderServiceText.Text = $"Service: {status.ServiceState}";
             HeaderAgentText.Text = $"Agent: {status.AgentVersion}";
             if (NavFrame.Content is ConnectionPage connectionPage)
@@ -389,6 +409,9 @@ public sealed partial class MainWindow : Window
                 _lastServiceState = status.ServiceState;
             }
         }
+        catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
+        {
+        }
         finally
         {
             _refreshingServiceStatus = false;
@@ -397,7 +420,7 @@ public sealed partial class MainWindow : Window
 
     private async Task CheckManagerUpdateInBackgroundAsync()
     {
-        if (_checkingManagerUpdate)
+        if (_checkingManagerUpdate || _shutdown.IsCancellationRequested)
         {
             return;
         }
@@ -440,6 +463,9 @@ public sealed partial class MainWindow : Window
 
             await _configService.SaveAsync(config);
         }
+        catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
+        {
+        }
         catch (Exception ex)
         {
             App.Logger.Debug($"Background manager update check failed: {ex.Message}");
@@ -452,6 +478,11 @@ public sealed partial class MainWindow : Window
 
     private async Task RefreshHubStatusAsync()
     {
+        if (_shutdown.IsCancellationRequested)
+        {
+            return;
+        }
+
         var config = await _configService.LoadAsync();
         var fallbackActive = IsHubFallbackActive()
             && config.HubUrlIpFallbackEnabled

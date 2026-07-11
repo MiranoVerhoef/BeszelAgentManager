@@ -25,6 +25,7 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
+MinVersion=10.0.17763
 CloseApplications=yes
 CloseApplicationsFilter=BeszelAgentManager.exe
 RestartApplications=no

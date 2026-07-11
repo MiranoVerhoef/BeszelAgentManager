@@ -22,7 +22,10 @@ Version 4 is a native .NET 10 and WinUI 3 application. Routine administrative ac
 
 ## Supported systems
 
-- Windows 10, Windows 11, Server 2019, 2022 and 2025 X64
+- Windows 10 version 1809 or later, x64
+- Windows 11, x64
+- Windows Server 2019, 2022, or 2025 with Desktop Experience, x64
+- Windows Server Core is not supported because the manager requires a graphical desktop session
 - Administrator access for initial installation, upgrade, uninstall, and **Edit service…**
 - Network access to GitHub releases and the configured Beszel Hub
 

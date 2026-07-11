@@ -66,30 +66,63 @@ internal sealed partial class SystemStatusService
 
     private static async Task<string> RunScAsync(string[] args, CancellationToken cancellationToken)
     {
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = Path.Combine(Environment.SystemDirectory, "sc.exe"),
-            UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            CreateNoWindow = true,
-        };
+        using var timeoutSource = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutSource.CancelAfter(TimeSpan.FromSeconds(2));
 
-        foreach (var arg in args)
+        try
         {
-            startInfo.ArgumentList.Add(arg);
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = Path.Combine(Environment.SystemDirectory, "sc.exe"),
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+
+            foreach (var arg in args)
+            {
+                startInfo.ArgumentList.Add(arg);
+            }
+
+            using var process = Process.Start(startInfo);
+            if (process is null)
+            {
+                return string.Empty;
+            }
+
+            try
+            {
+                var stdoutTask = process.StandardOutput.ReadToEndAsync(timeoutSource.Token);
+                var stderrTask = process.StandardError.ReadToEndAsync(timeoutSource.Token);
+                await process.WaitForExitAsync(timeoutSource.Token);
+                return $"{await stdoutTask}{Environment.NewLine}{await stderrTask}".Trim();
+            }
+            catch (OperationCanceledException)
+            {
+                TryKillProcess(process);
+                return string.Empty;
+            }
         }
-
-        using var process = Process.Start(startInfo);
-        if (process is null)
+        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
         {
+            App.Logger.Debug($"Service status query failed: {ex.Message}");
             return string.Empty;
         }
+    }
 
-        var stdout = await process.StandardOutput.ReadToEndAsync(cancellationToken);
-        var stderr = await process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken);
-        return $"{stdout}{Environment.NewLine}{stderr}".Trim();
+    private static void TryKillProcess(Process process)
+    {
+        try
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+        }
+        catch
+        {
+        }
     }
 
     private static bool DoesNotExist(string output)
