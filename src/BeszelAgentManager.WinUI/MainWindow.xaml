@@ -139,7 +139,7 @@
                 </Grid.ColumnDefinitions>
                 <Button x:Name="InstallAgentButton" Content="Install agent" HorizontalAlignment="Stretch" Click="InstallAgentButton_Click" />
                 <Button x:Name="UpdateAgentButton" Grid.Column="1" Content="Update agent" HorizontalAlignment="Stretch" Click="UpdateAgentButton_Click" />
-                <Button x:Name="DownloadManagerButton" Grid.Column="2" Content="Download manager" HorizontalAlignment="Stretch" Click="DownloadManagerButton_Click" />
+                <Button x:Name="DownloadManagerButton" Grid.Column="2" Content="Update Manager" HorizontalAlignment="Stretch" Click="DownloadManagerButton_Click" />
                 <Button x:Name="ApplySettingsButton" Grid.Column="3" Content="Apply settings" HorizontalAlignment="Stretch" Click="ApplySettingsButton_Click" />
                 <Button x:Name="UninstallAgentButton" Grid.Column="4" Content="Uninstall agent" HorizontalAlignment="Stretch" Click="UninstallAgentButton_Click" />
             </Grid>

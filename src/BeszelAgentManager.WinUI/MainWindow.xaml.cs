@@ -549,7 +549,7 @@ public sealed partial class MainWindow : Window
                 XamlRoot = NavView.XamlRoot,
                 Title = "Manager update available",
                 Content = BuildUpdateAvailableContent(release),
-                PrimaryButtonText = "Download installer",
+                PrimaryButtonText = "Update Manager",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Primary,
             };
@@ -568,7 +568,7 @@ public sealed partial class MainWindow : Window
         finally
         {
             DownloadManagerButton.IsEnabled = true;
-            DownloadManagerButton.Content = "Download manager";
+            DownloadManagerButton.Content = "Update Manager";
         }
     }
 
@@ -1240,7 +1240,7 @@ public sealed partial class MainWindow : Window
         var panel = new StackPanel { Spacing = 10, Width = 520 };
         panel.Children.Add(new TextBlock
         {
-            Text = "Control automatic GitHub checks and update notifications. Updates are installed only when you explicitly choose a version or approve Download manager.",
+            Text = "Control automatic GitHub checks and update notifications. Updates are installed only when you explicitly choose a version or approve Update Manager.",
             TextWrapping = TextWrapping.Wrap,
             Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
         });
@@ -1303,7 +1303,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        var relauncher = StartUpdateRelauncher();
+        var relauncher = StartUpdateRelauncher(release.Version);
         try
         {
             ShowGlobalStatus(InfoBarSeverity.Informational, "Preparing manager update", "Downloading and verifying the official installer.");
@@ -1333,21 +1333,24 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private static Process StartUpdateRelauncher()
+    private static Process StartUpdateRelauncher(string targetVersion)
     {
         var scriptPath = Path.Combine(Path.GetTempPath(), $"BeszelAgentManager-relaunch-{Guid.NewGuid():N}.ps1");
         var executable = (Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "BeszelAgentManager.exe")).Replace("'", "''", StringComparison.Ordinal);
+        var expectedVersion = VersionComparer.Normalize(targetVersion).Replace("'", "''", StringComparison.Ordinal);
         var script = $$"""
             $deadline = (Get-Date).AddMinutes(15)
             while (Get-Process -Id {{Environment.ProcessId}} -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 1 }
-            Start-Sleep -Seconds 8
             while ((Get-Date) -lt $deadline) {
               if (Test-Path -LiteralPath '{{executable}}') {
                 try {
                   $stream = [System.IO.File]::Open('{{executable}}', 'Open', 'Read', 'ReadWrite')
                   $stream.Dispose()
-                  Start-Process -FilePath '{{executable}}'
-                  break
+                  $fileVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo('{{executable}}').FileVersion
+                  if ($fileVersion -and $fileVersion.StartsWith('{{expectedVersion}}.')) {
+                    Start-Process -FilePath '{{executable}}'
+                    break
+                  }
                 } catch { }
               }
               Start-Sleep -Seconds 2
