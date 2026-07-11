@@ -208,11 +208,26 @@ begin
   end;
 end;
 
+procedure StopManagerRelaunchers();
+var
+  ResultCode: Integer;
+begin
+  Exec(
+    ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    '-NoProfile -NonInteractive -WindowStyle Hidden -Command "Get-CimInstance Win32_Process -Filter ''Name = ''''powershell.exe'''' OR Name = ''''pwsh.exe'''''' | Where-Object { $_.CommandLine -match ''BeszelAgentManager-relaunch-[0-9a-f]{32}\.ps1'' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"',
+    '',
+    SW_HIDE,
+    ewWaitUntilTerminated,
+    ResultCode
+  );
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
 begin
   Result := '';
+  StopManagerRelaunchers();
   Exec(
     ExpandConstant('{sys}\net.exe'),
     'stop "BeszelAgentManager Background" /y',
