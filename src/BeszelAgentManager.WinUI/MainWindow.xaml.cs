@@ -68,7 +68,7 @@ public sealed partial class MainWindow : Window
             _shutdown.Dispose();
         };
 
-        VersionBadgeText.Text = $"v{AppInfo.Version} {AppInfo.RuntimeVariantDisplayName}";
+        VersionBadgeText.Text = $"v{AppInfo.Version}{AppInfo.RuntimeVariantVersionSuffix}";
         NavFrame.Navigate(typeof(ConnectionPage));
         _ = RefreshStatusAsync();
 

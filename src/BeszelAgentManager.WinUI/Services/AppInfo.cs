@@ -13,7 +13,8 @@ internal static class AppInfo
     public static string RuntimeVariant => ReadRuntimeVariant();
     public static bool IsLiteRuntimeVariant =>
         string.Equals(RuntimeVariant, "lite", StringComparison.OrdinalIgnoreCase);
-    public static string RuntimeVariantDisplayName => IsLiteRuntimeVariant ? "Lite" : "Bundled";
+    public static string RuntimeVariantDisplayName => IsLiteRuntimeVariant ? "Lite" : "standard";
+    public static string RuntimeVariantVersionSuffix => IsLiteRuntimeVariant ? " Lite" : string.Empty;
     public static string InstallerAssetName => IsLiteRuntimeVariant
         ? LiteInstallerAssetName
         : BundledInstallerAssetName;

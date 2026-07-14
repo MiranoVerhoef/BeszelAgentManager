@@ -91,7 +91,7 @@ Last-run and next-due state is persisted in `background-runtime-state.json`. Ena
 
 Agent assets are selected only from the official Beszel GitHub repository.
 
-Manager updates accept only a selected release tag from the hardcoded project repository. Bundled installations keep using the Bundled installer and Lite installations keep using the Lite installer. The selected edition appears beside the manager version in the UI. The background service downloads the exact installer and `SHA256SUMS.txt` assets into a restricted staging directory, verifies the checksum, rejects invalid paths and reparse points, and launches Inno Setup silently after the UI exits. Authenticode is also required when a release is signed.
+Manager updates accept only a selected release tag from the hardcoded project repository. Standard installations keep using the standard installer and Lite installations keep using the Lite installer. Lite appears beside the manager version in the UI; the standard edition remains plain `BeszelAgentManager`. The background service downloads the exact installer and `SHA256SUMS.txt` assets into a restricted staging directory, verifies the checksum, rejects invalid paths and reparse points, and launches Inno Setup silently after the UI exits. Authenticode is also required when a release is signed.
 
 ## Migration from 3.1.0
 

@@ -5,7 +5,7 @@
 - Adds a Bundled installer containing .NET 10 for the easiest setup.
 - Adds a smaller Lite installer for systems with Microsoft .NET 10 Desktop Runtime x64 already installed.
 - Lite setup detects a missing runtime, offers to open the official Microsoft download page, and waits for the runtime before installation.
-- Manager updates preserve the installed Bundled or Lite edition and display that edition beside the version number.
+- Manager updates preserve the installed standard or Lite edition; only Lite adds an edition label beside the version number.
 - Release checksums cover both fixed, allowlisted installer filenames.
 
 ## Update reliability
