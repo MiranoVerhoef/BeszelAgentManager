@@ -68,7 +68,7 @@ public sealed partial class MainWindow : Window
             _shutdown.Dispose();
         };
 
-        VersionBadgeText.Text = $"v{AppInfo.Version}";
+        VersionBadgeText.Text = $"v{AppInfo.Version} {AppInfo.RuntimeVariantDisplayName}";
         NavFrame.Navigate(typeof(ConnectionPage));
         _ = RefreshStatusAsync();
 
@@ -1291,7 +1291,7 @@ public sealed partial class MainWindow : Window
             Title = $"Install BeszelAgentManager {release.Version}?",
             Content = new TextBlock
             {
-                Text = "The background service will download and verify the official installer, close this app, install silently, and reopen the manager.",
+                Text = $"The background service will download and verify the official {AppInfo.RuntimeVariantDisplayName} installer, close this app, install silently, and reopen the manager.",
                 TextWrapping = TextWrapping.Wrap,
             },
             PrimaryButtonText = "Install",

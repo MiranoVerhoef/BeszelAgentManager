@@ -31,7 +31,10 @@ Version 4 is a native .NET 10 and WinUI 3 application. Routine administrative ac
 
 ## Installation
 
-Download `BeszelAgentManagerSetup.exe` and `SHA256SUMS.txt` from the project’s GitHub release.
+Choose one installer from the project’s GitHub release and download `SHA256SUMS.txt`:
+
+- `BeszelAgentManagerSetup.exe` — Bundled edition; includes the .NET 10 runtime.
+- `BeszelAgentManagerSetup-Lite.exe` — Lite edition; smaller download for systems that already have Microsoft .NET 10 Desktop Runtime x64. If it is missing, setup offers to open Microsoft’s download page and stops until the runtime is installed.
 
 1. Verify the installer SHA-256 against `SHA256SUMS.txt`.
 2. Run the installer and approve UAC.
@@ -88,7 +91,7 @@ Last-run and next-due state is persisted in `background-runtime-state.json`. Ena
 
 Agent assets are selected only from the official Beszel GitHub repository.
 
-Manager updates accept only a selected release tag from the hardcoded project repository. The background service downloads the exact installer and `SHA256SUMS.txt` assets into a restricted staging directory, verifies the checksum, rejects invalid paths and reparse points, and launches Inno Setup silently after the UI exits. Authenticode is also required when a release is signed.
+Manager updates accept only a selected release tag from the hardcoded project repository. Bundled installations keep using the Bundled installer and Lite installations keep using the Lite installer. The selected edition appears beside the manager version in the UI. The background service downloads the exact installer and `SHA256SUMS.txt` assets into a restricted staging directory, verifies the checksum, rejects invalid paths and reparse points, and launches Inno Setup silently after the UI exits. Authenticode is also required when a release is signed.
 
 ## Migration from 3.1.0
 
@@ -130,7 +133,7 @@ dotnet test tests\BeszelAgentManager.Core.Tests\BeszelAgentManager.Core.Tests.cs
 dotnet build BeszelAgentManager.sln -c Release -p:Platform=x64
 ```
 
-Build the self-contained WinUI application:
+Build the Bundled WinUI application:
 
 ```powershell
 dotnet build src\BeszelAgentManager.WinUI\BeszelAgentManager.WinUI.csproj `
@@ -160,6 +163,12 @@ Output:
 
 ```text
 installer-dist\BeszelAgentManagerSetup.exe
+```
+
+For Lite, rebuild with `--self-contained false`, stage the output in `build\winui-lite-dist`, and compile with `/DLiteInstaller`. This produces:
+
+```text
+installer-dist\BeszelAgentManagerSetup-Lite.exe
 ```
 
 ## Repository layout

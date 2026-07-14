@@ -38,10 +38,10 @@ Manager updates:
 
 - accept only a validated version tag;
 - retrieve metadata from the hardcoded manager repository;
-- require exact installer and checksum asset names;
+- require the exact Bundled or Lite installer name selected from the installed edition and the exact checksum asset name;
 - require HTTPS GitHub asset URLs;
 - enforce download-size limits;
-- verify the SHA-256 entry for `BeszelAgentManagerSetup.exe`;
+- verify the SHA-256 entry for `BeszelAgentManagerSetup.exe` or `BeszelAgentManagerSetup-Lite.exe` as appropriate;
 - reject invalid Authenticode signatures and require a valid signature when present;
 - stage under a service-controlled directory;
 - launch only the fixed staged installer with fixed silent arguments.

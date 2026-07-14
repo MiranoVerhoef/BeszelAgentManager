@@ -5,18 +5,27 @@
 #ifndef DistDir
 #define DistDir "..\build\main.dist"
 #endif
+#ifdef LiteInstaller
+#define RuntimeVariantId "lite"
+#define RuntimeVariantSuffix " Lite"
+#define OutputSuffix "-Lite"
+#else
+#define RuntimeVariantId "bundled"
+#define RuntimeVariantSuffix " Bundled"
+#define OutputSuffix ""
+#endif
 
 [Setup]
 AppId={{8E3ED77F-F8A2-4D8C-8D5F-0F5295E1B10D}
 AppName={#AppName}
 AppVersion={#AppVersion}
-AppVerName={#AppName} {#AppVersion}
+AppVerName={#AppName} {#AppVersion}{#RuntimeVariantSuffix}
 AppPublisher=Verhoef
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 OutputDir=..\installer-dist
-OutputBaseFilename={#AppName}Setup
+OutputBaseFilename={#AppName}Setup{#OutputSuffix}
 SetupIconFile=..\BeszelAgentManager_icon.ico
 WizardSmallImageFile=WizardSmallImage.bmp
 Compression=lzma2
@@ -31,7 +40,7 @@ CloseApplicationsFilter=BeszelAgentManager.exe
 RestartApplications=no
 UninstallDisplayIcon={app}\app\BeszelAgentManager.exe
 VersionInfoCompany=Verhoef
-VersionInfoDescription={#AppName} Installer
+VersionInfoDescription={#AppName}{#RuntimeVariantSuffix} Installer
 VersionInfoProductName={#AppName}
 VersionInfoProductVersion={#AppVersion}
 VersionInfoVersion={#AppVersion}.0
@@ -73,6 +82,68 @@ Filename: "{app}\app\BeszelAgentManager.exe"; Description: "Open BeszelAgentMana
 [Code]
 var
   KeepAgentLogs: Boolean;
+
+function HasDotNet10DesktopRuntime(): Boolean;
+var
+  DotNetPath: String;
+  Parameters: String;
+  ResultCode: Integer;
+begin
+  DotNetPath := ExpandConstant('{pf64}\dotnet\dotnet.exe');
+  if not FileExists(DotNetPath) then
+  begin
+    Result := False;
+    Exit;
+  end;
+
+  Parameters :=
+    '-NoProfile -NonInteractive -WindowStyle Hidden -Command ' +
+    '"$runtime = & ''' + DotNetPath + ''' --list-runtimes | ' +
+    'Where-Object { $_ -match ''^Microsoft\.WindowsDesktop\.App 10\.'' }; ' +
+    'if ($runtime) { exit 0 }; exit 1"';
+  Result := Exec(
+    ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    Parameters,
+    '',
+    SW_HIDE,
+    ewWaitUntilTerminated,
+    ResultCode) and (ResultCode = 0);
+end;
+
+function InitializeSetup(): Boolean;
+#ifdef LiteInstaller
+var
+  OpenDownload: Integer;
+  ResultCode: Integer;
+#endif
+begin
+  Result := True;
+#ifdef LiteInstaller
+  if not HasDotNet10DesktopRuntime() then
+  begin
+    Log('BeszelAgentManager Lite requires Microsoft .NET 10 Desktop Runtime x64.');
+    if not WizardSilent then
+    begin
+      OpenDownload := MsgBox(
+        'BeszelAgentManager Lite requires Microsoft .NET 10 Desktop Runtime x64.' + #13#10 + #13#10 +
+        'Install it from Microsoft, then run this installer again.' + #13#10 + #13#10 +
+        'Open the Microsoft download page now?',
+        mbConfirmation,
+        MB_YESNO);
+      if OpenDownload = IDYES then
+        ShellExec(
+          'open',
+          'https://dotnet.microsoft.com/download/dotnet/10.0/runtime',
+          '',
+          '',
+          SW_SHOWNORMAL,
+          ewNoWait,
+          ResultCode);
+    end;
+    Result := False;
+  end;
+#endif
+end;
 
 function InitializeUninstall(): Boolean;
 begin
@@ -183,6 +254,12 @@ var
 begin
   if CurStep = ssPostInstall then
   begin
+    if not SaveStringToFile(
+      ExpandConstant('{commonappdata}\{#AppName}\manager-runtime-variant.txt'),
+      '{#RuntimeVariantId}' + #13#10,
+      False) then
+      RaiseException('Could not save the manager runtime variant.');
+
     if not Exec(
       ExpandConstant('{app}\app\helper\BeszelAgentManager.Helper.exe'),
       '--install-background-service',
