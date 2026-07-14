@@ -12,8 +12,10 @@ public sealed partial class ExtraPage : Page
     private readonly ConfigService _configService = new();
     private readonly GitHubTokenService _gitHubTokenService = new();
     private readonly AgentFingerprintService _fingerprintService = new();
+    private readonly BackgroundServiceManagementService _backgroundServiceManagementService = new();
     private AgentConfig _config = new();
     private bool _loading = true;
+    private bool _backgroundServiceInstalled;
 
     public ExtraPage()
     {
@@ -36,6 +38,126 @@ public sealed partial class ExtraPage : Page
         UpdatePeriodicRestartControlState();
         UpdateDefenderButton();
         _loading = false;
+        await RefreshBackgroundServiceStatusAsync(showNotification: false);
+    }
+
+    private async void InstallBackgroundServiceButton_Click(object sender, RoutedEventArgs e)
+    {
+        SetBackgroundServiceButtonsEnabled(false);
+        try
+        {
+            App.Logger.Info("Background service repair/install requested");
+            var exitCode = await _backgroundServiceManagementService.InstallAsync();
+            if (exitCode != 0)
+            {
+                var detail = BackgroundServiceManagementService.ReadLastHelperError();
+                throw new InvalidOperationException(string.IsNullOrWhiteSpace(detail)
+                    ? $"The elevated helper returned exit code {exitCode}."
+                    : detail);
+            }
+
+            await RefreshBackgroundServiceStatusAsync(showNotification: false);
+            App.MainWindow.ShowActionStatus(
+                InfoBarSeverity.Success,
+                "Background service installed",
+                "The privileged background service is installed and running.");
+        }
+        catch (Exception ex)
+        {
+            App.Logger.Error($"Background service installation failed: {ex}");
+            App.MainWindow.ShowActionStatus(InfoBarSeverity.Error, "Background service installation failed", ex.Message);
+        }
+        finally
+        {
+            SetBackgroundServiceButtonsEnabled(true);
+        }
+    }
+
+    private async void UninstallBackgroundServiceButton_Click(object sender, RoutedEventArgs e)
+    {
+        var confirm = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = "Uninstall background service?",
+            Content = "Privileged actions and schedules will stop working until the service is installed again. Manager settings and agent data are kept.",
+            PrimaryButtonText = "Uninstall",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Close,
+        };
+        if (await confirm.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        SetBackgroundServiceButtonsEnabled(false);
+        try
+        {
+            App.Logger.Info("Background service uninstall requested");
+            var exitCode = await _backgroundServiceManagementService.UninstallAsync();
+            if (exitCode != 0)
+            {
+                throw new InvalidOperationException($"The elevated helper returned exit code {exitCode}.");
+            }
+
+            await RefreshBackgroundServiceStatusAsync(showNotification: false);
+            App.MainWindow.ShowActionStatus(
+                InfoBarSeverity.Success,
+                "Background service uninstalled",
+                "Manager settings and agent data were kept.");
+        }
+        catch (Exception ex)
+        {
+            App.Logger.Error($"Background service uninstall failed: {ex}");
+            App.MainWindow.ShowActionStatus(InfoBarSeverity.Error, "Background service uninstall failed", ex.Message);
+        }
+        finally
+        {
+            SetBackgroundServiceButtonsEnabled(true);
+        }
+    }
+
+    private async void CheckBackgroundServiceButton_Click(object sender, RoutedEventArgs e)
+    {
+        await RefreshBackgroundServiceStatusAsync(showNotification: true);
+    }
+
+    private async Task RefreshBackgroundServiceStatusAsync(bool showNotification)
+    {
+        CheckBackgroundServiceButton.IsEnabled = false;
+        try
+        {
+            var status = await _backgroundServiceManagementService.GetStatusAsync();
+            _backgroundServiceInstalled = status.IsInstalled;
+            BackgroundServiceStatusText.Text = $"Status: {status.State}";
+            UninstallBackgroundServiceButton.IsEnabled = status.IsInstalled;
+            if (showNotification)
+            {
+                App.MainWindow.ShowActionStatus(
+                    status.IsInstalled ? InfoBarSeverity.Success : InfoBarSeverity.Warning,
+                    status.IsInstalled ? "Background service found" : "Background service not installed",
+                    status.IsInstalled ? $"Current state: {status.State}." : "Choose Install to repair the background service.");
+            }
+        }
+        catch (Exception ex)
+        {
+            BackgroundServiceStatusText.Text = "Status: check failed";
+            App.Logger.Error($"Background service status check failed: {ex}");
+            if (showNotification)
+            {
+                App.MainWindow.ShowActionStatus(InfoBarSeverity.Error, "Background service check failed", ex.Message);
+            }
+        }
+        finally
+        {
+            CheckBackgroundServiceButton.IsEnabled = true;
+        }
+    }
+
+    private void SetBackgroundServiceButtonsEnabled(bool enabled)
+    {
+        InstallBackgroundServiceButton.IsEnabled = enabled;
+        UninstallBackgroundServiceButton.IsEnabled = enabled && _backgroundServiceInstalled;
+        CheckBackgroundServiceButton.IsEnabled = enabled;
     }
 
     private async void AutoRestartCheckBox_Click(object sender, RoutedEventArgs e)

@@ -574,6 +574,11 @@ public sealed partial class MainWindow : Window
 
     private async void InstallAgentButton_Click(object sender, RoutedEventArgs e)
     {
+        if (!await EnsureBackgroundServiceAvailableAsync())
+        {
+            return;
+        }
+
         var status = await _systemStatusService.GetAgentStatusAsync();
         var confirmationTitle = status.AgentExeExists
             ? "Agent already installed"
@@ -603,6 +608,108 @@ public sealed partial class MainWindow : Window
             },
             "Beszel Agent was installed and configured.",
             afterSuccess: OfferDefenderExclusionAsync);
+    }
+
+    private async Task<bool> EnsureBackgroundServiceAvailableAsync()
+    {
+        var serviceManager = new BackgroundServiceManagementService();
+        var serviceStatus = await serviceManager.GetStatusAsync();
+        if (serviceStatus.IsInstalled
+            && string.Equals(serviceStatus.State, "RUNNING", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var dialog = new ContentDialog
+        {
+            XamlRoot = NavView.XamlRoot,
+            Title = "Background service required",
+            Content = serviceStatus.IsInstalled
+                ? "The BeszelAgentManager background service is installed but not running. Repair it now, or open Extra for service controls."
+                : "The BeszelAgentManager background service is not installed. Install it now, or open Extra for service controls.",
+            PrimaryButtonText = "Install now",
+            SecondaryButtonText = "Open Extra",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+        };
+
+        var result = await dialog.ShowAsync();
+        if (result == ContentDialogResult.Secondary)
+        {
+            NavigateToExtraPage();
+            return false;
+        }
+
+        if (result != ContentDialogResult.Primary)
+        {
+            return false;
+        }
+
+        try
+        {
+            InstallAgentButton.IsEnabled = false;
+            InstallAgentButton.Content = "Installing service...";
+            var exitCode = await serviceManager.InstallAsync();
+            var refreshedStatus = await serviceManager.GetStatusAsync();
+            if (exitCode == 0
+                && refreshedStatus.IsInstalled
+                && string.Equals(refreshedStatus.State, "RUNNING", StringComparison.OrdinalIgnoreCase))
+            {
+                ShowGlobalStatus(
+                    InfoBarSeverity.Success,
+                    "Background service installed",
+                    "Continuing with Beszel Agent installation.");
+                return true;
+            }
+
+            var helperError = BackgroundServiceManagementService.ReadLastHelperError();
+            ShowGlobalStatus(
+                InfoBarSeverity.Error,
+                "Background service installation failed",
+                string.IsNullOrWhiteSpace(helperError)
+                    ? $"The helper returned exit code {exitCode}. Open Extra to retry or inspect the service status."
+                    : helperError);
+            NavigateToExtraPage();
+            return false;
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            ShowGlobalStatus(
+                InfoBarSeverity.Warning,
+                "Background service installation cancelled",
+                "Install the background service from Extra before installing Beszel Agent.");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            App.Logger.Error($"Background service pre-check failed: {ex}");
+            ShowGlobalStatus(
+                InfoBarSeverity.Error,
+                "Background service installation failed",
+                ex.Message);
+            NavigateToExtraPage();
+            return false;
+        }
+        finally
+        {
+            InstallAgentButton.IsEnabled = true;
+            InstallAgentButton.Content = "Install agent";
+        }
+    }
+
+    private void NavigateToExtraPage()
+    {
+        var extraItem = NavView.MenuItems
+            .OfType<NavigationViewItem>()
+            .FirstOrDefault(item => string.Equals(item.Tag?.ToString(), "extra", StringComparison.Ordinal));
+        if (extraItem is not null)
+        {
+            NavView.SelectedItem = extraItem;
+        }
+        else
+        {
+            NavFrame.Navigate(typeof(ExtraPage));
+        }
     }
 
     private async void UpdateAgentButton_Click(object sender, RoutedEventArgs e)
