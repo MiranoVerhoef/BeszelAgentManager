@@ -68,7 +68,7 @@ public sealed partial class MainWindow : Window
             _shutdown.Dispose();
         };
 
-        VersionBadgeText.Text = $"v{AppInfo.Version}{AppInfo.RuntimeVariantVersionSuffix}";
+        VersionBadgeText.Text = $"v{AppInfo.ReleaseTag}{AppInfo.RuntimeVariantVersionSuffix}";
         NavFrame.Navigate(typeof(ConnectionPage));
         _ = RefreshStatusAsync();
 
@@ -445,7 +445,7 @@ public sealed partial class MainWindow : Window
             var release = await _managerUpdateService.FetchLatestReleaseAsync(config.ManagerUpdateIncludePrereleases);
             config.ManagerUpdateLastCheckAt = DateTimeOffset.Now.ToString("O");
             _managerUpdateAvailable = release is not null
-                && !VersionComparer.IsSameOrOlder(AppInfo.Version, release.Version)
+                && IsManagerUpdateAvailable(release, config.ManagerUpdateIncludePrereleases)
                 && !string.Equals(
                     VersionComparer.Normalize(config.ManagerUpdateSkipVersion),
                     VersionComparer.Normalize(release.Version),
@@ -522,9 +522,7 @@ public sealed partial class MainWindow : Window
         try
         {
             var config = await _configService.LoadAsync();
-            var includePrereleases = config.ExtraFields.TryGetValue("manager_update_include_prereleases", out var includeValue)
-                && includeValue.ValueKind is System.Text.Json.JsonValueKind.True;
-            var release = await _managerUpdateService.FetchLatestReleaseAsync(includePrereleases);
+            var release = await _managerUpdateService.FetchLatestReleaseAsync(config.ManagerUpdateIncludePrereleases);
 
             if (release is null)
             {
@@ -535,12 +533,12 @@ public sealed partial class MainWindow : Window
                 return;
             }
 
-            if (VersionComparer.IsSameOrOlder(AppInfo.Version, release.Version))
+            if (!IsManagerUpdateAvailable(release, config.ManagerUpdateIncludePrereleases))
             {
                 ShowGlobalStatus(
                     InfoBarSeverity.Success,
                     "BeszelAgentManager is up to date",
-                    $"Installed: {AppInfo.Version}\nLatest on GitHub: {release.Version} ({release.Tag})");
+                    $"Installed: {AppInfo.ReleaseTag}\nLatest on GitHub: {release.Version} ({release.Tag})");
                 return;
             }
 
@@ -1305,7 +1303,7 @@ public sealed partial class MainWindow : Window
 
             var selected = releases[Math.Max(0, picker.SelectedIndex)];
             if (!force.IsChecked.GetValueOrDefault()
-                && string.Equals(VersionComparer.Normalize(selected.Version), VersionComparer.Normalize(AppInfo.Version), StringComparison.OrdinalIgnoreCase))
+                && string.Equals(VersionComparer.Normalize(selected.Version), VersionComparer.Normalize(AppInfo.ReleaseTag), StringComparison.OrdinalIgnoreCase))
             {
                 ShowGlobalStatus(InfoBarSeverity.Warning, "Force reinstall required", "Enable force reinstall to install the currently installed manager version.");
                 return;
@@ -1390,6 +1388,22 @@ public sealed partial class MainWindow : Window
         return string.IsNullOrWhiteSpace(body) ? "(No release notes.)" : body.Trim();
     }
 
+    private static bool IsManagerUpdateAvailable(ManagerRelease release, bool includePrereleases)
+    {
+        if (VersionComparer.IsUpdateAvailable(AppInfo.ReleaseTag, release.Version))
+        {
+            return true;
+        }
+
+        // RC1-RC4 predate the installed channel marker. Explicit prerelease opt-in
+        // lets those builds move once to a newer RC in the same version family.
+        return includePrereleases
+            && release.IsPrerelease
+            && string.Equals(AppInfo.ReleaseChannel, "stable", StringComparison.OrdinalIgnoreCase)
+            && VersionComparer.HasSameCore(AppInfo.Version, release.Version)
+            && !string.Equals(AppInfo.ReleaseTag, release.Tag, StringComparison.OrdinalIgnoreCase);
+    }
+
     private async Task InstallManagerReleaseAsync(ManagerRelease release)
     {
         var confirm = new ContentDialog
@@ -1410,7 +1424,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        var relauncher = StartUpdateRelauncher(release.Version);
+        var relauncher = StartUpdateRelauncher();
         try
         {
             ShowGlobalStatus(InfoBarSeverity.Informational, "Preparing manager update", "Downloading and verifying the official installer.");
@@ -1440,27 +1454,23 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private static Process StartUpdateRelauncher(string targetVersion)
+    private static Process StartUpdateRelauncher()
     {
         var scriptPath = Path.Combine(Path.GetTempPath(), $"BeszelAgentManager-relaunch-{Guid.NewGuid():N}.ps1");
         var executable = (Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "BeszelAgentManager.exe")).Replace("'", "''", StringComparison.Ordinal);
-        var expectedVersion = VersionComparer.Normalize(targetVersion).Replace("'", "''", StringComparison.Ordinal);
         var script = $$"""
             $deadline = (Get-Date).AddMinutes(15)
             while (Get-Process -Id {{Environment.ProcessId}} -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 1 }
+            $installerSeen = $false
             while ((Get-Date) -lt $deadline) {
-              if (Test-Path -LiteralPath '{{executable}}') {
-                try {
-                  $stream = [System.IO.File]::Open('{{executable}}', 'Open', 'Read', 'ReadWrite')
-                  $stream.Dispose()
-                  $fileVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo('{{executable}}').FileVersion
-                  if ($fileVersion -and $fileVersion.StartsWith('{{expectedVersion}}.')) {
-                    Start-Process -FilePath '{{executable}}'
-                    break
-                  }
-                } catch { }
-              }
+              $installers = @(Get-Process -Name 'BeszelAgentManagerSetup','BeszelAgentManagerSetup-Lite' -ErrorAction SilentlyContinue)
+              if ($installers.Count -gt 0) { $installerSeen = $true }
+              if ($installerSeen -and $installers.Count -eq 0) { break }
+              Start-Sleep -Milliseconds 500
+            }
+            if ($installerSeen) {
               Start-Sleep -Seconds 2
+              if (Test-Path -LiteralPath '{{executable}}') { Start-Process -FilePath '{{executable}}' }
             }
             Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
             """;
@@ -1557,7 +1567,7 @@ public sealed partial class MainWindow : Window
         var panel = new StackPanel { Spacing = 10 };
         panel.Children.Add(new TextBlock
         {
-            Text = $"Installed: {AppInfo.Version}\nAvailable: {release.Version} ({release.Tag})",
+            Text = $"Installed: {AppInfo.ReleaseTag}\nAvailable: {release.Version} ({release.Tag})",
             TextWrapping = TextWrapping.Wrap,
         });
 

@@ -26,6 +26,7 @@
     <Content Include="Assets\AppIcon.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" TargetPath="Assets\AppIcon.ico" />
     <Content Include="Assets\AppIcon.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" TargetPath="Assets\AppIcon.png" />
     <Content Include="..\..\VERSION" Link="VERSION" CopyToOutputDirectory="Always" />
+    <Content Include="..\..\RELEASE_CHANNEL" Link="RELEASE_CHANNEL" CopyToOutputDirectory="Always" />
   </ItemGroup>
 
   <ItemGroup>

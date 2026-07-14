@@ -144,7 +144,7 @@ internal sealed partial class SupportBundleService
             $"ProcessArchitecture={System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}",
             $"ProgramFiles={ManagerPaths.ProgramFiles}",
             $"ProgramData={ManagerPaths.ProgramData}",
-            $"ManagerVersion={AppInfo.Version}",
+            $"ManagerVersion={AppInfo.ReleaseTag}",
         };
         await File.WriteAllLinesAsync(destination, lines, cancellationToken);
     }

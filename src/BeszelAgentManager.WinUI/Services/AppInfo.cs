@@ -10,6 +10,10 @@ internal static class AppInfo
     public const string LiteInstallerAssetName = "BeszelAgentManagerSetup-Lite.exe";
 
     public static string Version => ReadBundledVersion();
+    public static string ReleaseChannel => ReadReleaseChannel();
+    public static string ReleaseTag => string.Equals(ReleaseChannel, "stable", StringComparison.OrdinalIgnoreCase)
+        ? Version
+        : $"{Version}-{ReleaseChannel}";
     public static string RuntimeVariant => ReadRuntimeVariant();
     public static bool IsLiteRuntimeVariant =>
         string.Equals(RuntimeVariant, "lite", StringComparison.OrdinalIgnoreCase);
@@ -55,5 +59,21 @@ internal static class AppInfo
         }
 
         return "bundled";
+    }
+
+    private static string ReadReleaseChannel()
+    {
+        try
+        {
+            var channelPath = Path.Combine(AppContext.BaseDirectory, "RELEASE_CHANNEL");
+            var channel = File.Exists(channelPath) ? File.ReadAllText(channelPath).Trim().ToLowerInvariant() : string.Empty;
+            return channel == "stable" || System.Text.RegularExpressions.Regex.IsMatch(channel, @"^rc\d+$")
+                ? channel
+                : "stable";
+        }
+        catch
+        {
+            return "stable";
+        }
     }
 }
