@@ -23,6 +23,7 @@ TestResults.xml
 
 # Build output
 build/
+build-assets/
 dist/
 installer-dist/
 winui-debug-dist/

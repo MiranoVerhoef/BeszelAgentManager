@@ -60,7 +60,11 @@ internal sealed class BackgroundBrokerClient
         SendAsync("defender.set", new Dictionary<string, string> { ["enabled"] = enabled.ToString() });
 
     public Task<int> InstallManagerVersionAsync(string tag) =>
-        SendAsync("manager.installVersion", new Dictionary<string, string> { ["tag"] = tag });
+        SendAsync("manager.installVersion", new Dictionary<string, string>
+        {
+            ["tag"] = tag,
+            ["variant"] = AppInfo.RuntimeVariant,
+        });
 
     public async Task<string?> GetAgentVersionAsync()
     {

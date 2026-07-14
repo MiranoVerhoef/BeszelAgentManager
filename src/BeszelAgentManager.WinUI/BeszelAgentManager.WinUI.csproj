@@ -47,7 +47,7 @@
     <MSBuild
       Projects="..\BeszelAgentManager.Helper\BeszelAgentManager.Helper.csproj"
       Targets="Build"
-      Properties="Configuration=$(Configuration);Platform=x64;RuntimeIdentifier=win-x64" />
+      Properties="Configuration=$(Configuration);Platform=x64;RuntimeIdentifier=win-x64;SelfContained=$(SelfContained)" />
   </Target>
 
   <Target Name="CopyElevatedHelperToBuildOutput" AfterTargets="Build" DependsOnTargets="BuildElevatedHelper">

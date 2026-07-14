@@ -187,10 +187,12 @@ jobs:
             throw "Staged nssm.exe is not a usable win64 NSSM binary"
           }
 
-      - name: Build WinUI application
+      - name: Build Bundled and Lite applications
         shell: pwsh
         run: |
-          $distDir = Join-Path $PWD "build\winui-dist"
+          $bundledDistDir = Join-Path $PWD "build\winui-dist"
+          $liteDistDir = Join-Path $PWD "build\winui-lite-dist"
+
           dotnet build `
             .\src\BeszelAgentManager.WinUI\BeszelAgentManager.WinUI.csproj `
             -c Release `
@@ -198,48 +200,85 @@ jobs:
             -r win-x64 `
             --self-contained true
           if ($LASTEXITCODE -ne 0) {
-            throw "WinUI build failed"
+            throw "Bundled WinUI build failed"
           }
           $buildDir = Join-Path $PWD "src\BeszelAgentManager.WinUI\bin\x64\Release\net10.0-windows10.0.26100.0\win-x64"
-          New-Item -ItemType Directory -Path $distDir -Force | Out-Null
-          Copy-Item -Path (Join-Path $buildDir "*") -Destination $distDir -Recurse -Force
-          Remove-Item -Path (Join-Path $distDir "BeszelAgentManager.Helper.*") -Force -ErrorAction SilentlyContinue
-          Copy-Item -Path build-assets\nssm.exe -Destination (Join-Path $distDir "nssm.exe") -Force
-          foreach ($required in @("BeszelAgentManager.exe", "helper\BeszelAgentManager.Helper.exe", "nssm.exe")) {
-            if (-not (Test-Path -LiteralPath (Join-Path $distDir $required))) {
-              throw "Published output is missing $required"
+          New-Item -ItemType Directory -Path $bundledDistDir -Force | Out-Null
+          Copy-Item -Path (Join-Path $buildDir "*") -Destination $bundledDistDir -Recurse -Force
+          Remove-Item -Path (Join-Path $bundledDistDir "BeszelAgentManager.Helper.*") -Force -ErrorAction SilentlyContinue
+          Copy-Item -Path build-assets\nssm.exe -Destination (Join-Path $bundledDistDir "nssm.exe") -Force
+
+          Remove-Item -Path .\src\BeszelAgentManager.WinUI\bin -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -Path .\src\BeszelAgentManager.Helper\bin -Recurse -Force -ErrorAction SilentlyContinue
+          dotnet build `
+            .\src\BeszelAgentManager.WinUI\BeszelAgentManager.WinUI.csproj `
+            -c Release `
+            -p:Platform=x64 `
+            -r win-x64 `
+            --self-contained false
+          if ($LASTEXITCODE -ne 0) {
+            throw "Lite WinUI build failed"
+          }
+          New-Item -ItemType Directory -Path $liteDistDir -Force | Out-Null
+          Copy-Item -Path (Join-Path $buildDir "*") -Destination $liteDistDir -Recurse -Force
+          Remove-Item -Path (Join-Path $liteDistDir "BeszelAgentManager.Helper.*") -Force -ErrorAction SilentlyContinue
+          Copy-Item -Path build-assets\nssm.exe -Destination (Join-Path $liteDistDir "nssm.exe") -Force
+
+          foreach ($distDir in @($bundledDistDir, $liteDistDir)) {
+            foreach ($required in @("BeszelAgentManager.exe", "helper\BeszelAgentManager.Helper.exe", "nssm.exe")) {
+              if (-not (Test-Path -LiteralPath (Join-Path $distDir $required))) {
+                throw "$distDir is missing $required"
+              }
             }
           }
 
-      - name: Build installer
+      - name: Build Bundled and Lite installers
         shell: pwsh
         run: |
           $version = "${{ steps.version.outputs.version }}"
-          $distDir = (Resolve-Path "build\winui-dist").Path
-          if (-not (Test-Path -Path (Join-Path $distDir "BeszelAgentManager.exe"))) {
-            throw "BeszelAgentManager.exe was not created in $distDir"
+          $bundledDistDir = (Resolve-Path "build\winui-dist").Path
+          $liteDistDir = (Resolve-Path "build\winui-lite-dist").Path
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
+            installer\BeszelAgentManager.iss `
+            /DAppVersion="$version" `
+            /DDistDir="$bundledDistDir"
+          if ($LASTEXITCODE -ne 0) {
+            throw "Bundled installer build failed"
           }
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
             installer\BeszelAgentManager.iss `
             /DAppVersion="$version" `
-            /DDistDir="$distDir"
+            /DDistDir="$liteDistDir" `
+            /DLiteInstaller
+          if ($LASTEXITCODE -ne 0) {
+            throw "Lite installer build failed"
+          }
 
-      - name: Generate checksum
+      - name: Generate checksums
         shell: pwsh
         run: |
-          if (-not (Test-Path -Path installer-dist\BeszelAgentManagerSetup.exe)) {
-            throw "installer-dist\BeszelAgentManagerSetup.exe was not created"
+          $installerNames = @(
+            "BeszelAgentManagerSetup.exe",
+            "BeszelAgentManagerSetup-Lite.exe"
+          )
+          $checksumLines = foreach ($installerName in $installerNames) {
+            $installerPath = Join-Path "installer-dist" $installerName
+            if (-not (Test-Path -Path $installerPath)) {
+              throw "$installerPath was not created"
+            }
+            $hash = Get-FileHash -Path $installerPath -Algorithm SHA256
+            "$($hash.Hash.ToLower())  $installerName"
           }
-          $hash = Get-FileHash -Path installer-dist\BeszelAgentManagerSetup.exe -Algorithm SHA256
-          "$($hash.Hash.ToLower())  BeszelAgentManagerSetup.exe" | Out-File -FilePath SHA256SUMS.txt -Encoding ascii
+          $checksumLines | Out-File -FilePath SHA256SUMS.txt -Encoding ascii
 
       - name: Upload PR test installer exe
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v6
         with:
-          name: BeszelAgentManagerSetup.exe
+          name: BeszelAgentManager-${{ steps.version.outputs.version }}-installers
           path: |
             installer-dist/BeszelAgentManagerSetup.exe
+            installer-dist/BeszelAgentManagerSetup-Lite.exe
             SHA256SUMS.txt
           if-no-files-found: error
 
@@ -304,6 +343,7 @@ jobs:
             "--title", $releaseName,
             "--notes-file", "RELEASE_NOTES.generated.md",
             "installer-dist\BeszelAgentManagerSetup.exe",
+            "installer-dist\BeszelAgentManagerSetup-Lite.exe",
             "SHA256SUMS.txt"
           )
           if ("${{ steps.version.outputs.is_prerelease }}" -eq "true") {

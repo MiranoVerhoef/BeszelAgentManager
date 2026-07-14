@@ -1,4 +1,16 @@
-# BeszelAgentManager v4.0.0 RC1
+# BeszelAgentManager v4.0.4
+
+## Installer editions
+
+- Adds a Bundled installer containing .NET 10 for the easiest setup.
+- Adds a smaller Lite installer for systems with Microsoft .NET 10 Desktop Runtime x64 already installed.
+- Lite setup detects a missing runtime, offers to open the official Microsoft download page, and waits for the runtime before installation.
+- Manager updates preserve the installed Bundled or Lite edition and display that edition beside the version number.
+- Release checksums cover both fixed, allowlisted installer filenames.
+
+## Update reliability
+
+- Includes the stale-relauncher fix so an update cannot reopen an older manager copy while setup is replacing files.
 
 Version 4 replaces the Python/Tk application with a native .NET 10 and WinUI 3 desktop application plus a secured LocalSystem background service.
 
@@ -41,7 +53,3 @@ Version 4 replaces the Python/Tk application with a native .NET 10 and WinUI 3 d
 - Rollback after failed updates and transient service-manager retries
 - Background-service crash recovery
 - Clean install, v3 upgrade, v4 replacement, uninstall, DNS recovery, and reboot validation
-
-## Release status
-
-This release remains an RC until the GitHub Actions pull-request installer artifact completes the final VM validation matrix.

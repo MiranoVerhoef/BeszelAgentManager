@@ -213,7 +213,7 @@ public sealed partial class ExtraPage : Page
                 "BeszelAgentManager.Helper.exe",
                 "beszel-agent.exe",
                 "nssm.exe",
-                "BeszelAgentManagerSetup.exe (only while installing or updating)",
+                "BeszelAgentManagerSetup.exe or BeszelAgentManagerSetup-Lite.exe (only while installing or updating)",
             ]),
         ];
         var instructions = string.Join(

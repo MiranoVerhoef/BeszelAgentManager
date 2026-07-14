@@ -17,7 +17,8 @@ const string legacyServiceName = "BeszelAgentManager";
 const string agentRepo = "henrygd/beszel";
 const string managerRepo = "MiranoVerhoef/BeszelAgentManager";
 const string agentZipName = "beszel-agent_windows_amd64.zip";
-const string managerInstallerName = "BeszelAgentManagerSetup.exe";
+const string managerBundledInstallerName = "BeszelAgentManagerSetup.exe";
+const string managerLiteInstallerName = "BeszelAgentManagerSetup-Lite.exe";
 const string managerChecksumName = "SHA256SUMS.txt";
 const string firewallRuleName = "Beszel Agent";
 const string updateTaskName = "BeszelAgentManagerUpdate";
@@ -693,7 +694,8 @@ static async Task<int> ExecuteBrokerActionAsync(BrokerRequest request)
         "agent.logs.rotate" => await RotateAgentLogsAsync(),
         "agent.fingerprint.reset" => await ResetAgentFingerprintAsync(),
         "defender.set" when TryReadBoolean(arguments, "enabled", out var enabled) => await SetDefenderExclusionAsync(enabled),
-        "manager.installVersion" when TryReadManagerTag(arguments, out var tag) => await InstallManagerVersionAsync(tag),
+        "manager.installVersion" when TryReadManagerTag(arguments, out var tag)
+            && TryReadManagerVariant(arguments, out var variant) => await InstallManagerVersionAsync(tag, variant),
         _ => 2,
     };
 }
@@ -1240,6 +1242,12 @@ static bool TryReadManagerTag(Dictionary<string, string> arguments, out string t
 {
     tag = arguments.GetValueOrDefault("tag")?.Trim() ?? string.Empty;
     return Regex.IsMatch(tag, @"^v?\d+\.\d+\.\d+(?:-rc\d+)?$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+}
+
+static bool TryReadManagerVariant(Dictionary<string, string> arguments, out string variant)
+{
+    variant = arguments.GetValueOrDefault("variant")?.Trim().ToLowerInvariant() ?? "bundled";
+    return variant is "bundled" or "lite";
 }
 
 static bool TryReadBoolean(Dictionary<string, string> arguments, string key, out bool value)
@@ -2235,15 +2243,18 @@ static async Task<AgentRelease?> FetchLatestAgentReleaseAsync()
     return ParseAgentRelease(document.RootElement);
 }
 
-static async Task<int> InstallManagerVersionAsync(string tag)
+static async Task<int> InstallManagerVersionAsync(string tag, string variant)
 {
     try
     {
+        var installerName = variant == "lite"
+            ? managerLiteInstallerName
+            : managerBundledInstallerName;
         using var http = CreateGitHubClient();
         var releaseUrl = $"https://api.github.com/repos/{managerRepo}/releases/tags/{Uri.EscapeDataString(tag)}";
         await using var releaseStream = await http.GetStreamAsync(releaseUrl);
         using var release = await JsonDocument.ParseAsync(releaseStream);
-        if (!TryGetReleaseAssetUrl(release.RootElement, managerInstallerName, out var installerUrl)
+        if (!TryGetReleaseAssetUrl(release.RootElement, installerName, out var installerUrl)
             || !TryGetReleaseAssetUrl(release.RootElement, managerChecksumName, out var checksumUrl))
         {
             return 30;
@@ -2252,12 +2263,12 @@ static async Task<int> InstallManagerVersionAsync(string tag)
         var stagingRoot = Path.Combine(ProgramDataPath(), "BeszelAgentManager", "manager-update");
         ResetPrivilegedWorkingDirectory(stagingRoot);
 
-        var installerPath = Path.Combine(stagingRoot, managerInstallerName);
+        var installerPath = Path.Combine(stagingRoot, installerName);
         var checksumPath = Path.Combine(stagingRoot, managerChecksumName);
         await DownloadFileAsync(http, installerUrl, installerPath, 512L * 1024 * 1024);
         await DownloadFileAsync(http, checksumUrl, checksumPath, 1024 * 1024);
         if (new FileInfo(installerPath).Attributes.HasFlag(FileAttributes.ReparsePoint)
-            || !VerifyManagerInstallerChecksum(installerPath, checksumPath)
+            || !VerifyManagerInstallerChecksum(installerPath, checksumPath, installerName)
             || !await VerifyManagerInstallerSignatureAsync(installerPath))
         {
             TryDeleteFile(installerPath);
@@ -2450,10 +2461,11 @@ static async Task DownloadFileAsync(HttpClient http, string url, string path, lo
     }
 }
 
-static bool VerifyManagerInstallerChecksum(string installerPath, string checksumPath)
+static bool VerifyManagerInstallerChecksum(string installerPath, string checksumPath, string installerName)
 {
+    var checksumPattern = $@"^\s*([a-fA-F0-9]{{64}})\s+\*?{Regex.Escape(installerName)}\s*$";
     var expected = File.ReadLines(checksumPath)
-        .Select(static line => Regex.Match(line, @"^\s*([a-fA-F0-9]{64})\s+\*?BeszelAgentManagerSetup\.exe\s*$"))
+        .Select(line => Regex.Match(line, checksumPattern, RegexOptions.CultureInvariant))
         .FirstOrDefault(static match => match.Success)?
         .Groups[1].Value;
     if (string.IsNullOrWhiteSpace(expected))
@@ -2551,7 +2563,7 @@ static AgentRelease? ParseAgentRelease(JsonElement release)
 static HttpClient CreateGitHubClient()
 {
     var http = new HttpClient();
-    http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("BeszelAgentManager", "4.0.2"));
+    http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("BeszelAgentManager", "4.0.4"));
     return http;
 }
 
