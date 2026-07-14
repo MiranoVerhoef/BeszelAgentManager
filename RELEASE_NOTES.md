@@ -1,13 +1,13 @@
 ## Summary
 
-- Bumped version to 4.0.4
+- Bumped version to 4.0.5
 - Moved distribution into 2 sub: Bundled and Lite
 - Bundled is the default with .net 10 Bundled in
 - Lite is an installer without .net 10 bundled in, which requires .net 10 installed.
 - Fixed issue regarding background service
-- 4.0.4 RC3: Fixed background-service error 5 handling, added repair controls, and checks the service before agent installation.
-- 4.0.4 RC4: Fixed background-service installation for Intune/Entra ID email accounts using cloud user SIDs.
-- 4.0.4 RC5: Fixed automatic reopening after GUI updates and restored RC discovery, ordering, and comparison when prereleases are enabled.
+- Fixed background-service error 5 handling, added repair controls, and checks the service before agent installation.
+- Fixed background-service installation for Intune/Entra ID email accounts using cloud user SIDs.
+- Fixed automatic reopening after GUI updates and restored RC discovery, ordering, and comparison when prereleases are enabled.
 
 ## Impact
 
