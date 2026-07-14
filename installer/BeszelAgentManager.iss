@@ -269,7 +269,18 @@ begin
       ResultCode) then
       RaiseException('Could not start the BeszelAgentManager background-service installer.');
 
-    if ResultCode <> 0 then
+    if ResultCode = 5 then
+    begin
+      Log('Background-service setup returned recoverable exit code 5. The manager will remain installed for repair from the Extra page.');
+      if not WizardSilent then
+        MsgBox(
+          'BeszelAgentManager was installed, but Windows blocked the background-service security setup.' + #13#10 + #13#10 +
+          'Open BeszelAgentManager, go to Extra, then use Background service > Install to repair it.' + #13#10 + #13#10 +
+          'The manager can remain installed; no manual command is required.',
+          mbInformation,
+          MB_OK);
+    end
+    else if ResultCode <> 0 then
       RaiseException(Format('The BeszelAgentManager background service could not be installed (exit code %d).', [ResultCode]));
   end;
 end;

@@ -29,6 +29,7 @@ const string restartTaskName = "BeszelAgentManagerRestartService";
 const string backgroundServiceName = "BeszelAgentManager Background";
 const string brokerPipeName = "BeszelAgentManager.Background.v1";
 const string brokerPolicyFileName = "broker-policy.json";
+const string ownerHardeningMarkerFileName = ".broker-owner-hardening-pending";
 const string backgroundRuntimeStateFileName = "background-runtime-state.json";
 const int brokerProtocolVersion = 1;
 const string autoUpdateStampName = "last-auto-update-agent.txt";
@@ -55,6 +56,11 @@ if (args.Length is 1 or 2 && string.Equals(args[0], "--remove-background-service
     var removeAgentLogs = args.Length == 2
         && string.Equals(args[1], "--remove-agent-logs", StringComparison.OrdinalIgnoreCase);
     return await RemoveBackgroundServiceAsync(removeAgentLogs);
+}
+
+if (args.Length == 1 && string.Equals(args[0], "--uninstall-background-service-only", StringComparison.OrdinalIgnoreCase))
+{
+    return await RemoveBackgroundServiceOnlyAsync();
 }
 
 if (args.Length == 2 && string.Equals(args[0], "--apply-hub-url", StringComparison.OrdinalIgnoreCase))
@@ -156,6 +162,7 @@ static string? FindNssmPath()
 
 static async Task<int> InstallOrUpdateBackgroundServiceAsync()
 {
+    TryDeleteFile(Path.Combine(ProgramDataPath(), "BeszelAgentManager", "helper-last-error.txt"));
     var policyResult = EnsureBrokerPolicy();
     if (policyResult != 0)
     {
@@ -231,6 +238,32 @@ static async Task<int> RemoveBackgroundServiceAsync(bool removeAgentLogs)
     }
 }
 
+static async Task<int> RemoveBackgroundServiceOnlyAsync()
+{
+    if (!await ServiceExistsAsync(backgroundServiceName))
+    {
+        return 0;
+    }
+
+    await StopServiceAsync(backgroundServiceName);
+    var delete = await RunProcessAsync("sc.exe", ["delete", backgroundServiceName]);
+    if (delete.ExitCode != 0)
+    {
+        return 4;
+    }
+
+    var deadline = DateTime.UtcNow.AddSeconds(5);
+    while (DateTime.UtcNow < deadline)
+    {
+        if (!await ServiceExistsAsync(backgroundServiceName))
+        {
+            return 0;
+        }
+        await Task.Delay(250);
+    }
+    return 4;
+}
+
 static void CleanupManagerDataForUninstall(bool removeAgentLogs)
 {
     var dataDirectory = Path.Combine(ProgramDataPath(), "BeszelAgentManager");
@@ -273,6 +306,7 @@ static int RunBackgroundWindowsService()
 
 static async Task RunBackgroundLoopAsync(CancellationToken cancellationToken)
 {
+    CompleteBrokerOwnerHardeningIfPending();
     var failoverStore = new JsonDnsFailoverStateStore(
         Path.Combine(ProgramDataPath(), "BeszelAgentManager", "dns-fallback-state.json"));
     var state = failoverStore.Load();
@@ -1080,55 +1114,120 @@ static int EnsureBrokerPolicy()
 {
     try
     {
+        return EnsureBrokerPolicyCore(setProtectedOwner: true);
+    }
+    catch (Exception ownerException)
+    {
+        WriteBackgroundLog("WARN", $"Protected owner assignment was deferred to the LocalSystem service: {ownerException.Message}");
+        try
+        {
+            var result = EnsureBrokerPolicyCore(setProtectedOwner: false);
+            if (result == 0)
+            {
+                File.WriteAllText(OwnerHardeningMarkerPath(), "pending");
+            }
+            return result;
+        }
+        catch (Exception ex)
+        {
+            WriteHelperLastError(ex);
+            WriteBackgroundLog("ERROR", $"Could not create broker policy: {ex}");
+            return 5;
+        }
+    }
+}
+
+static int EnsureBrokerPolicyCore(bool setProtectedOwner)
+{
+    if (setProtectedOwner)
+    {
+        EnableRestorePrivilege();
+    }
+
+    var path = BrokerPolicyPath();
+    var dataDirectory = Path.GetDirectoryName(path)!;
+    if (Directory.Exists(dataDirectory)
+        && File.GetAttributes(dataDirectory).HasFlag(FileAttributes.ReparsePoint))
+    {
+        throw new IOException("Manager data directory cannot be a reparse point.");
+    }
+
+    var existing = LoadBrokerPolicy();
+    var currentSid = WindowsIdentity.GetCurrent().User?.Value;
+    var authorizedSid = existing is not null && IsValidAccountSid(existing.AuthorizedSid)
+        ? existing.AuthorizedSid
+        : currentSid;
+    if (!IsValidAccountSid(authorizedSid))
+    {
+        return 5;
+    }
+
+    Directory.CreateDirectory(dataDirectory);
+    ApplyManagerDataSecurity(dataDirectory, authorizedSid!, setProtectedOwner);
+    File.WriteAllText(
+        path,
+        JsonSerializer.Serialize(
+            new BrokerPolicy { ProtocolVersion = brokerProtocolVersion, AuthorizedSid = authorizedSid! },
+            new JsonSerializerOptions { WriteIndented = true }));
+    ApplyBrokerPolicyFileSecurity(path, authorizedSid!, setProtectedOwner);
+    return 0;
+}
+
+static void ApplyBrokerPolicyFileSecurity(string path, string authorizedSid, bool setProtectedOwner)
+{
+    var security = new FileSecurity();
+    security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+    if (setProtectedOwner)
+    {
+        security.SetOwner(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null));
+    }
+    security.AddAccessRule(new FileSystemAccessRule(
+        new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+        FileSystemRights.FullControl,
+        AccessControlType.Allow));
+    security.AddAccessRule(new FileSystemAccessRule(
+        new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
+        FileSystemRights.FullControl,
+        AccessControlType.Allow));
+    security.AddAccessRule(new FileSystemAccessRule(
+        new SecurityIdentifier(authorizedSid),
+        FileSystemRights.Read,
+        AccessControlType.Allow));
+    new FileInfo(path).SetAccessControl(security);
+}
+
+static string OwnerHardeningMarkerPath()
+{
+    return Path.Combine(AppContext.BaseDirectory, ownerHardeningMarkerFileName);
+}
+
+static void CompleteBrokerOwnerHardeningIfPending()
+{
+    var markerPath = OwnerHardeningMarkerPath();
+    if (!File.Exists(markerPath))
+    {
+        return;
+    }
+
+    try
+    {
+        var policy = LoadBrokerPolicy();
+        if (policy is null || !IsValidAccountSid(policy.AuthorizedSid))
+        {
+            throw new InvalidOperationException("Broker policy is missing a valid authorized SID.");
+        }
+
         EnableRestorePrivilege();
         var path = BrokerPolicyPath();
         var dataDirectory = Path.GetDirectoryName(path)!;
-        if (Directory.Exists(dataDirectory)
-            && File.GetAttributes(dataDirectory).HasFlag(FileAttributes.ReparsePoint))
-        {
-            throw new IOException("Manager data directory cannot be a reparse point.");
-        }
-
-        var existing = LoadBrokerPolicy();
-        var currentSid = WindowsIdentity.GetCurrent().User?.Value;
-        var authorizedSid = existing is not null && IsValidAccountSid(existing.AuthorizedSid)
-            ? existing.AuthorizedSid
-            : currentSid;
-        if (!IsValidAccountSid(authorizedSid))
-        {
-            return 5;
-        }
-
-        Directory.CreateDirectory(dataDirectory);
-        ApplyManagerDataSecurity(dataDirectory, authorizedSid!);
-        File.WriteAllText(
-            path,
-            JsonSerializer.Serialize(
-                new BrokerPolicy { ProtocolVersion = brokerProtocolVersion, AuthorizedSid = authorizedSid! },
-                new JsonSerializerOptions { WriteIndented = true }));
-
-        var security = new FileSecurity();
-        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-        security.SetOwner(new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null));
-        security.AddAccessRule(new FileSystemAccessRule(
-            new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
-            FileSystemRights.FullControl,
-            AccessControlType.Allow));
-        security.AddAccessRule(new FileSystemAccessRule(
-            new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null),
-            FileSystemRights.FullControl,
-            AccessControlType.Allow));
-        security.AddAccessRule(new FileSystemAccessRule(
-            new SecurityIdentifier(authorizedSid!),
-            FileSystemRights.Read,
-            AccessControlType.Allow));
-        new FileInfo(path).SetAccessControl(security);
-        return 0;
+        ApplyManagerDataSecurity(dataDirectory, policy.AuthorizedSid, setProtectedOwner: true);
+        ApplyBrokerPolicyFileSecurity(path, policy.AuthorizedSid, setProtectedOwner: true);
+        File.Delete(markerPath);
+        WriteBackgroundLog("INFO", "Completed deferred broker owner hardening as LocalSystem.");
     }
     catch (Exception ex)
     {
-        WriteBackgroundLog("ERROR", $"Could not create broker policy: {ex}");
-        return 5;
+        WriteBackgroundLog("ERROR", $"Deferred broker owner hardening failed: {ex}");
     }
 }
 
@@ -1168,7 +1267,7 @@ static void EnableRestorePrivilege()
     }
 }
 
-static void ApplyManagerDataSecurity(string dataDirectory, string authorizedSid)
+static void ApplyManagerDataSecurity(string dataDirectory, string authorizedSid, bool setProtectedOwner)
 {
     var user = new SecurityIdentifier(authorizedSid);
     var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
@@ -1180,7 +1279,7 @@ static void ApplyManagerDataSecurity(string dataDirectory, string authorizedSid)
         var restrictedPath = Path.Combine(dataDirectory, restrictedName);
         if (Directory.Exists(restrictedPath))
         {
-            SecurePrivilegedWorkingDirectory(restrictedPath);
+            SecurePrivilegedWorkingDirectory(restrictedPath, setProtectedOwner);
         }
     }
 
@@ -1189,7 +1288,10 @@ static void ApplyManagerDataSecurity(string dataDirectory, string authorizedSid)
         var inheritance = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
         var directorySecurity = new DirectorySecurity();
         directorySecurity.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-        directorySecurity.SetOwner(administrators);
+        if (setProtectedOwner)
+        {
+            directorySecurity.SetOwner(administrators);
+        }
         directorySecurity.AddAccessRule(new FileSystemAccessRule(system, FileSystemRights.FullControl, inheritance, PropagationFlags.None, AccessControlType.Allow));
         directorySecurity.AddAccessRule(new FileSystemAccessRule(administrators, FileSystemRights.FullControl, inheritance, PropagationFlags.None, AccessControlType.Allow));
         directorySecurity.AddAccessRule(new FileSystemAccessRule(user, FileSystemRights.Modify, inheritance, PropagationFlags.None, AccessControlType.Allow));
@@ -1215,7 +1317,10 @@ static void ApplyManagerDataSecurity(string dataDirectory, string authorizedSid)
 
             var fileSecurity = new FileSecurity();
             fileSecurity.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-            fileSecurity.SetOwner(administrators);
+            if (setProtectedOwner)
+            {
+                fileSecurity.SetOwner(administrators);
+            }
             fileSecurity.AddAccessRule(new FileSystemAccessRule(system, FileSystemRights.FullControl, AccessControlType.Allow));
             fileSecurity.AddAccessRule(new FileSystemAccessRule(administrators, FileSystemRights.FullControl, AccessControlType.Allow));
             fileSecurity.AddAccessRule(new FileSystemAccessRule(user, FileSystemRights.Modify, AccessControlType.Allow));
@@ -2371,7 +2476,7 @@ static void ResetPrivilegedWorkingDirectory(string path)
 
 }
 
-static void SecurePrivilegedWorkingDirectory(string path)
+static void SecurePrivilegedWorkingDirectory(string path, bool setProtectedOwner = true)
 {
     var fullPath = Path.GetFullPath(path);
     var managerData = Path.GetFullPath(Path.Combine(ProgramDataPath(), "BeszelAgentManager"))
@@ -2390,7 +2495,7 @@ static void SecurePrivilegedWorkingDirectory(string path)
 
     void SecureAndValidate(string directory)
     {
-        ApplyRestrictedDirectorySecurity(directory);
+        ApplyRestrictedDirectorySecurity(directory, setProtectedOwner);
         foreach (var entry in Directory.EnumerateFileSystemEntries(directory))
         {
             var attributes = File.GetAttributes(entry);
@@ -2405,32 +2510,38 @@ static void SecurePrivilegedWorkingDirectory(string path)
             }
             else
             {
-                ApplyRestrictedFileSecurity(entry);
+                ApplyRestrictedFileSecurity(entry, setProtectedOwner);
             }
         }
     }
 }
 
-static void ApplyRestrictedDirectorySecurity(string path)
+static void ApplyRestrictedDirectorySecurity(string path, bool setProtectedOwner)
 {
     var inheritance = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
     var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
     var administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
     var security = new DirectorySecurity();
     security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-    security.SetOwner(administrators);
+    if (setProtectedOwner)
+    {
+        security.SetOwner(administrators);
+    }
     security.AddAccessRule(new FileSystemAccessRule(system, FileSystemRights.FullControl, inheritance, PropagationFlags.None, AccessControlType.Allow));
     security.AddAccessRule(new FileSystemAccessRule(administrators, FileSystemRights.FullControl, inheritance, PropagationFlags.None, AccessControlType.Allow));
     new DirectoryInfo(path).SetAccessControl(security);
 }
 
-static void ApplyRestrictedFileSecurity(string path)
+static void ApplyRestrictedFileSecurity(string path, bool setProtectedOwner)
 {
     var system = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
     var administrators = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
     var security = new FileSecurity();
     security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-    security.SetOwner(administrators);
+    if (setProtectedOwner)
+    {
+        security.SetOwner(administrators);
+    }
     security.AddAccessRule(new FileSystemAccessRule(system, FileSystemRights.FullControl, AccessControlType.Allow));
     security.AddAccessRule(new FileSystemAccessRule(administrators, FileSystemRights.FullControl, AccessControlType.Allow));
     new FileInfo(path).SetAccessControl(security);
