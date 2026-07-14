@@ -1153,13 +1153,15 @@ static int EnsureBrokerPolicyCore(bool setProtectedOwner)
     }
 
     var existing = LoadBrokerPolicy();
-    var currentSid = WindowsIdentity.GetCurrent().User?.Value;
+    using var currentIdentity = WindowsIdentity.GetCurrent();
+    var currentSid = currentIdentity.User?.Value;
     var authorizedSid = existing is not null && IsValidAccountSid(existing.AuthorizedSid)
         ? existing.AuthorizedSid
         : currentSid;
     if (!IsValidAccountSid(authorizedSid))
     {
-        return 5;
+        throw new InvalidOperationException(
+            $"The current Windows identity is not a supported user account. Account={currentIdentity.Name}; SID={currentSid ?? "<none>"}.");
     }
 
     Directory.CreateDirectory(dataDirectory);
@@ -1370,10 +1372,20 @@ static bool IsValidAccountSid(string? sid)
     }
 
     var identifier = new SecurityIdentifier(sid!);
-    return identifier.IsAccountSid()
+    return (identifier.IsAccountSid() || IsEntraObjectSid(identifier.Value))
         && !identifier.IsWellKnown(WellKnownSidType.LocalSystemSid)
         && !identifier.IsWellKnown(WellKnownSidType.LocalServiceSid)
         && !identifier.IsWellKnown(WellKnownSidType.NetworkServiceSid);
+}
+
+static bool IsEntraObjectSid(string sid)
+{
+    // Microsoft Entra joined and Intune-managed users can use cloud object SIDs.
+    // SecurityIdentifier.IsAccountSid() does not recognize this documented form.
+    return Regex.IsMatch(
+        sid,
+        @"^S-1-12-1-(?:\d+-){3}\d+$",
+        RegexOptions.CultureInvariant | RegexOptions.IgnoreCase);
 }
 
 static bool TryReadVersion(Dictionary<string, string> arguments, out string version)

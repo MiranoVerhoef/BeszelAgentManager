@@ -6,6 +6,7 @@
 - Lite is an installer without .net 10 bundled in, which requires .net 10 installed.
 - Fixed issue regarding background service
 - 4.0.4 RC3: Fixed background-service error 5 handling, added repair controls, and checks the service before agent installation.
+- 4.0.4 RC4: Fixed background-service installation for Intune/Entra ID email accounts using cloud user SIDs.
 
 ## Impact
 
