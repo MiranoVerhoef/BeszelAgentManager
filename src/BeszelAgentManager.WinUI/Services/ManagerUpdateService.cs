@@ -36,7 +36,8 @@ internal sealed class ManagerUpdateService
             .Where(static r => r is not null)
             .Select(static r => r!)
             .Where(r => includePrereleases || !r.IsPrerelease)
-            .OrderByDescending(r => ToVersionKey(r.Version))
+            .OrderByDescending(r => r.Version, Comparer<string>.Create(VersionComparer.CompareCore))
+            .ThenByDescending(r => r.PublishedAt ?? DateTimeOffset.MinValue)
             .ToList();
     }
 
@@ -130,15 +131,4 @@ internal sealed class ManagerUpdateService
             : string.Empty;
     }
 
-    private static Tuple<int, int, int> ToVersionKey(string version)
-    {
-        var normalized = VersionComparer.Normalize(version);
-        var parts = normalized.Split('.', StringSplitOptions.RemoveEmptyEntries);
-        return Tuple.Create(ParsePart(parts, 0), ParsePart(parts, 1), ParsePart(parts, 2));
-    }
-
-    private static int ParsePart(string[] parts, int index)
-    {
-        return index < parts.Length && int.TryParse(parts[index], out var parsed) ? parsed : 0;
-    }
 }

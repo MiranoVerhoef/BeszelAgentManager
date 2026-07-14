@@ -49,7 +49,7 @@ public partial class App : Application
         _mainInstance.Activated += MainInstance_Activated;
         var config = await new ConfigService().LoadAsync();
         Logger.SetDebugEnabled(config.DebugLogging);
-        Logger.Info($"Starting WinUI manager v{AppInfo.Version}");
+        Logger.Info($"Starting WinUI manager v{AppInfo.ReleaseTag}");
         if (new AutostartService().MigrateLegacyInstallTarget())
         {
             Logger.Info("Migrated the v3 manager autostart target to the v4 application path.");

@@ -7,6 +7,7 @@
 - Fixed issue regarding background service
 - 4.0.4 RC3: Fixed background-service error 5 handling, added repair controls, and checks the service before agent installation.
 - 4.0.4 RC4: Fixed background-service installation for Intune/Entra ID email accounts using cloud user SIDs.
+- 4.0.4 RC5: Fixed automatic reopening after GUI updates and restored RC discovery, ordering, and comparison when prereleases are enabled.
 
 ## Impact
 
