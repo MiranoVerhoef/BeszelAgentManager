@@ -1,7 +1,9 @@
 using System.Diagnostics;
+using System.ComponentModel;
 using System.IO.Compression;
 using System.IO.Pipes;
 using System.Net.Http.Headers;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Security.AccessControl;
 using System.Security.Cryptography;
@@ -1078,6 +1080,7 @@ static int EnsureBrokerPolicy()
 {
     try
     {
+        EnableRestorePrivilege();
         var path = BrokerPolicyPath();
         var dataDirectory = Path.GetDirectoryName(path)!;
         if (Directory.Exists(dataDirectory)
@@ -1126,6 +1129,42 @@ static int EnsureBrokerPolicy()
     {
         WriteBackgroundLog("ERROR", $"Could not create broker policy: {ex}");
         return 5;
+    }
+}
+
+static void EnableRestorePrivilege()
+{
+    using var identity = WindowsIdentity.GetCurrent(
+        TokenAccessLevels.AdjustPrivileges | TokenAccessLevels.Query);
+    if (!NativeMethods.LookupPrivilegeValue(null, "SeRestorePrivilege", out var privilegeId))
+    {
+        throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not find SeRestorePrivilege.");
+    }
+
+    var privileges = new TokenPrivileges
+    {
+        PrivilegeCount = 1,
+        Privileges = new LuidAndAttributes
+        {
+            Luid = privilegeId,
+            Attributes = NativeMethods.SePrivilegeEnabled,
+        },
+    };
+    if (!NativeMethods.AdjustTokenPrivileges(
+            identity.AccessToken,
+            disableAllPrivileges: false,
+            ref privileges,
+            bufferLength: 0,
+            IntPtr.Zero,
+            IntPtr.Zero))
+    {
+        throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not enable SeRestorePrivilege.");
+    }
+
+    const int ErrorNotAllAssigned = 1300;
+    if (Marshal.GetLastWin32Error() == ErrorNotAllAssigned)
+    {
+        throw new Win32Exception(ErrorNotAllAssigned, "The elevated installer token does not contain SeRestorePrivilege.");
     }
 }
 
@@ -2819,6 +2858,46 @@ static async Task<(int ExitCode, string Output)> RunProcessWithTimeoutAsync(
 }
 
 internal readonly record struct AgentRelease(string Version, string DownloadUrl);
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct Luid
+{
+    public uint LowPart;
+    public int HighPart;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct LuidAndAttributes
+{
+    public Luid Luid;
+    public uint Attributes;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct TokenPrivileges
+{
+    public uint PrivilegeCount;
+    public LuidAndAttributes Privileges;
+}
+
+internal static class NativeMethods
+{
+    internal const uint SePrivilegeEnabled = 0x00000002;
+
+    [DllImport("advapi32.dll", EntryPoint = "LookupPrivilegeValueW", SetLastError = true, CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool LookupPrivilegeValue(string? systemName, string name, out Luid luid);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool AdjustTokenPrivileges(
+        Microsoft.Win32.SafeHandles.SafeAccessTokenHandle tokenHandle,
+        [MarshalAs(UnmanagedType.Bool)] bool disableAllPrivileges,
+        ref TokenPrivileges newState,
+        uint bufferLength,
+        IntPtr previousState,
+        IntPtr returnLength);
+}
 
 internal sealed class BrokerPolicy
 {

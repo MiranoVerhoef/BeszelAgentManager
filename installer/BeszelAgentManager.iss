@@ -11,7 +11,7 @@
 #define OutputSuffix "-Lite"
 #else
 #define RuntimeVariantId "bundled"
-#define RuntimeVariantSuffix " Bundled"
+#define RuntimeVariantSuffix ""
 #define OutputSuffix ""
 #endif
 
