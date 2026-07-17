@@ -3,6 +3,7 @@ using System.ComponentModel;
 using System.IO.Compression;
 using System.IO.Pipes;
 using System.Net.Http.Headers;
+using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Security.AccessControl;
@@ -338,24 +339,34 @@ static async Task RunBackgroundMonitoringLoopAsync(
     BackgroundRuntimeState runtimeState,
     CancellationToken cancellationToken)
 {
-    while (!cancellationToken.IsCancellationRequested)
+    NetworkAddressChangedEventHandler networkChanged = static (_, _) => BrokerRuntime.SignalNetworkChange();
+    NetworkChange.NetworkAddressChanged += networkChanged;
+    try
     {
-        await CheckHubFailoverAsync(state, failoverStore, cancellationToken);
-        await RunWebSocketOfflineBackoffAsync(runtimeState, cancellationToken);
-        await RunDueBackgroundSchedulesAsync(runtimeState, cancellationToken);
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            var addressChanged = BrokerRuntime.ConsumeNetworkChange();
+            await CheckHubFailoverAsync(state, failoverStore, cancellationToken);
+            await RunWebSocketOfflineBackoffAsync(runtimeState, addressChanged, cancellationToken);
+            await RunDueBackgroundSchedulesAsync(runtimeState, cancellationToken);
 
-        using var cycleCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var delay = Task.Delay(TimeSpan.FromMinutes(1), cycleCancellation.Token);
-        var reload = BrokerRuntime.ReloadSignal.WaitAsync(cycleCancellation.Token);
-        await Task.WhenAny(delay, reload);
-        cycleCancellation.Cancel();
-        try
-        {
-            await Task.WhenAll(delay, reload);
+            using var cycleCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var delay = Task.Delay(TimeSpan.FromMinutes(1), cycleCancellation.Token);
+            var reload = BrokerRuntime.ReloadSignal.WaitAsync(cycleCancellation.Token);
+            await Task.WhenAny(delay, reload);
+            cycleCancellation.Cancel();
+            try
+            {
+                await Task.WhenAll(delay, reload);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+            }
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
-        {
-        }
+    }
+    finally
+    {
+        NetworkChange.NetworkAddressChanged -= networkChanged;
     }
 }
 
@@ -1442,6 +1453,7 @@ static bool TryReadManagerVariant(Dictionary<string, string> arguments, out stri
 
 static async Task RunWebSocketOfflineBackoffAsync(
     BackgroundRuntimeState state,
+    bool networkChanged,
     CancellationToken cancellationToken)
 {
     using var config = await LoadConfigurationAsync();
@@ -1490,6 +1502,21 @@ static async Task RunWebSocketOfflineBackoffAsync(
         await SaveBackgroundRuntimeStateAsync(state);
         WriteBackgroundLog("INFO", "WebSocket offline backoff enabled. Monitoring new agent connection events.");
         return;
+    }
+
+    if (networkChanged)
+    {
+        if (state.AgentPausedForWebSocketBackoff)
+        {
+            state.NextWebSocketRetryAt = DateTimeOffset.Now;
+            WriteBackgroundLog("INFO", "Network change detected. WebSocket offline backoff retry requested immediately.");
+        }
+        else if (!state.WebSocketBackoffProbeInProgress && state.WebSocketConsecutiveFailures > 0)
+        {
+            state.WebSocketConsecutiveFailures = 0;
+            state.WebSocketLogOffset = CurrentAgentLogLength();
+            WriteBackgroundLog("INFO", "Network change detected. WebSocket failure count reset.");
+        }
     }
 
     var logText = ReadNewAgentLogText(state, out var logPositionChanged);
@@ -3499,6 +3526,10 @@ internal static class AgentStatusRuntime
 
 internal static class BrokerRuntime
 {
+    private static readonly object NetworkChangeSync = new();
+    private static int _networkChanged;
+    private static Timer? _networkChangeDebounceTimer;
+
     public static SemaphoreSlim MutationGate { get; } = new(1, 1);
     public static SemaphoreSlim ReloadSignal { get; } = new(0, 1);
 
@@ -3509,6 +3540,22 @@ internal static class BrokerRuntime
             ReloadSignal.Release();
         }
     }
+
+    public static void SignalNetworkChange()
+    {
+        lock (NetworkChangeSync)
+        {
+            _networkChangeDebounceTimer ??= new Timer(
+                static _ =>
+                {
+                    Interlocked.Exchange(ref _networkChanged, 1);
+                    SignalReload();
+                });
+            _networkChangeDebounceTimer.Change(TimeSpan.FromSeconds(3), Timeout.InfiniteTimeSpan);
+        }
+    }
+
+    public static bool ConsumeNetworkChange() => Interlocked.Exchange(ref _networkChanged, 0) == 1;
 }
 
 internal sealed class BackgroundRuntimeState

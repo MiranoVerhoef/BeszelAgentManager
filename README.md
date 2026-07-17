@@ -86,7 +86,7 @@ Schedules run inside the background service; Windows Scheduled Tasks are not use
 - Periodic agent restart: configurable in minutes or hours, up to 168 hours
 - Agent log rotation: daily at 00:05 local time
 
-Optional WebSocket offline backoff is configured under **Extra**. After 12 consecutive `WebSocket connection failed` events, the background service pauses the agent and retries after 1, 2, 5, 10, 30, then 60 minutes. A successful connection immediately resets the delay. Disabling the option resumes an agent that the manager paused. Scheduled agent updates and periodic restarts are deferred while the backoff is active.
+Optional WebSocket offline backoff is configured under **Extra**. After 12 consecutive `WebSocket connection failed` events, the background service pauses the agent and retries after 1, 2, 5, 10, 30, then 60 minutes. A successful connection immediately resets the delay. A Windows network-address change bypasses the current delay after a three-second trailing debounce, allowing adapters to settle before retrying. Disabling the option resumes an agent that the manager paused. Scheduled agent updates and periodic restarts are deferred while the backoff is active.
 
 Last-run and next-due state is persisted in `background-runtime-state.json`. Enabling a schedule starts its interval from the enable time rather than running immediately.
 

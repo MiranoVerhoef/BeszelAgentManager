@@ -8,84 +8,94 @@
     mc:Ignorable="d">
 
     <ScrollViewer VerticalScrollBarVisibility="Auto">
-      <StackPanel Padding="10" Spacing="8">
-        <Border Padding="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="4">
-            <StackPanel Spacing="6">
-                <TextBlock FontWeight="SemiBold" Text="GitHub Authentication" />
-                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Set a GitHub token to avoid API rate limiting. Token is stored encrypted (DPAPI)." />
-                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Tip: If GITHUB_TOKEN is set as an environment variable, it overrides the saved token." />
-                <Button x:Name="GitHubAuthButton" MinHeight="30" Padding="10,4" HorizontalAlignment="Left" Content="GitHub Auth..." Click="GitHubAuthButton_Click" />
-            </StackPanel>
-        </Border>
+        <Grid Padding="8" ColumnSpacing="8" RowSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
 
-        <Border Padding="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="4">
-            <StackPanel Spacing="6">
-                <TextBlock FontWeight="SemiBold" Text="Agent Fingerprint" />
-                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="View or reset the agent fingerprint (beszel-agent fingerprint view/reset)." />
-                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Reset is useful if you cloned a VM or want to re-register this machine." />
-                <StackPanel Orientation="Horizontal" Spacing="10">
-                    <Button x:Name="ViewFingerprintButton" MinHeight="30" Padding="10,4" Content="View fingerprint" Click="ViewFingerprintButton_Click" />
-                    <Button x:Name="ResetFingerprintButton" MinHeight="30" Padding="10,4" Content="Reset fingerprint" Click="ResetFingerprintButton_Click" />
+            <Border Padding="10,8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="6">
+                <StackPanel Spacing="4">
+                    <TextBlock FontWeight="SemiBold" Text="GitHub authentication" />
+                    <TextBlock FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Store a DPAPI-encrypted token to avoid API rate limits. GITHUB_TOKEN overrides it." TextWrapping="Wrap" />
+                    <Button x:Name="GitHubAuthButton" MinHeight="28" Padding="10,3" HorizontalAlignment="Left" Content="GitHub Auth..." Click="GitHubAuthButton_Click" />
                 </StackPanel>
-            </StackPanel>
-        </Border>
+            </Border>
 
-        <Border Padding="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="4">
-            <StackPanel Spacing="6">
-                <TextBlock FontWeight="SemiBold" Text="Periodic service restart" />
-                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Optionally restart the Beszel Agent service on a fixed interval." />
-                <CheckBox x:Name="AutoRestartCheckBox" Content="Enable periodic service restart" Click="AutoRestartCheckBox_Click" />
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <TextBlock VerticalAlignment="Center" Text="Interval:" />
-                    <TextBox
-                        x:Name="RestartIntervalTextBox"
-                        Width="64"
-                        MaxLength="5"
-                        Text="24"
-                        LostFocus="RestartIntervalTextBox_LostFocus"
-                        KeyDown="RestartIntervalTextBox_KeyDown" />
-                    <ComboBox
-                        x:Name="RestartIntervalUnitComboBox"
-                        Width="104"
-                        SelectionChanged="RestartIntervalUnitComboBox_SelectionChanged">
-                        <ComboBoxItem Content="Hours" Tag="hours" />
-                        <ComboBoxItem Content="Minutes" Tag="minutes" />
-                    </ComboBox>
+            <Border Grid.Column="1" Padding="10,8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="6">
+                <StackPanel Spacing="4">
+                    <TextBlock FontWeight="SemiBold" Text="Agent fingerprint" />
+                    <TextBlock FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="View or reset the fingerprint after cloning a VM or re-registering this machine." TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button x:Name="ViewFingerprintButton" MinHeight="28" Padding="10,3" Content="View" Click="ViewFingerprintButton_Click" />
+                        <Button x:Name="ResetFingerprintButton" MinHeight="28" Padding="10,3" Content="Reset" Click="ResetFingerprintButton_Click" />
+                    </StackPanel>
                 </StackPanel>
-            </StackPanel>
-        </Border>
+            </Border>
 
-        <Border Padding="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="4">
-            <StackPanel Spacing="6">
-                <TextBlock FontWeight="SemiBold" Text="WebSocket offline backoff" />
-                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="After 12 consecutive connection failures, pause the agent and retry after 1, 2, 5, 10, 30, then 60 minutes. A successful connection restores normal operation." TextWrapping="Wrap" />
-                <CheckBox x:Name="WebSocketBackoffCheckBox" Content="Reduce retries while the hub is unreachable" Click="WebSocketBackoffCheckBox_Click" />
-            </StackPanel>
-        </Border>
-
-        <Border Padding="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="4">
-            <StackPanel Spacing="6">
-                <TextBlock FontWeight="SemiBold" Text="Background service" />
-                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Repair, remove, or check the BeszelAgentManager privileged background service." TextWrapping="Wrap" />
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <Button x:Name="InstallBackgroundServiceButton" MinHeight="30" Padding="10,4" Content="Install" Click="InstallBackgroundServiceButton_Click" />
-                    <Button x:Name="UninstallBackgroundServiceButton" MinHeight="30" Padding="10,4" Content="Uninstall" Click="UninstallBackgroundServiceButton_Click" />
-                    <Button x:Name="CheckBackgroundServiceButton" MinHeight="30" Padding="10,4" Content="Check" Click="CheckBackgroundServiceButton_Click" />
-                    <TextBlock x:Name="BackgroundServiceStatusText" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Status: checking..." />
+            <Border Grid.Row="1" Padding="10,8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="6">
+                <StackPanel Spacing="4">
+                    <TextBlock FontWeight="SemiBold" Text="Periodic service restart" />
+                    <TextBlock FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Restart Beszel Agent automatically on a fixed interval." TextWrapping="Wrap" />
+                    <CheckBox x:Name="AutoRestartCheckBox" MinHeight="28" Content="Enable periodic restart" Click="AutoRestartCheckBox_Click" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <TextBlock VerticalAlignment="Center" Text="Every" />
+                        <TextBox
+                            x:Name="RestartIntervalTextBox"
+                            Width="58"
+                            MinHeight="28"
+                            MaxLength="5"
+                            Text="24"
+                            LostFocus="RestartIntervalTextBox_LostFocus"
+                            KeyDown="RestartIntervalTextBox_KeyDown" />
+                        <ComboBox
+                            x:Name="RestartIntervalUnitComboBox"
+                            Width="100"
+                            MinHeight="28"
+                            SelectionChanged="RestartIntervalUnitComboBox_SelectionChanged">
+                            <ComboBoxItem Content="Hours" Tag="hours" />
+                            <ComboBoxItem Content="Minutes" Tag="minutes" />
+                        </ComboBox>
+                    </StackPanel>
                 </StackPanel>
-            </StackPanel>
-        </Border>
+            </Border>
 
-        <Border Padding="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="4">
-            <StackPanel Spacing="6">
-                <TextBlock FontWeight="SemiBold" Text="Windows Defender exclusion" />
-                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Optionally exclude only the BeszelAgentManager installation folder. This is never enabled automatically." TextWrapping="Wrap" />
-                <StackPanel Orientation="Horizontal" Spacing="10">
-                    <Button x:Name="DefenderExclusionButton" MinHeight="30" Padding="10,4" Click="DefenderExclusionButton_Click" />
-                    <Button MinHeight="30" Padding="10,4" Content="Third-party AV instructions…" Click="ThirdPartyAvButton_Click" />
+            <Border Grid.Row="1" Grid.Column="1" Padding="10,8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="6">
+                <StackPanel Spacing="4">
+                    <TextBlock FontWeight="SemiBold" Text="WebSocket offline backoff" />
+                    <TextBlock FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Pause after 12 failures; retry after 1, 2, 5, 10, 30, then 60 minutes. Network changes retry immediately." TextWrapping="Wrap" />
+                    <CheckBox x:Name="WebSocketBackoffCheckBox" MinHeight="28" Content="Reduce retries while hub is unreachable" Click="WebSocketBackoffCheckBox_Click" />
                 </StackPanel>
-            </StackPanel>
-        </Border>
-      </StackPanel>
+            </Border>
+
+            <Border Grid.Row="2" Padding="10,8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="6">
+                <StackPanel Spacing="4">
+                    <TextBlock FontWeight="SemiBold" Text="Background service" />
+                    <TextBlock FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Repair, remove, or verify privileged background service." TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button x:Name="InstallBackgroundServiceButton" MinHeight="28" Padding="10,3" Content="Install" Click="InstallBackgroundServiceButton_Click" />
+                        <Button x:Name="UninstallBackgroundServiceButton" MinHeight="28" Padding="10,3" Content="Uninstall" Click="UninstallBackgroundServiceButton_Click" />
+                        <Button x:Name="CheckBackgroundServiceButton" MinHeight="28" Padding="10,3" Content="Check" Click="CheckBackgroundServiceButton_Click" />
+                        <TextBlock x:Name="BackgroundServiceStatusText" VerticalAlignment="Center" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Checking..." />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Row="2" Grid.Column="1" Padding="10,8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="6">
+                <StackPanel Spacing="4">
+                    <TextBlock FontWeight="SemiBold" Text="Antivirus exclusions" />
+                    <TextBlock FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Manage optional Defender exclusion or view third-party AV paths." TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button x:Name="DefenderExclusionButton" MinHeight="28" Padding="10,3" Click="DefenderExclusionButton_Click" />
+                        <Button MinHeight="28" Padding="10,3" Content="Third-party AV paths..." Click="ThirdPartyAvButton_Click" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
     </ScrollViewer>
 </Page>
