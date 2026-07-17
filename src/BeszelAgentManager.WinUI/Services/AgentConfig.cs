@@ -49,6 +49,9 @@ internal sealed class AgentConfig
     [JsonPropertyName("auto_restart_interval_unit")]
     public string AutoRestartIntervalUnit { get; set; } = "hours";
 
+    [JsonPropertyName("websocket_offline_backoff_enabled")]
+    public bool WebSocketOfflineBackoffEnabled { get; set; }
+
     [JsonPropertyName("debug_logging")]
     public bool DebugLogging { get; set; }
 
@@ -182,7 +185,8 @@ internal sealed class AgentConfig
             $"update_interval_hours={UpdateIntervalHours}\n" +
             $"auto_restart_enabled={AutoRestartEnabled}\n" +
             $"auto_restart_interval_value={AutoRestartIntervalValue}\n" +
-            $"auto_restart_interval_unit={AutoRestartIntervalUnit}\n";
+            $"auto_restart_interval_unit={AutoRestartIntervalUnit}\n" +
+            $"websocket_offline_backoff_enabled={WebSocketOfflineBackoffEnabled}\n";
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(payload));
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }

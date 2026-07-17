@@ -145,6 +145,7 @@ internal sealed class ConfigService
             AutoRestartIntervalUnit = string.Equals(config.AutoRestartIntervalUnit, "minutes", StringComparison.OrdinalIgnoreCase)
                 ? "minutes"
                 : "hours",
+            WebSocketOfflineBackoffEnabled = config.WebSocketOfflineBackoffEnabled,
             DebugLogging = config.DebugLogging,
             GitHubTokenEncrypted = config.GitHubTokenEncrypted ?? string.Empty,
             StartHidden = config.StartHidden,

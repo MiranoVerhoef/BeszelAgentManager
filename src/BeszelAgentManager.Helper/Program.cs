@@ -341,6 +341,7 @@ static async Task RunBackgroundMonitoringLoopAsync(
     while (!cancellationToken.IsCancellationRequested)
     {
         await CheckHubFailoverAsync(state, failoverStore, cancellationToken);
+        await RunWebSocketOfflineBackoffAsync(runtimeState, cancellationToken);
         await RunDueBackgroundSchedulesAsync(runtimeState, cancellationToken);
 
         using var cycleCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -371,7 +372,28 @@ static async Task RunDueBackgroundSchedulesAsync(
     var now = DateTimeOffset.Now;
     var changed = ReconcileScheduleState(config.RootElement, state, now);
 
-    if (state.NextAgentUpdateAt is { } updateDue && updateDue <= now)
+    if (state.AgentPausedForWebSocketBackoff)
+    {
+        if (state.NextAgentUpdateAt is { } pausedUpdateDue && pausedUpdateDue <= now)
+        {
+            state.LastAgentUpdateAt = now;
+            state.NextAgentUpdateAt = now.AddHours(state.AgentUpdateIntervalHours);
+            WriteBackgroundLog("INFO", $"Scheduled agent update skipped while WebSocket offline backoff is active. Next check: {state.NextAgentUpdateAt:O}.");
+            changed = true;
+        }
+
+        if (state.NextPeriodicRestartAt is { } pausedRestartDue && pausedRestartDue <= now)
+        {
+            state.LastPeriodicRestartAt = now;
+            state.NextPeriodicRestartAt = now.AddMinutes(state.PeriodicRestartIntervalMinutes);
+            WriteBackgroundLog("INFO", $"Scheduled Beszel Agent restart skipped while WebSocket offline backoff is active. Next restart: {state.NextPeriodicRestartAt:O}.");
+            changed = true;
+        }
+    }
+
+    if (!state.AgentPausedForWebSocketBackoff
+        && state.NextAgentUpdateAt is { } updateDue
+        && updateDue <= now)
     {
         await BrokerRuntime.MutationGate.WaitAsync(cancellationToken);
         try
@@ -394,7 +416,9 @@ static async Task RunDueBackgroundSchedulesAsync(
         }
     }
 
-    if (state.NextPeriodicRestartAt is { } restartDue && restartDue <= now)
+    if (!state.AgentPausedForWebSocketBackoff
+        && state.NextPeriodicRestartAt is { } restartDue
+        && restartDue <= now)
     {
         await BrokerRuntime.MutationGate.WaitAsync(cancellationToken);
         try
@@ -740,7 +764,8 @@ static async Task<int> ExecuteBrokerActionAsync(BrokerRequest request)
         "agent.fingerprint.reset" => await ResetAgentFingerprintAsync(),
         "defender.set" when TryReadBoolean(arguments, "enabled", out var enabled) => await SetDefenderExclusionAsync(enabled),
         "manager.installVersion" when TryReadManagerTag(arguments, out var tag)
-            && TryReadManagerVariant(arguments, out var variant) => await InstallManagerVersionAsync(tag, variant),
+            && TryReadManagerVariant(arguments, out var variant)
+            && TryReadRelaunchToken(arguments, out var relaunchToken) => await InstallManagerVersionAsync(tag, variant, relaunchToken),
         _ => 2,
     };
 }
@@ -1413,6 +1438,264 @@ static bool TryReadManagerVariant(Dictionary<string, string> arguments, out stri
 {
     variant = arguments.GetValueOrDefault("variant")?.Trim().ToLowerInvariant() ?? "bundled";
     return variant is "bundled" or "lite";
+}
+
+static async Task RunWebSocketOfflineBackoffAsync(
+    BackgroundRuntimeState state,
+    CancellationToken cancellationToken)
+{
+    using var config = await LoadConfigurationAsync();
+    if (config is null)
+    {
+        return;
+    }
+
+    var enabled = config.RootElement.TryGetProperty("websocket_offline_backoff_enabled", out var enabledValue)
+        && enabledValue.ValueKind == JsonValueKind.True;
+    var changed = false;
+
+    if (!enabled)
+    {
+        if (state.AgentPausedForWebSocketBackoff)
+        {
+            await BrokerRuntime.MutationGate.WaitAsync(cancellationToken);
+            try
+            {
+                var startResult = await StartServiceAsync(serviceName);
+                WriteBackgroundLog(
+                    startResult == 0 ? "INFO" : "ERROR",
+                    startResult == 0
+                        ? "WebSocket offline backoff disabled. Beszel Agent resumed."
+                        : $"WebSocket offline backoff disabled, but Beszel Agent could not resume (code {startResult}).");
+            }
+            finally
+            {
+                BrokerRuntime.MutationGate.Release();
+            }
+        }
+
+        changed = ResetWebSocketBackoffState(state);
+        state.WebSocketBackoffWasEnabled = false;
+        if (changed)
+        {
+            await SaveBackgroundRuntimeStateAsync(state);
+        }
+        return;
+    }
+
+    if (!state.WebSocketBackoffWasEnabled)
+    {
+        state.WebSocketBackoffWasEnabled = true;
+        state.WebSocketLogOffset = CurrentAgentLogLength();
+        await SaveBackgroundRuntimeStateAsync(state);
+        WriteBackgroundLog("INFO", "WebSocket offline backoff enabled. Monitoring new agent connection events.");
+        return;
+    }
+
+    var logText = ReadNewAgentLogText(state, out var logPositionChanged);
+    changed |= logPositionChanged;
+    var summary = WebSocketBackoffPolicy.Analyze(logText, state.WebSocketConsecutiveFailures);
+    state.WebSocketConsecutiveFailures = summary.ConsecutiveFailures;
+
+    if (summary.Connected)
+    {
+        if (state.WebSocketBackoffProbeInProgress || state.WebSocketBackoffRetryCount > 0)
+        {
+            WriteBackgroundLog("INFO", "Beszel Agent WebSocket connection restored. Offline retry delay reset.");
+        }
+
+        state.AgentPausedForWebSocketBackoff = false;
+        state.WebSocketBackoffProbeInProgress = false;
+        state.WebSocketBackoffRetryCount = 0;
+        state.NextWebSocketRetryAt = null;
+        state.WebSocketProbeStartedAt = null;
+        changed = true;
+    }
+
+    var now = DateTimeOffset.Now;
+    if (state.AgentPausedForWebSocketBackoff)
+    {
+        if (state.NextWebSocketRetryAt is null || state.NextWebSocketRetryAt <= now)
+        {
+            await BrokerRuntime.MutationGate.WaitAsync(cancellationToken);
+            try
+            {
+                state.WebSocketLogOffset = CurrentAgentLogLength();
+                var startResult = await StartServiceAsync(serviceName);
+                if (startResult == 0)
+                {
+                    state.AgentPausedForWebSocketBackoff = false;
+                    state.WebSocketBackoffProbeInProgress = true;
+                    state.WebSocketProbeStartedAt = now;
+                    state.WebSocketConsecutiveFailures = 0;
+                    state.NextWebSocketRetryAt = null;
+                    WriteBackgroundLog("INFO", "WebSocket offline backoff retry started.");
+                }
+                else
+                {
+                    state.WebSocketBackoffRetryCount++;
+                    state.NextWebSocketRetryAt = now.Add(WebSocketBackoffPolicy.RetryDelay(state.WebSocketBackoffRetryCount));
+                    WriteBackgroundLog("ERROR", $"WebSocket offline backoff retry could not start Beszel Agent (code {startResult}). Next retry: {state.NextWebSocketRetryAt:O}.");
+                }
+                changed = true;
+            }
+            finally
+            {
+                BrokerRuntime.MutationGate.Release();
+            }
+        }
+    }
+    else if (state.WebSocketBackoffProbeInProgress)
+    {
+        if (state.WebSocketConsecutiveFailures > 0)
+        {
+            await PauseAgentForWebSocketBackoffAsync(state, now, failedRetry: true, cancellationToken);
+            changed = true;
+        }
+        else if (state.WebSocketProbeStartedAt is { } probeStarted
+            && now - probeStarted >= TimeSpan.FromMinutes(2))
+        {
+            state.WebSocketBackoffProbeInProgress = false;
+            state.WebSocketBackoffRetryCount = 0;
+            state.WebSocketProbeStartedAt = null;
+            WriteBackgroundLog("WARN", "WebSocket offline backoff retry produced no connection log event. Beszel Agent left running.");
+            changed = true;
+        }
+    }
+    else if (state.WebSocketConsecutiveFailures >= WebSocketBackoffPolicy.FailureThreshold)
+    {
+        await PauseAgentForWebSocketBackoffAsync(state, now, failedRetry: false, cancellationToken);
+        changed = true;
+    }
+
+    if (changed)
+    {
+        await SaveBackgroundRuntimeStateAsync(state);
+    }
+}
+
+static async Task PauseAgentForWebSocketBackoffAsync(
+    BackgroundRuntimeState state,
+    DateTimeOffset now,
+    bool failedRetry,
+    CancellationToken cancellationToken)
+{
+    await BrokerRuntime.MutationGate.WaitAsync(cancellationToken);
+    try
+    {
+        var stopResult = await StopServiceAsync(serviceName);
+        if (stopResult != 0)
+        {
+            WriteBackgroundLog("ERROR", $"WebSocket offline backoff could not pause Beszel Agent (code {stopResult}).");
+            state.WebSocketBackoffProbeInProgress = false;
+            state.WebSocketProbeStartedAt = null;
+            return;
+        }
+
+        if (failedRetry)
+        {
+            state.WebSocketBackoffRetryCount++;
+        }
+        else
+        {
+            state.WebSocketBackoffRetryCount = 0;
+        }
+
+        var delay = WebSocketBackoffPolicy.RetryDelay(state.WebSocketBackoffRetryCount);
+        state.AgentPausedForWebSocketBackoff = true;
+        state.WebSocketBackoffProbeInProgress = false;
+        state.WebSocketConsecutiveFailures = 0;
+        state.WebSocketProbeStartedAt = null;
+        state.NextWebSocketRetryAt = now.Add(delay);
+        WriteBackgroundLog("WARN", $"Beszel Agent paused after repeated WebSocket failures. Next retry in {(int)delay.TotalMinutes} minute(s) at {state.NextWebSocketRetryAt:O}.");
+    }
+    finally
+    {
+        BrokerRuntime.MutationGate.Release();
+    }
+}
+
+static bool ResetWebSocketBackoffState(BackgroundRuntimeState state)
+{
+    var currentLogLength = CurrentAgentLogLength();
+    var changed = state.WebSocketConsecutiveFailures != 0
+        || state.WebSocketBackoffRetryCount != 0
+        || state.AgentPausedForWebSocketBackoff
+        || state.WebSocketBackoffProbeInProgress
+        || state.NextWebSocketRetryAt is not null
+        || state.WebSocketProbeStartedAt is not null
+        || state.WebSocketBackoffWasEnabled
+        || state.WebSocketLogOffset != currentLogLength;
+    state.WebSocketConsecutiveFailures = 0;
+    state.WebSocketBackoffRetryCount = 0;
+    state.AgentPausedForWebSocketBackoff = false;
+    state.WebSocketBackoffProbeInProgress = false;
+    state.NextWebSocketRetryAt = null;
+    state.WebSocketProbeStartedAt = null;
+    state.WebSocketLogOffset = currentLogLength;
+    return changed;
+}
+
+static string ReadNewAgentLogText(BackgroundRuntimeState state, out bool positionChanged)
+{
+    positionChanged = false;
+    try
+    {
+        var path = AgentLogPath();
+        if (!File.Exists(path))
+        {
+            return string.Empty;
+        }
+
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        const long maximumRead = 256 * 1024;
+        var offset = state.WebSocketLogOffset;
+        if (offset < 0 || offset > stream.Length)
+        {
+            offset = 0;
+        }
+        if (offset == 0 && stream.Length > maximumRead)
+        {
+            offset = stream.Length - maximumRead;
+        }
+
+        stream.Position = offset;
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: true, leaveOpen: true);
+        var text = reader.ReadToEnd();
+        state.WebSocketLogOffset = stream.Position;
+        positionChanged = state.WebSocketLogOffset != offset;
+        return text;
+    }
+    catch (Exception ex)
+    {
+        WriteBackgroundLog("WARN", $"Could not inspect Beszel Agent WebSocket log state: {ex.Message}");
+        return string.Empty;
+    }
+}
+
+static long CurrentAgentLogLength()
+{
+    try
+    {
+        var path = AgentLogPath();
+        return File.Exists(path) ? new FileInfo(path).Length : 0;
+    }
+    catch
+    {
+        return 0;
+    }
+}
+
+static string AgentLogPath() => Path.Combine(
+    ProgramDataPath(),
+    "BeszelAgentManager",
+    "agent_logs",
+    "beszel-agent.log");
+
+static bool TryReadRelaunchToken(Dictionary<string, string> arguments, out string token)
+{
+    token = arguments.GetValueOrDefault("relaunchToken")?.Trim().ToLowerInvariant() ?? string.Empty;
+    return Guid.TryParseExact(token, "N", out _);
 }
 
 static bool TryReadBoolean(Dictionary<string, string> arguments, string key, out bool value)
@@ -2486,7 +2769,7 @@ static async Task<AgentRelease?> FetchLatestAgentReleaseAsync()
     return ParseAgentRelease(document.RootElement);
 }
 
-static async Task<int> InstallManagerVersionAsync(string tag, string variant)
+static async Task<int> InstallManagerVersionAsync(string tag, string variant, string relaunchToken)
 {
     try
     {
@@ -2518,10 +2801,24 @@ static async Task<int> InstallManagerVersionAsync(string tag, string variant)
             return 31;
         }
 
+        var policy = LoadBrokerPolicy();
+        if (policy is null || !IsValidAccountSid(policy.AuthorizedSid))
+        {
+            return 32;
+        }
+
+        GrantAuthorizedUserReadAccess(stagingRoot, policy.AuthorizedSid);
+        var completionMarker = Path.Combine(stagingRoot, $"relaunch-{relaunchToken}.complete");
+        var setupLogPath = Path.Combine(stagingRoot, "manager-update-setup.log");
         var escapedInstaller = installerPath.Replace("'", "''", StringComparison.Ordinal);
+        var escapedCompletionMarker = completionMarker.Replace("'", "''", StringComparison.Ordinal);
+        var escapedSetupLog = setupLogPath.Replace("'", "''", StringComparison.Ordinal);
         var command =
-            $"Start-Sleep -Seconds 3; Start-Process -FilePath '{escapedInstaller}' " +
-            "-ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CLOSEAPPLICATIONS')";
+            "$exitCode = 1; try { Start-Sleep -Seconds 3; " +
+            $"$setup = Start-Process -FilePath '{escapedInstaller}' " +
+            $"-ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CLOSEAPPLICATIONS','/LOG={escapedSetupLog}') " +
+            "-Wait -PassThru; $exitCode = $setup.ExitCode } finally { " +
+            $"[System.IO.File]::WriteAllText('{escapedCompletionMarker}', $exitCode.ToString()) }}";
         Process.Start(new ProcessStartInfo
         {
             FileName = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"),
@@ -2644,6 +2941,29 @@ static void ApplyRestrictedFileSecurity(string path, bool setProtectedOwner)
     security.AddAccessRule(new FileSystemAccessRule(system, FileSystemRights.FullControl, AccessControlType.Allow));
     security.AddAccessRule(new FileSystemAccessRule(administrators, FileSystemRights.FullControl, AccessControlType.Allow));
     new FileInfo(path).SetAccessControl(security);
+}
+
+static void GrantAuthorizedUserReadAccess(string path, string authorizedSid)
+{
+    var fullPath = Path.GetFullPath(path);
+    var managerData = Path.GetFullPath(Path.Combine(ProgramDataPath(), "BeszelAgentManager"))
+        .TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+    if (!fullPath.StartsWith(managerData, StringComparison.OrdinalIgnoreCase)
+        || !Directory.Exists(fullPath)
+        || File.GetAttributes(fullPath).HasFlag(FileAttributes.ReparsePoint))
+    {
+        throw new IOException("Manager update staging directory is unsafe.");
+    }
+
+    var inheritance = InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit;
+    var security = new DirectoryInfo(fullPath).GetAccessControl();
+    security.AddAccessRule(new FileSystemAccessRule(
+        new SecurityIdentifier(authorizedSid),
+        FileSystemRights.ReadAndExecute | FileSystemRights.Synchronize,
+        inheritance,
+        PropagationFlags.None,
+        AccessControlType.Allow));
+    new DirectoryInfo(fullPath).SetAccessControl(security);
 }
 
 static bool TryGetReleaseAssetUrl(JsonElement release, string expectedName, out string url)
@@ -3202,6 +3522,14 @@ internal sealed class BackgroundRuntimeState
     public DateTimeOffset? NextPeriodicRestartAt { get; set; }
     public DateTimeOffset? LastAgentLogRotationAt { get; set; }
     public DateTimeOffset? NextAgentLogRotationAt { get; set; }
+    public long WebSocketLogOffset { get; set; }
+    public int WebSocketConsecutiveFailures { get; set; }
+    public int WebSocketBackoffRetryCount { get; set; }
+    public bool AgentPausedForWebSocketBackoff { get; set; }
+    public bool WebSocketBackoffProbeInProgress { get; set; }
+    public bool WebSocketBackoffWasEnabled { get; set; }
+    public DateTimeOffset? WebSocketProbeStartedAt { get; set; }
+    public DateTimeOffset? NextWebSocketRetryAt { get; set; }
     public string LastOperation { get; set; } = string.Empty;
 }
 

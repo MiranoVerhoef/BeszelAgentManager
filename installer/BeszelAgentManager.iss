@@ -62,6 +62,9 @@ Type: files; Name: "{commonprograms}\{#AppName}.lnk"
 Type: files; Name: "{app}\app\*.pdb"
 Type: files; Name: "{app}\app\helper\*.pdb"
 Type: files; Name: "{app}\app\BeszelAgentManager.Helper.*"
+Type: files; Name: "{app}\app\VERSION"
+Type: files; Name: "{app}\app\RELEASE_CHANNEL"
+Type: filesandordirs; Name: "{app}\app\helper"
 
 [UninstallRun]
 Filename: "{app}\app\helper\BeszelAgentManager.Helper.exe"; Parameters: "{code:GetUninstallHelperParameters}"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveBeszelAgentManagerBackgroundService"
@@ -248,12 +251,39 @@ begin
     Log('Using version-aware incremental application-file replacement.');
 end;
 
+function HasExpectedVersion(FileName: String): Boolean;
+var
+  InstalledVersion: Int64;
+  TargetVersion: Int64;
+begin
+  Result :=
+    GetPackedVersion(FileName, InstalledVersion) and
+    StrToVersion('{#AppVersion}', TargetVersion) and
+    (ComparePackedVersion(InstalledVersion, TargetVersion) = 0);
+end;
+
+procedure VerifyInstalledApplication();
+var
+  VersionText: AnsiString;
+begin
+  if not LoadStringFromFile(ExpandConstant('{app}\app\VERSION'), VersionText) or
+    (Trim(VersionText) <> '{#AppVersion}') then
+    RaiseException('Installed VERSION metadata does not match {#AppVersion}.');
+
+  if not HasExpectedVersion(ExpandConstant('{app}\app\BeszelAgentManager.exe')) then
+    RaiseException('Installed manager executable does not match {#AppVersion}.');
+
+  if not HasExpectedVersion(ExpandConstant('{app}\app\helper\BeszelAgentManager.Helper.exe')) then
+    RaiseException('Installed background helper does not match {#AppVersion}.');
+end;
+
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   ResultCode: Integer;
 begin
   if CurStep = ssPostInstall then
   begin
+    VerifyInstalledApplication();
     if not SaveStringToFile(
       ExpandConstant('{commonappdata}\{#AppName}\manager-runtime-variant.txt'),
       '{#RuntimeVariantId}' + #13#10,
@@ -312,6 +342,14 @@ begin
   Exec(
     ExpandConstant('{cmd}'),
     '/C taskkill /IM "BeszelAgentManager.exe" /T /F',
+    '',
+    SW_HIDE,
+    ewWaitUntilTerminated,
+    ResultCode
+  );
+  Exec(
+    ExpandConstant('{cmd}'),
+    '/C taskkill /IM "BeszelAgentManager.Helper.exe" /T /F',
     '',
     SW_HIDE,
     ewWaitUntilTerminated,

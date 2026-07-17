@@ -35,6 +35,7 @@ public sealed partial class ExtraPage : Page
                 ? _config.AutoRestartIntervalHours
                 : 24).ToString();
         RestartIntervalUnitComboBox.SelectedIndex = unit == "minutes" ? 1 : 0;
+        WebSocketBackoffCheckBox.IsChecked = _config.WebSocketOfflineBackoffEnabled;
         UpdatePeriodicRestartControlState();
         UpdateDefenderButton();
         _loading = false;
@@ -164,6 +165,26 @@ public sealed partial class ExtraPage : Page
     {
         UpdatePeriodicRestartControlState();
         await SavePeriodicRestartAsync();
+    }
+
+    private async void WebSocketBackoffCheckBox_Click(object sender, RoutedEventArgs e)
+    {
+        if (_loading)
+        {
+            return;
+        }
+
+        _config.WebSocketOfflineBackoffEnabled = WebSocketBackoffCheckBox.IsChecked == true;
+        var persisted = await _configService.LoadAsync();
+        _config.LastAppliedFingerprint = persisted.LastAppliedFingerprint;
+        _config.LastAppliedAt = persisted.LastAppliedAt;
+        _config.LastAppliedManagerTasksFingerprint = persisted.LastAppliedManagerTasksFingerprint;
+        await _configService.SaveAsync(_config);
+        App.Logger.Info($"WebSocket offline backoff saved: enabled={_config.WebSocketOfflineBackoffEnabled}");
+        App.MainWindow.ShowActionStatus(
+            InfoBarSeverity.Informational,
+            "WebSocket backoff saved",
+            "Choose Apply settings to update the background service.");
     }
 
     private async void RestartIntervalTextBox_LostFocus(object sender, RoutedEventArgs e)

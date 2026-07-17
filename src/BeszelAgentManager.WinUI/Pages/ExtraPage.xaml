@@ -7,16 +7,8 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <Grid Padding="10" RowSpacing="8">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
-
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+      <StackPanel Padding="10" Spacing="8">
         <Border Padding="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="4">
             <StackPanel Spacing="6">
                 <TextBlock FontWeight="SemiBold" Text="GitHub Authentication" />
@@ -26,7 +18,7 @@
             </StackPanel>
         </Border>
 
-        <Border Grid.Row="1" Padding="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="4">
+        <Border Padding="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="4">
             <StackPanel Spacing="6">
                 <TextBlock FontWeight="SemiBold" Text="Agent Fingerprint" />
                 <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="View or reset the agent fingerprint (beszel-agent fingerprint view/reset)." />
@@ -38,7 +30,7 @@
             </StackPanel>
         </Border>
 
-        <Border Grid.Row="2" Padding="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="4">
+        <Border Padding="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="4">
             <StackPanel Spacing="6">
                 <TextBlock FontWeight="SemiBold" Text="Periodic service restart" />
                 <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Optionally restart the Beszel Agent service on a fixed interval." />
@@ -63,7 +55,15 @@
             </StackPanel>
         </Border>
 
-        <Border Grid.Row="3" Padding="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="4">
+        <Border Padding="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="4">
+            <StackPanel Spacing="6">
+                <TextBlock FontWeight="SemiBold" Text="WebSocket offline backoff" />
+                <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="After 12 consecutive connection failures, pause the agent and retry after 1, 2, 5, 10, 30, then 60 minutes. A successful connection restores normal operation." TextWrapping="Wrap" />
+                <CheckBox x:Name="WebSocketBackoffCheckBox" Content="Reduce retries while the hub is unreachable" Click="WebSocketBackoffCheckBox_Click" />
+            </StackPanel>
+        </Border>
+
+        <Border Padding="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="4">
             <StackPanel Spacing="6">
                 <TextBlock FontWeight="SemiBold" Text="Background service" />
                 <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Repair, remove, or check the BeszelAgentManager privileged background service." TextWrapping="Wrap" />
@@ -76,7 +76,7 @@
             </StackPanel>
         </Border>
 
-        <Border Grid.Row="4" Padding="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="4">
+        <Border Padding="10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="4">
             <StackPanel Spacing="6">
                 <TextBlock FontWeight="SemiBold" Text="Windows Defender exclusion" />
                 <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Optionally exclude only the BeszelAgentManager installation folder. This is never enabled automatically." TextWrapping="Wrap" />
@@ -86,6 +86,6 @@
                 </StackPanel>
             </StackPanel>
         </Border>
-
-    </Grid>
+      </StackPanel>
+    </ScrollViewer>
 </Page>
