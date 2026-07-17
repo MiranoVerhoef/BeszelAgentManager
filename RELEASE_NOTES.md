@@ -11,6 +11,7 @@
 - Restores normal agent operation immediately after a successful WebSocket connection.
 - Detects Windows network-address changes and requests an immediate debounced retry.
 - Reworked Extra into a compact two-column card layout.
+- Matched Connection and Environment to the compact card spacing while keeping both pages single-column.
 
 ## Impact
 
