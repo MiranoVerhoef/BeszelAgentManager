@@ -32,3 +32,15 @@ public sealed class BrokerResponse
         Message = message,
     };
 }
+
+public sealed class BrokerAgentStatus
+{
+    public bool ServiceExists { get; set; }
+    public string ServiceName { get; set; } = "Beszel Agent";
+    public string ServiceState { get; set; } = "Not installed";
+    public int? ProcessId { get; set; }
+    public string BinaryPath { get; set; } = string.Empty;
+    public bool AgentExeExists { get; set; }
+    public string AgentExePath { get; set; } = string.Empty;
+    public string AgentVersion { get; set; } = "Not installed";
+}

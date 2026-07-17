@@ -74,6 +74,18 @@ internal sealed class BackgroundBrokerClient
             : null;
     }
 
+    public async Task<BrokerAgentStatus> GetAgentStatusAsync()
+    {
+        var response = await SendResponseAsync("agent.status");
+        if (!response.Success)
+        {
+            throw new InvalidOperationException(response.Message);
+        }
+
+        return JsonSerializer.Deserialize(response.Message, AppJsonContext.Default.BrokerAgentStatus)
+            ?? throw new InvalidOperationException("The background service returned an invalid agent status.");
+    }
+
     private async Task<int> SendAsync(string action, Dictionary<string, string>? arguments = null)
     {
         var response = await SendResponseAsync(action, arguments);

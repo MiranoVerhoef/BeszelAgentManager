@@ -11,5 +11,6 @@ namespace BeszelAgentManager.WinUI.Services;
 [JsonSerializable(typeof(AgentConfig))]
 [JsonSerializable(typeof(BrokerRequest))]
 [JsonSerializable(typeof(BrokerResponse))]
+[JsonSerializable(typeof(BrokerAgentStatus))]
 [JsonSerializable(typeof(string))]
 internal partial class AppJsonContext : JsonSerializerContext;

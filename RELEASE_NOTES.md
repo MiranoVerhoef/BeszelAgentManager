@@ -1,19 +1,12 @@
 ## Summary
 
-- Bumped version to 4.0.5
-- Moved distribution into 2 sub: Bundled and Lite
-- Bundled is the default with .net 10 Bundled in
-- Lite is an installer without .net 10 bundled in, which requires .net 10 installed.
-- Fixed issue regarding background service
-- Fixed background-service error 5 handling, added repair controls, and checks the service before agent installation.
-- Fixed background-service installation for Intune/Entra ID email accounts using cloud user SIDs.
-- Fixed automatic reopening after GUI updates and restored RC discovery, ordering, and comparison when prereleases are enabled.
+- Bumped version to 4.0.6.
+- Replaced routine `sc.exe` polling with a secured background-service status request.
+- Cached agent service metadata and version information.
+- Reduced normal visible status refreshes to every 10 seconds.
+- Reduced hidden tray status refreshes to every 60 seconds.
+- Kept immediate status refreshes after start, stop, restart, install, update, uninstall, and configuration actions.
 
 ## Impact
 
-Existing installations default to Bundled. A manual Lite install writes a protected edition marker under ProgramData; future manager updates request only the Lite asset. Bundled installations continue requesting BeszelAgentManagerSetup.exe.
-
-Local installer sizes:
-
-- Bundled: 84.7 MB
-- Lite: 36.3 MB
+Normal manager usage no longer launches `sc.exe` repeatedly. Service mutations, installation, repair, diagnostics, and explicit Extra-page checks may still use Windows service-management commands when required.

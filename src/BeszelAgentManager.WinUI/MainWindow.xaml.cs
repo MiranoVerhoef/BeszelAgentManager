@@ -13,6 +13,8 @@ namespace BeszelAgentManager.WinUI;
 
 public sealed partial class MainWindow : Window
 {
+    private static readonly TimeSpan VisibleServiceStatusInterval = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan HiddenServiceStatusInterval = TimeSpan.FromMinutes(1);
     private readonly SystemStatusService _systemStatusService = new();
     private readonly ManagerUpdateService _managerUpdateService = new();
     private readonly AgentReleaseService _agentReleaseService = new();
@@ -78,7 +80,7 @@ public sealed partial class MainWindow : Window
         _hubStatusTimer.Start();
 
         _serviceStatusTimer = DispatcherQueue.CreateTimer();
-        _serviceStatusTimer.Interval = TimeSpan.FromSeconds(2);
+        _serviceStatusTimer.Interval = VisibleServiceStatusInterval;
         _serviceStatusTimer.Tick += async (_, _) => await RefreshServiceStatusAsync();
         _serviceStatusTimer.Start();
 
@@ -114,6 +116,7 @@ public sealed partial class MainWindow : Window
     {
         DispatcherQueue.TryEnqueue(() =>
         {
+            _serviceStatusTimer.Interval = HiddenServiceStatusInterval;
             AppWindow.Hide();
             App.Logger.Debug("Manager window hidden to notification area");
         });
@@ -123,6 +126,8 @@ public sealed partial class MainWindow : Window
     {
         DispatcherQueue.TryEnqueue(() =>
         {
+            _serviceStatusTimer.Interval = VisibleServiceStatusInterval;
+            _ = RefreshServiceStatusNowAsync();
             if (!_firstFrameRendered)
             {
                 ShowInitialWindow();
@@ -189,6 +194,7 @@ public sealed partial class MainWindow : Window
             _firstFrameRendered = true;
             if (_hiddenPrewarmInProgress)
             {
+                _serviceStatusTimer.Interval = HiddenServiceStatusInterval;
                 AppWindow.Hide();
                 AppWindow.Move(_prewarmOriginalPosition);
                 _hiddenPrewarmInProgress = false;
@@ -199,6 +205,7 @@ public sealed partial class MainWindow : Window
                 }
 
                 _showAfterHiddenPrewarm = false;
+                _serviceStatusTimer.Interval = VisibleServiceStatusInterval;
                 AppWindow.Show();
             }
             Activate();

@@ -660,6 +660,15 @@ static async Task HandleBrokerConnectionAsync(
                 return;
             }
 
+            if (request.Action == "agent.status")
+            {
+                var status = await GetBrokerAgentStatusAsync();
+                await WriteBrokerResponseAsync(
+                    pipe,
+                    BrokerResponse.Completed(request.RequestId, JsonSerializer.Serialize(status)));
+                return;
+            }
+
             await BrokerRuntime.MutationGate.WaitAsync(cancellationToken);
             try
             {
@@ -2271,6 +2280,84 @@ static async Task<(bool Exists, string State, int Pid)> QueryServiceAsync(string
     return (true, state, pid);
 }
 
+static async Task<BrokerAgentStatus> GetBrokerAgentStatusAsync()
+{
+    var service = QueryAgentServiceController();
+    var agentPath = AgentPath();
+    var agentExists = File.Exists(agentPath);
+    var version = agentExists
+        ? await GetCachedBrokerAgentVersionAsync(agentPath)
+        : "Not installed";
+
+    return new BrokerAgentStatus
+    {
+        ServiceExists = service.Exists,
+        ServiceName = service.Name,
+        ServiceState = service.Exists ? service.State : "Not installed",
+        ProcessId = null,
+        BinaryPath = service.BinaryPath,
+        AgentExeExists = agentExists,
+        AgentExePath = agentPath,
+        AgentVersion = version,
+    };
+}
+
+static (bool Exists, string Name, string State, string BinaryPath) QueryAgentServiceController()
+{
+    var candidates = AgentStatusRuntime.CachedServiceName is { Length: > 0 } cached
+        ? new[] { cached, serviceName, legacyServiceName }.Distinct(StringComparer.OrdinalIgnoreCase)
+        : new[] { serviceName, legacyServiceName };
+
+    foreach (var candidate in candidates)
+    {
+        try
+        {
+            using var controller = new ServiceController(candidate);
+            controller.Refresh();
+            var state = controller.Status switch
+            {
+                ServiceControllerStatus.Stopped => "STOPPED",
+                ServiceControllerStatus.StartPending => "START_PENDING",
+                ServiceControllerStatus.StopPending => "STOP_PENDING",
+                ServiceControllerStatus.Running => "RUNNING",
+                ServiceControllerStatus.ContinuePending => "CONTINUE_PENDING",
+                ServiceControllerStatus.PausePending => "PAUSE_PENDING",
+                ServiceControllerStatus.Paused => "PAUSED",
+                _ => "UNKNOWN",
+            };
+            var binaryPath = AgentStatusRuntime.GetBinaryPath(candidate, ReadServiceBinaryPath);
+            AgentStatusRuntime.CachedServiceName = candidate;
+            return (true, candidate, state, binaryPath);
+        }
+        catch (InvalidOperationException)
+        {
+        }
+        catch (Win32Exception ex) when (ex.NativeErrorCode is 1060 or 1072)
+        {
+        }
+    }
+
+    AgentStatusRuntime.ClearServiceMetadata();
+    return (false, serviceName, "Not installed", string.Empty);
+}
+
+static async Task<string> GetCachedBrokerAgentVersionAsync(string path)
+{
+    var file = new FileInfo(path);
+    if (AgentStatusRuntime.TryGetVersion(file.Length, file.LastWriteTimeUtc, out var cached))
+    {
+        return cached;
+    }
+
+    var detected = await GetInstalledAgentVersionAsync(path);
+    if (string.IsNullOrWhiteSpace(detected))
+    {
+        detected = "Unknown";
+    }
+    AgentStatusRuntime.SetVersion(file.Length, file.LastWriteTimeUtc, detected);
+    return detected;
+}
+
 static bool ServiceQueryReportsMissing((int ExitCode, string Output) result)
 {
     if (result.ExitCode == 0)
@@ -3026,6 +3113,68 @@ internal sealed class BrokerPolicy
 {
     public int ProtocolVersion { get; set; }
     public string AuthorizedSid { get; set; } = string.Empty;
+}
+
+internal static class AgentStatusRuntime
+{
+    private static readonly object Sync = new();
+    private static string _binaryServiceName = string.Empty;
+    private static string _binaryPath = string.Empty;
+    private static DateTime _binaryExpiresUtc = DateTime.MinValue;
+    private static string _agentVersion = string.Empty;
+    private static long _agentLength = -1;
+    private static DateTime _agentWriteTimeUtc = DateTime.MinValue;
+
+    public static string CachedServiceName { get; set; } = string.Empty;
+
+    public static string GetBinaryPath(string serviceName, Func<string, string?> reader)
+    {
+        lock (Sync)
+        {
+            if (string.Equals(_binaryServiceName, serviceName, StringComparison.OrdinalIgnoreCase)
+                && DateTime.UtcNow < _binaryExpiresUtc)
+            {
+                return _binaryPath;
+            }
+
+            _binaryServiceName = serviceName;
+            _binaryPath = reader(serviceName) ?? string.Empty;
+            _binaryExpiresUtc = DateTime.UtcNow.AddMinutes(5);
+            return _binaryPath;
+        }
+    }
+
+    public static void ClearServiceMetadata()
+    {
+        lock (Sync)
+        {
+            CachedServiceName = string.Empty;
+            _binaryServiceName = string.Empty;
+            _binaryPath = string.Empty;
+            _binaryExpiresUtc = DateTime.MinValue;
+        }
+    }
+
+    public static bool TryGetVersion(long length, DateTime writeTimeUtc, out string version)
+    {
+        lock (Sync)
+        {
+            version = _agentVersion;
+            return !string.IsNullOrWhiteSpace(version)
+                && length == _agentLength
+                && writeTimeUtc == _agentWriteTimeUtc;
+        }
+    }
+
+    public static void SetVersion(long length, DateTime writeTimeUtc, string version)
+    {
+        lock (Sync)
+        {
+            _agentLength = length;
+            _agentWriteTimeUtc = writeTimeUtc;
+            _agentVersion = version;
+        }
+    }
 }
 
 internal static class BrokerRuntime
