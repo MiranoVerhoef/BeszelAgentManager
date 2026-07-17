@@ -7,15 +7,10 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <Grid Padding="12,10,12,8" RowSpacing="8">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
-
-            <Border Padding="10,8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4">
-                <Grid RowSpacing="5" ColumnSpacing="10">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Padding="8" Spacing="8">
+            <Border Padding="10,8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="6">
+                <Grid RowSpacing="4" ColumnSpacing="8">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
@@ -24,84 +19,80 @@
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="180" />
+                        <ColumnDefinition Width="165" />
                         <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="96" />
-                        <ColumnDefinition Width="96" />
+                        <ColumnDefinition Width="88" />
+                        <ColumnDefinition Width="88" />
                     </Grid.ColumnDefinitions>
 
                     <TextBlock VerticalAlignment="Center" Text="Public Key:" />
-                    <TextBox Grid.Column="1" x:Name="KeyTextBox" IsReadOnly="True" Text="ssh-ed25519 AAAAA..." />
-                    <Button Grid.Column="2" x:Name="KeyChangeButton" HorizontalAlignment="Stretch" Content="Change" Click="KeyChangeButton_Click" />
+                    <TextBox Grid.Column="1" x:Name="KeyTextBox" MinHeight="28" IsReadOnly="True" Text="ssh-ed25519 AAAAA..." />
+                    <Button Grid.Column="2" x:Name="KeyChangeButton" MinHeight="28" Padding="10,3" HorizontalAlignment="Stretch" Content="Change" Click="KeyChangeButton_Click" />
 
                     <TextBlock Grid.Row="1" VerticalAlignment="Center" Text="Token:" />
-                    <PasswordBox Grid.Row="1" Grid.Column="1" x:Name="TokenBox" IsEnabled="False" IsPasswordRevealButtonEnabled="True" />
-                    <Button Grid.Row="1" Grid.Column="2" x:Name="TokenChangeButton" HorizontalAlignment="Stretch" Content="Change" Click="TokenChangeButton_Click" />
+                    <PasswordBox Grid.Row="1" Grid.Column="1" x:Name="TokenBox" MinHeight="28" IsEnabled="False" IsPasswordRevealButtonEnabled="True" />
+                    <Button Grid.Row="1" Grid.Column="2" x:Name="TokenChangeButton" MinHeight="28" Padding="10,3" HorizontalAlignment="Stretch" Content="Change" Click="TokenChangeButton_Click" />
 
                     <TextBlock Grid.Row="2" VerticalAlignment="Center" Text="Hub URL:" />
-                    <TextBox Grid.Row="2" Grid.Column="1" x:Name="HubUrlTextBox" IsReadOnly="True" Text="https://monitoring.local.verhoef.nl" />
-                    <Button Grid.Row="2" Grid.Column="2" x:Name="HubUrlChangeButton" HorizontalAlignment="Stretch" Content="Change" Click="HubUrlChangeButton_Click" />
+                    <TextBox Grid.Row="2" Grid.Column="1" x:Name="HubUrlTextBox" MinHeight="28" IsReadOnly="True" Text="https://monitoring.local.verhoef.nl" />
+                    <Button Grid.Row="2" Grid.Column="2" x:Name="HubUrlChangeButton" MinHeight="28" Padding="10,3" HorizontalAlignment="Stretch" Content="Change" Click="HubUrlChangeButton_Click" />
 
                     <TextBlock Grid.Row="3" VerticalAlignment="Center" Text="Hub URL IP Fallback:" />
-                    <TextBox Grid.Row="3" Grid.Column="1" x:Name="FallbackUrlTextBox" IsReadOnly="True" Text="http://192.168.2.247:8090" />
-                    <Button Grid.Row="3" Grid.Column="2" x:Name="FallbackChangeButton" HorizontalAlignment="Stretch" Content="Change" Click="FallbackChangeButton_Click" />
-                    <Button Grid.Row="3" Grid.Column="3" x:Name="FallbackToggleButton" Content="Disable" Click="FallbackToggleButton_Click" />
+                    <TextBox Grid.Row="3" Grid.Column="1" x:Name="FallbackUrlTextBox" MinHeight="28" IsReadOnly="True" Text="http://192.168.2.247:8090" />
+                    <Button Grid.Row="3" Grid.Column="2" x:Name="FallbackChangeButton" MinHeight="28" Padding="10,3" HorizontalAlignment="Stretch" Content="Change" Click="FallbackChangeButton_Click" />
+                    <Button Grid.Row="3" Grid.Column="3" x:Name="FallbackToggleButton" MinHeight="28" Padding="10,3" Content="Disable" Click="FallbackToggleButton_Click" />
 
                     <TextBlock Grid.Row="4" VerticalAlignment="Center" Text="Listen Port:" />
-                    <NumberBox Grid.Row="4" Grid.Column="1" x:Name="PortNumberBox" IsEnabled="False" Minimum="1" Maximum="65535" SpinButtonPlacementMode="Hidden" Value="45876" />
-                    <Button Grid.Row="4" Grid.Column="2" x:Name="PortChangeButton" HorizontalAlignment="Stretch" Content="Change" Click="PortChangeButton_Click" />
-                    <Button Grid.Row="4" Grid.Column="3" x:Name="ListenToggleButton" Content="Disable" Click="ListenToggleButton_Click" />
+                    <NumberBox Grid.Row="4" Grid.Column="1" x:Name="PortNumberBox" MinHeight="28" IsEnabled="False" Minimum="1" Maximum="65535" SpinButtonPlacementMode="Hidden" Value="45876" />
+                    <Button Grid.Row="4" Grid.Column="2" x:Name="PortChangeButton" MinHeight="28" Padding="10,3" HorizontalAlignment="Stretch" Content="Change" Click="PortChangeButton_Click" />
+                    <Button Grid.Row="4" Grid.Column="3" x:Name="ListenToggleButton" MinHeight="28" Padding="10,3" Content="Disable" Click="ListenToggleButton_Click" />
                 </Grid>
             </Border>
 
-            <Grid Grid.Row="1" ColumnSpacing="12">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="220" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-
-                <Border Padding="10,8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4">
-                    <StackPanel Spacing="6">
-                        <TextBlock FontWeight="SemiBold" Text="Automatic updates" />
-                        <CheckBox x:Name="AutoUpdateCheckBox" Content="Enable automatic updates" IsChecked="True" Click="SettingControl_Changed" />
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBlock VerticalAlignment="Center" Text="Interval (hours):" />
-                            <TextBox x:Name="UpdateIntervalTextBox"
-                                     Width="64"
-                                     MaxLength="3"
-                                     Text="24"
-                                     LostFocus="UpdateIntervalTextBox_LostFocus"
-                                     KeyDown="UpdateIntervalTextBox_KeyDown" />
-                        </StackPanel>
-                    </StackPanel>
-                </Border>
-
-                <Border Grid.Column="1" Padding="10,8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4">
-                    <StackPanel Spacing="6">
-                        <TextBlock FontWeight="SemiBold" Text="Manager Settings" />
-                        <Grid ColumnSpacing="12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <CheckBox x:Name="AutostartCheckBox" Content="Start BeszelAgentManager with Windows" IsChecked="True" Click="SettingControl_Changed" />
-                            <Button Grid.Column="1" Content="Update settings…" Click="ManagerUpdateSettingsButton_Click" />
-                        </Grid>
-                        <CheckBox x:Name="StartVisibleCheckBox" Content="Show window when starting with Windows" Click="SettingControl_Changed" />
-                    </StackPanel>
-                </Border>
-            </Grid>
-
-            <Border Grid.Row="2" Padding="10,8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4">
-                <StackPanel Spacing="8">
-                    <TextBlock FontWeight="SemiBold" Text="Service control" />
+            <Border Padding="10,8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="6">
+                <StackPanel Spacing="4">
+                    <TextBlock FontWeight="SemiBold" Text="Automatic updates" />
                     <StackPanel Orientation="Horizontal" Spacing="8">
-                        <Button x:Name="StartServiceButton" Content="Start service" IsEnabled="False" Click="StartServiceButton_Click" />
-                        <Button x:Name="StopServiceButton" Content="Stop service" IsEnabled="False" Click="StopServiceButton_Click" />
-                        <Button x:Name="RestartServiceButton" Content="Restart service" IsEnabled="False" Click="RestartServiceButton_Click" />
-                        <Button x:Name="EditServiceButton" Content="Edit service..." IsEnabled="False" Click="EditServiceButton_Click" />
+                        <CheckBox x:Name="AutoUpdateCheckBox" MinHeight="28" Content="Enable automatic updates" IsChecked="True" Click="SettingControl_Changed" />
+                        <TextBlock VerticalAlignment="Center" Text="Every" />
+                        <TextBox x:Name="UpdateIntervalTextBox"
+                                 Width="58"
+                                 MinHeight="28"
+                                 MaxLength="3"
+                                 Text="24"
+                                 LostFocus="UpdateIntervalTextBox_LostFocus"
+                                 KeyDown="UpdateIntervalTextBox_KeyDown" />
+                        <TextBlock VerticalAlignment="Center" Text="hours" />
                     </StackPanel>
                 </StackPanel>
             </Border>
-    </Grid>
+
+            <Border Padding="10,8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="6">
+                <StackPanel Spacing="4">
+                    <TextBlock FontWeight="SemiBold" Text="Manager settings" />
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <CheckBox x:Name="AutostartCheckBox" MinHeight="28" Content="Start BeszelAgentManager with Windows" IsChecked="True" Click="SettingControl_Changed" />
+                        <Button Grid.Column="1" MinHeight="28" Padding="10,3" Content="Update settings..." Click="ManagerUpdateSettingsButton_Click" />
+                    </Grid>
+                    <CheckBox x:Name="StartVisibleCheckBox" MinHeight="28" Content="Show window when starting with Windows" Click="SettingControl_Changed" />
+                </StackPanel>
+            </Border>
+
+            <Border Padding="10,8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="6">
+                <StackPanel Spacing="4">
+                    <TextBlock FontWeight="SemiBold" Text="Service control" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button x:Name="StartServiceButton" MinHeight="28" Padding="10,3" Content="Start service" IsEnabled="False" Click="StartServiceButton_Click" />
+                        <Button x:Name="StopServiceButton" MinHeight="28" Padding="10,3" Content="Stop service" IsEnabled="False" Click="StopServiceButton_Click" />
+                        <Button x:Name="RestartServiceButton" MinHeight="28" Padding="10,3" Content="Restart service" IsEnabled="False" Click="RestartServiceButton_Click" />
+                        <Button x:Name="EditServiceButton" MinHeight="28" Padding="10,3" Content="Edit service..." IsEnabled="False" Click="EditServiceButton_Click" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
 </Page>

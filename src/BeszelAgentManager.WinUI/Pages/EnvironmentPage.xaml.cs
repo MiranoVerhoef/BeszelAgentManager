@@ -107,10 +107,10 @@ public sealed partial class EnvironmentPage : Page
     {
         var grid = new Grid
         {
-            ColumnSpacing = 12,
-            Height = 76,
-            Margin = new Thickness(0, 0, 0, 4),
-            Padding = new Thickness(8, 6, 8, 6),
+            ColumnSpacing = 8,
+            Height = 64,
+            Margin = new Thickness(0, 0, 0, 3),
+            Padding = new Thickness(6, 4, 6, 4),
             Tag = new EnvRowState(name, configKey),
         };
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(280) });
@@ -119,7 +119,7 @@ public sealed partial class EnvironmentPage : Page
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(96) });
 
         var definition = FindDefinition(name);
-        var labelPanel = new StackPanel { Spacing = 3, VerticalAlignment = VerticalAlignment.Center };
+        var labelPanel = new StackPanel { Spacing = 2, VerticalAlignment = VerticalAlignment.Center };
         labelPanel.Children.Add(new TextBlock
         {
             Text = $"{name}:",
@@ -138,10 +138,23 @@ public sealed partial class EnvironmentPage : Page
         {
             Text = value,
             IsReadOnly = true,
+            MinHeight = 28,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        var editButton = new Button { Content = "Edit", VerticalAlignment = VerticalAlignment.Center };
-        var removeButton = new Button { Content = "Remove", VerticalAlignment = VerticalAlignment.Center };
+        var editButton = new Button
+        {
+            Content = "Edit",
+            MinHeight = 28,
+            Padding = new Thickness(10, 3, 10, 3),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var removeButton = new Button
+        {
+            Content = "Remove",
+            MinHeight = 28,
+            Padding = new Thickness(10, 3, 10, 3),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
 
         editButton.Click += async (_, _) => await EditEnvironmentRowAsync(grid, textBox, editButton);
         removeButton.Click += async (_, _) => await RemoveEnvironmentRowAsync(grid);

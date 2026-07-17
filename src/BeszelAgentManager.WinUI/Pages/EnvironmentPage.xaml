@@ -7,17 +7,17 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <Grid Padding="12,10,12,8" RowSpacing="8">
+    <Grid Padding="8" RowSpacing="8">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Environment variables are always enabled." />
+        <TextBlock Margin="2,0" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Environment variables are always enabled." />
 
-        <Border Grid.Row="1" Padding="12,10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4">
-            <Grid ColumnSpacing="12">
+        <Border Grid.Row="1" Padding="10,8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="6">
+            <Grid ColumnSpacing="8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="190" />
                     <ColumnDefinition Width="440" />
@@ -28,7 +28,7 @@
                 <Button
                     x:Name="SelectEnvironmentButton"
                     Grid.Column="1"
-                    Height="36"
+                    MinHeight="28"
                     HorizontalAlignment="Stretch"
                     HorizontalContentAlignment="Stretch"
                     Click="SelectEnvironmentButton_Click">
@@ -48,11 +48,11 @@
                             Glyph="&#xE70D;" />
                     </Grid>
                 </Button>
-                <Button Grid.Column="2" Content="Add" Click="AddEnvironmentButton_Click" />
+                <Button Grid.Column="2" MinHeight="28" Padding="10,3" Content="Add" Click="AddEnvironmentButton_Click" />
             </Grid>
         </Border>
 
-        <Border Grid.Row="2" Padding="12,10" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="4">
+        <Border Grid.Row="2" Padding="10,8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="6">
             <ListView Grid.Row="2" x:Name="EnvironmentListView" BorderThickness="0" SelectionMode="None" />
         </Border>
     </Grid>

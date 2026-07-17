@@ -1431,11 +1431,12 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        var relauncher = StartUpdateRelauncher();
+        var relaunchToken = Guid.NewGuid().ToString("N");
+        var relauncher = StartUpdateRelauncher(relaunchToken);
         try
         {
             ShowGlobalStatus(InfoBarSeverity.Informational, "Preparing manager update", "Downloading and verifying the official installer.");
-            var exitCode = await App.Broker.InstallManagerVersionAsync(release.Tag);
+            var exitCode = await App.Broker.InstallManagerVersionAsync(release.Tag, relaunchToken);
             if (exitCode != 0)
             {
                 throw new InvalidOperationException(exitCode switch
@@ -1461,21 +1462,21 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private static Process StartUpdateRelauncher()
+    private static Process StartUpdateRelauncher(string relaunchToken)
     {
         var scriptPath = Path.Combine(Path.GetTempPath(), $"BeszelAgentManager-relaunch-{Guid.NewGuid():N}.ps1");
         var executable = (Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "BeszelAgentManager.exe")).Replace("'", "''", StringComparison.Ordinal);
+        var completionMarker = Path.Combine(
+            ManagerPaths.DataDir,
+            "manager-update",
+            $"relaunch-{relaunchToken}.complete").Replace("'", "''", StringComparison.Ordinal);
         var script = $$"""
             $deadline = (Get-Date).AddMinutes(15)
             while (Get-Process -Id {{Environment.ProcessId}} -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 1 }
-            $installerSeen = $false
-            while ((Get-Date) -lt $deadline) {
-              $installers = @(Get-Process -Name 'BeszelAgentManagerSetup','BeszelAgentManagerSetup-Lite' -ErrorAction SilentlyContinue)
-              if ($installers.Count -gt 0) { $installerSeen = $true }
-              if ($installerSeen -and $installers.Count -eq 0) { break }
+            while ((Get-Date) -lt $deadline -and -not (Test-Path -LiteralPath '{{completionMarker}}')) {
               Start-Sleep -Milliseconds 500
             }
-            if ($installerSeen) {
+            if (Test-Path -LiteralPath '{{completionMarker}}') {
               Start-Sleep -Seconds 2
               if (Test-Path -LiteralPath '{{executable}}') { Start-Process -FilePath '{{executable}}' }
             }
