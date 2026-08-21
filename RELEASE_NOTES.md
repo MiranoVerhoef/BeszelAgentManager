@@ -1,20 +1,20 @@
 ## Summary
 
-- Bumped version to 4.0.7.
-- Fixed GUI updates reopening before Inno Setup completed.
-- Added a secured per-update completion marker between the SYSTEM installer and user relauncher.
-- Forced replacement of manager version metadata and the background helper during upgrades.
-- Added post-install verification for the GUI, helper, and VERSION metadata.
-- Added a persistent silent-update setup log under ProgramData.
-- Added optional WebSocket offline backoff for devices that cannot always reach their Hub.
-- Pauses the agent after 12 consecutive WebSocket failures and retries after 1, 2, 5, 10, 30, then 60 minutes.
-- Restores normal agent operation immediately after a successful WebSocket connection.
-- Detects Windows network-address changes and requests an immediate debounced retry.
-- Reworked Extra into a compact two-column card layout.
-- Matched Connection and Environment to the compact card spacing while keeping both pages single-column.
+- Bumped version to 4.0.8.
+- Added Beszel v0.18.8 agent variables `ALL_PROXY` and `EXIT_ON_DNS_ERROR`.
+- Added previously missing `DOCKER_TIMEOUT` and `SMART_DEVICES_SEPARATOR` variables.
+- Updated `GPU_COLLECTOR` and `SMART_DEVICES` guidance for current collectors and explicit device-type hints.
+- Added official SHA-256 checksum verification for every Beszel Agent install, update, rollback, and scheduled update.
+- Blocked conflicting use of `EXIT_ON_DNS_ERROR` and manager WebSocket offline backoff.
+- Redacted credential-bearing `ALL_PROXY` values from logs and support bundles.
+- Added Environment-table search by variable name or description.
+- Made initial and minimum window sizing DPI-aware while retaining low-resolution fitting.
+- Added SHA-256-aware incremental installer updates that retain unchanged files, replace changed or missing files, remove obsolete manifest-owned files, and verify the final installation.
 
 ## Impact
 
-Manager updates now reopen only after the complete installer process tree exits. Mixed installations containing a new GUI with old metadata or an old background helper are rejected instead of reporting a successful update.
+Agent archives are installed only when the selected official GitHub release contains both `beszel-agent_windows_amd64.zip` and its versioned checksum file, and the archive hash matches exactly. A missing or mismatched checksum blocks installation before extraction or replacement of the installed agent.
 
-WebSocket offline backoff is disabled by default and can be enabled under Extra. Only new agent log events are considered after enabling it. Scheduled agent updates and periodic restarts are deferred while the manager has paused the agent. Network changes bypass the current delay once after a three-second trailing debounce, so the retry starts after adapters settle.
+`EXIT_ON_DNS_ERROR` and manager WebSocket offline backoff are alternative retry strategies. The UI and privileged broker reject configurations that enable both.
+
+Bundled and Lite builds now include separate application-file manifests. Normal upgrades avoid rewriting unchanged application files; v3 migration, rollback, and incomplete layouts still use a full refresh.

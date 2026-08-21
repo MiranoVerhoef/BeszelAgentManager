@@ -66,6 +66,20 @@ internal sealed partial class SupportBundleService
             {
                 obj["github_token_enc"] = "***redacted***";
             }
+            if (obj.ContainsKey("all_proxy"))
+            {
+                obj["all_proxy"] = "***redacted***";
+            }
+            if (obj["env_custom"] is JsonArray customVariables)
+            {
+                foreach (var item in customVariables.OfType<JsonObject>())
+                {
+                    if (string.Equals(item["name"]?.GetValue<string>(), "ALL_PROXY", StringComparison.OrdinalIgnoreCase))
+                    {
+                        item["value"] = "***redacted***";
+                    }
+                }
+            }
         }
 
         await File.WriteAllTextAsync(
@@ -149,7 +163,7 @@ internal sealed partial class SupportBundleService
         await File.WriteAllLinesAsync(destination, lines, cancellationToken);
     }
 
-    [GeneratedRegex(@"(?im)\b(KEY|TOKEN)\s*[:=]\s*[^\s\r\n]+")]
+    [GeneratedRegex(@"(?im)\b(KEY|TOKEN|ALL_PROXY)\s*[:=]\s*[^\s\r\n]+")]
     private static partial Regex SecretRegex();
 
     [GeneratedRegex(@"ssh-(rsa|ed25519)\s+[A-Za-z0-9+/=]+", RegexOptions.IgnoreCase)]

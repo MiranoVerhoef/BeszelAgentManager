@@ -42,6 +42,10 @@ Use **Extra → Create support bundle** to collect redacted diagnostics.
 
 The service rejects missing checksums, checksum mismatches, invalid signatures, unexpected asset names, invalid versions, oversized downloads, and reparse points. Review `manager.log`, then retry from **Manage Manager Version…**.
 
+## Failed agent update
+
+The service requires the official release's `beszel_<version>_checksums.txt` asset and an exact SHA-256 match for `beszel-agent_windows_amd64.zip`. A missing or mismatched checksum leaves the installed agent binary untouched. Review `manager.log`, confirm the selected official Beszel release contains both assets, then retry.
+
 ## DNS fallback recovery
 
 The current mode and success streak are stored in `dns-fallback-state.json`. Restoring valid primary DNS should return to primary mode after five one-minute checks. Disabling fallback applies the primary immediately.

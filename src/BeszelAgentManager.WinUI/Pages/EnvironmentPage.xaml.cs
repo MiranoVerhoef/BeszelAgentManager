@@ -10,12 +10,15 @@ public sealed partial class EnvironmentPage : Page
 {
     private static readonly IReadOnlyList<EnvDefinition> Definitions =
     [
+        new("ALL_PROXY", "all_proxy", "SOCKS5 or SOCKS5H proxy for the outbound Hub WebSocket, for example socks5h://proxy.example.com:1080."),
         new("DATA_DIR", "data_dir", "Changes where the Beszel Agent stores its own runtime data."),
         new("DOCKER_HOST", "docker_host", "Points the agent at a specific Docker daemon endpoint."),
+        new("DOCKER_TIMEOUT", "docker_timeout", "Docker API timeout in Go duration format, for example 5s or 2100ms."),
         new("EXCLUDE_CONTAINERS", "exclude_containers", "Comma-separated container names or patterns to hide from monitoring."),
         new("EXCLUDE_SMART", "exclude_smart", "Disk names or patterns to skip during S.M.A.R.T. collection."),
         new("EXTRA_FILESYSTEMS", "extra_filesystems", "Additional filesystem paths the agent should collect usage for."),
         new("FILESYSTEM", "filesystem", "Overrides the root filesystem path used for disk statistics."),
+        new("EXIT_ON_DNS_ERROR", "exit_on_dns_error", "Exits the agent when Hub DNS lookup fails. Do not combine with manager WebSocket offline backoff."),
         new("INTEL_GPU_DEVICE", "intel_gpu_device", "Device path used by intel_gpu_top for Intel GPU metrics."),
         new("NVML", "nvml", "Enables NVIDIA NVML GPU monitoring when set to true."),
         new("KEY_FILE", "key_file", "Reads the agent key from a file instead of the Key field."),
@@ -30,11 +33,12 @@ public sealed partial class EnvironmentPage : Page
         new("PRIMARY_SENSOR", "primary_sensor", "Selects the primary temperature sensor shown in Beszel."),
         new("SYS_SENSORS", "sys_sensors", "Path override for system sensor data."),
         new("SERVICE_PATTERNS", "service_patterns", "Service names or patterns to monitor."),
-        new("SMART_DEVICES", "smart_devices", "Specific S.M.A.R.T. devices to monitor."),
+        new("SMART_DEVICES", "smart_devices", "Specific S.M.A.R.T. devices, optionally as device:type entries such as /dev/sda:sat."),
+        new("SMART_DEVICES_SEPARATOR", "smart_devices_separator", "Separator used between SMART_DEVICES entries. Defaults to a comma."),
         new("SMART_INTERVAL", "smart_interval", "How often S.M.A.R.T. data is refreshed, for example 1h."),
         new("SYSTEM_NAME", "system_name", "Overrides the system name reported by the agent."),
         new("SKIP_GPU", "skip_gpu", "Skips GPU collection when set."),
-        new("GPU_COLLECTOR", "gpu_collector", "Selects GPU collectors, for example nvml or amd_sysfs."),
+        new("GPU_COLLECTOR", "gpu_collector", "Ordered collectors such as nvtop, nvml, intel_sysfs, intel_gpu_top, amd_sysfs, or rocm-smi."),
         new("DISABLE_SSH", "disable_ssh", "Disables the agent SSH server when set to true."),
         new("DISK_USAGE_CACHE", "disk_usage_cache", "Caches disk usage results for a duration, for example 10m."),
         new("SKIP_SYSTEMD", "skip_systemd", "Skips systemd integration when set to 1."),
@@ -84,14 +88,18 @@ public sealed partial class EnvironmentPage : Page
     {
         EnvironmentListView.Items.Clear();
 
+        var searchText = EnvironmentSearchBox?.Text?.Trim() ?? string.Empty;
         var rows = _configService.GetActiveEnvironmentRows(_config)
+            .Where(row => MatchesSearch(row.Name, searchText))
             .OrderBy(static row => row.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
         if (rows.Count == 0)
         {
             EnvironmentListView.Items.Add(new TextBlock
             {
-                Text = "No environment variables are active.",
+                Text = string.IsNullOrEmpty(searchText)
+                    ? "No environment variables are active."
+                    : "No active environment variables match your search.",
                 Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
             });
             return;
@@ -101,6 +109,11 @@ public sealed partial class EnvironmentPage : Page
         {
             EnvironmentListView.Items.Add(CreateEnvironmentRow(row.Name, row.ConfigKey, row.Value));
         }
+    }
+
+    private void EnvironmentSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        RenderRows();
     }
 
     private Grid CreateEnvironmentRow(string name, string configKey, string value)
@@ -189,7 +202,9 @@ public sealed partial class EnvironmentPage : Page
         SetEnvironmentValue(state, textBox.Text.Trim());
         textBox.IsReadOnly = true;
         editButton.Content = "Edit";
-        await SaveAndReportAsync($"Environment variable {state.Name}: {Format(before)} -> {Format(textBox.Text.Trim())}");
+        await SaveAndReportAsync(IsSensitiveEnvironmentName(state.Name)
+            ? $"Environment variable {state.Name} changed (value redacted)"
+            : $"Environment variable {state.Name}: {Format(before)} -> {Format(textBox.Text.Trim())}");
     }
 
     private async Task RemoveEnvironmentRowAsync(Grid row)
@@ -242,41 +257,89 @@ public sealed partial class EnvironmentPage : Page
         return string.IsNullOrWhiteSpace(value) ? "(empty)" : value;
     }
 
+    private static bool IsSensitiveEnvironmentName(string name) =>
+        string.Equals(name, "ALL_PROXY", StringComparison.OrdinalIgnoreCase);
+
     private Flyout BuildEnvironmentFlyout()
     {
-        var list = new StackPanel { Spacing = 2, Width = 520 };
-        foreach (var definition in Definitions)
+        var optionsPanel = new StackPanel
         {
-            var button = new Button
+            Spacing = 2,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+        var searchBox = new TextBox
+        {
+            MinHeight = 32,
+            PlaceholderText = "Search name or description",
+        };
+
+        void RenderOptions()
+        {
+            optionsPanel.Children.Clear();
+            var searchText = searchBox.Text.Trim();
+            var matchingDefinitions = Definitions.Where(definition => MatchesSearch(definition, searchText)).ToList();
+            foreach (var definition in matchingDefinitions)
             {
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = HorizontalAlignment.Stretch,
-                Padding = new Thickness(10, 7, 10, 7),
-                Content = CreateEnvironmentOptionContent(definition),
-                Tag = definition,
-            };
-            button.Click += (_, _) =>
-            {
-                SetSelectedDefinition(definition);
-                if (SelectEnvironmentButton.Flyout is FlyoutBase attachedFlyout)
+                var button = new Button
                 {
-                    attachedFlyout.Hide();
-                }
-            };
-            list.Children.Add(button);
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                    Padding = new Thickness(10, 7, 10, 7),
+                    Content = CreateEnvironmentOptionContent(definition),
+                    Tag = definition,
+                };
+                button.Click += (_, _) =>
+                {
+                    SetSelectedDefinition(definition);
+                    if (SelectEnvironmentButton.Flyout is FlyoutBase attachedFlyout)
+                    {
+                        attachedFlyout.Hide();
+                    }
+                };
+                optionsPanel.Children.Add(button);
+            }
+
+            if (matchingDefinitions.Count == 0)
+            {
+                optionsPanel.Children.Add(new TextBlock
+                {
+                    Padding = new Thickness(10, 8, 10, 8),
+                    Text = "No environment variables match your search.",
+                    Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+                });
+            }
         }
+
+        searchBox.TextChanged += (_, _) => RenderOptions();
+        RenderOptions();
 
         var scroller = new ScrollViewer
         {
-            Content = list,
+            Content = optionsPanel,
             MaxHeight = 360,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
+            HorizontalScrollMode = ScrollMode.Disabled,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         };
 
+        var content = new StackPanel
+        {
+            Spacing = 8,
+            Width = 520,
+        };
+        content.Children.Add(searchBox);
+        content.Children.Add(scroller);
+
+        var presenterStyle = new Style(typeof(FlyoutPresenter));
+        presenterStyle.Setters.Add(new Setter(ScrollViewer.HorizontalScrollModeProperty, ScrollMode.Disabled));
+        presenterStyle.Setters.Add(new Setter(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled));
+
         var flyout = new Flyout
         {
-            Content = scroller,
+            Content = content,
             Placement = FlyoutPlacementMode.Bottom,
+            FlyoutPresenterStyle = presenterStyle,
         };
         SelectEnvironmentButton.Flyout = flyout;
         return flyout;
@@ -298,6 +361,7 @@ public sealed partial class EnvironmentPage : Page
             Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
             FontSize = 12,
             MaxLines = 1,
+            TextWrapping = TextWrapping.NoWrap,
             TextTrimming = TextTrimming.CharacterEllipsis,
         });
 
@@ -317,6 +381,19 @@ public sealed partial class EnvironmentPage : Page
     {
         return Definitions.FirstOrDefault(definition => string.Equals(definition.Name, name, StringComparison.OrdinalIgnoreCase));
     }
+
+    private static bool MatchesSearch(string name, string searchText)
+    {
+        var definition = FindDefinition(name);
+        return string.IsNullOrEmpty(searchText) ||
+            name.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+            (definition?.Description.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false);
+    }
+
+    private static bool MatchesSearch(EnvDefinition definition, string searchText) =>
+        string.IsNullOrEmpty(searchText) ||
+        definition.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+        definition.Description.Contains(searchText, StringComparison.OrdinalIgnoreCase);
 
     private sealed record EnvDefinition(string Name, string ConfigKey, string Description);
 

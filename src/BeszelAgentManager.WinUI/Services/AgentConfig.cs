@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Serialization;
 using System.Text.Json;
+using BeszelAgentManager.Core;
 
 namespace BeszelAgentManager.WinUI.Services;
 
@@ -130,11 +131,14 @@ internal sealed class AgentConfig
         };
 
         AddExtra("data_dir");
+        AddExtra("all_proxy");
         AddExtra("docker_host");
+        AddExtra("docker_timeout");
         AddExtra("exclude_containers");
         AddExtra("exclude_smart");
         AddExtra("extra_filesystems");
         AddExtra("filesystem");
+        AddExtra("exit_on_dns_error");
         AddExtra("intel_gpu_device");
         AddExtra("key_file");
         AddExtra("token_file");
@@ -149,6 +153,7 @@ internal sealed class AgentConfig
         AddExtra("sys_sensors");
         AddExtra("service_patterns");
         AddExtra("smart_devices");
+        AddExtra("smart_devices_separator");
         AddExtra("system_name");
         AddExtra("skip_gpu");
         AddExtra("gpu_collector");
@@ -189,6 +194,13 @@ internal sealed class AgentConfig
             $"websocket_offline_backoff_enabled={WebSocketOfflineBackoffEnabled}\n";
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(payload));
         return Convert.ToHexString(bytes).ToLowerInvariant();
+    }
+
+    public bool HasRetryStrategyConflict()
+    {
+        return RetryStrategyPolicy.HasConflict(
+            WebSocketOfflineBackoffEnabled,
+            GetEnvironmentValue("exit_on_dns_error"));
     }
 }
 

@@ -1019,6 +1019,12 @@ static async Task<int> ApplyConfigurationAsync(string serviceName)
         return 3;
     }
 
+    if (HasRetryStrategyConflict(config.RootElement))
+    {
+        WriteBackgroundLog("WARN", "Configuration rejected: EXIT_ON_DNS_ERROR conflicts with WebSocket offline backoff.");
+        return 55;
+    }
+
     if (!await ServiceExistsAsync(backgroundServiceName))
     {
         var backgroundResult = await InstallOrUpdateBackgroundServiceAsync();
@@ -1451,6 +1457,20 @@ static bool TryReadManagerVariant(Dictionary<string, string> arguments, out stri
     return variant is "bundled" or "lite";
 }
 
+static bool HasRetryStrategyConflict(JsonElement config)
+{
+    var backoffEnabled = config.TryGetProperty("websocket_offline_backoff_enabled", out var backoff)
+        && backoff.ValueKind == JsonValueKind.True;
+    if (!backoffEnabled)
+    {
+        return false;
+    }
+
+    return RetryStrategyPolicy.HasConflict(
+        webSocketOfflineBackoffEnabled: true,
+        ReadConfigString(config, "exit_on_dns_error"));
+}
+
 static async Task RunWebSocketOfflineBackoffAsync(
     BackgroundRuntimeState state,
     bool networkChanged,
@@ -1862,8 +1882,10 @@ static async Task<int> UpdateAgentIfNewerAsync(JsonElement config)
         return 0;
     }
 
-    await StopServiceAsync(serviceName);
-    var installResult = await InstallAgentBinaryAsync(release.Value.Version, release.Value.DownloadUrl);
+    var installResult = await InstallAgentBinaryAsync(
+        release.Value.Version,
+        release.Value.DownloadUrl,
+        release.Value.ChecksumUrl);
     if (installResult != 0)
     {
         return installResult;
@@ -1986,8 +2008,10 @@ static async Task<int> InstallOrUpdateAgentAsync()
         return 20;
     }
 
-    await StopServiceAsync(serviceName);
-    var installResult = await InstallAgentBinaryAsync(release.Value.Version, release.Value.DownloadUrl);
+    var installResult = await InstallAgentBinaryAsync(
+        release.Value.Version,
+        release.Value.DownloadUrl,
+        release.Value.ChecksumUrl);
     if (installResult != 0)
     {
         return installResult;
@@ -2006,8 +2030,10 @@ static async Task<int> UpdateAgentAsync(string? version)
         return 20;
     }
 
-    await StopServiceAsync(serviceName);
-    var installResult = await InstallAgentBinaryAsync(release.Value.Version, release.Value.DownloadUrl);
+    var installResult = await InstallAgentBinaryAsync(
+        release.Value.Version,
+        release.Value.DownloadUrl,
+        release.Value.ChecksumUrl);
     if (installResult != 0)
     {
         return installResult;
@@ -2464,12 +2490,15 @@ static string[] BuildAgentEnvironment(JsonElement config)
 
     var mapping = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
+        ["ALL_PROXY"] = "all_proxy",
         ["DATA_DIR"] = "data_dir",
         ["DOCKER_HOST"] = "docker_host",
+        ["DOCKER_TIMEOUT"] = "docker_timeout",
         ["EXCLUDE_CONTAINERS"] = "exclude_containers",
         ["EXCLUDE_SMART"] = "exclude_smart",
         ["EXTRA_FILESYSTEMS"] = "extra_filesystems",
         ["FILESYSTEM"] = "filesystem",
+        ["EXIT_ON_DNS_ERROR"] = "exit_on_dns_error",
         ["INTEL_GPU_DEVICE"] = "intel_gpu_device",
         ["NVML"] = "nvml",
         ["KEY_FILE"] = "key_file",
@@ -2485,6 +2514,7 @@ static string[] BuildAgentEnvironment(JsonElement config)
         ["SYS_SENSORS"] = "sys_sensors",
         ["SERVICE_PATTERNS"] = "service_patterns",
         ["SMART_DEVICES"] = "smart_devices",
+        ["SMART_DEVICES_SEPARATOR"] = "smart_devices_separator",
         ["SMART_INTERVAL"] = "smart_interval",
         ["SYSTEM_NAME"] = "system_name",
         ["SKIP_GPU"] = "skip_gpu",
@@ -2727,7 +2757,7 @@ static async Task<bool> ServiceExistsAsync(string name)
     return (await QueryServiceAsync(name)).Exists;
 }
 
-static async Task<int> InstallAgentBinaryAsync(string version, string downloadUrl)
+static async Task<int> InstallAgentBinaryAsync(string version, string downloadUrl, string checksumUrl)
 {
     var programFiles = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
     var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
@@ -2735,6 +2765,7 @@ static async Task<int> InstallAgentBinaryAsync(string version, string downloadUr
     var agentPath = Path.Combine(agentDir, "beszel-agent.exe");
     var tempDir = Path.Combine(programData, "BeszelAgentManager", "tmp_agent");
     var zipPath = Path.Combine(tempDir, "beszel-agent.zip");
+    var checksumPath = Path.Combine(tempDir, $"beszel_{version}_checksums.txt");
     var extractDir = Path.Combine(tempDir, "extract");
 
     try
@@ -2746,9 +2777,21 @@ static async Task<int> InstallAgentBinaryAsync(string version, string downloadUr
         {
             return 21;
         }
+        if (!IsTrustedGitHubAssetUrl(checksumUrl))
+        {
+            WriteBackgroundLog("ERROR", $"Beszel Agent {version} release does not contain the required official checksum asset.");
+            return 24;
+        }
 
         using var http = CreateGitHubClient();
         await DownloadFileAsync(http, downloadUrl, zipPath, 250L * 1024 * 1024);
+        await DownloadFileAsync(http, checksumUrl, checksumPath, 1024 * 1024);
+        var checksumText = await File.ReadAllTextAsync(checksumPath);
+        if (!ReleaseChecksumVerifier.VerifyFile(zipPath, checksumText, agentZipName))
+        {
+            WriteBackgroundLog("ERROR", $"Beszel Agent {version} archive checksum verification failed.");
+            return 24;
+        }
 
         ZipFile.ExtractToDirectory(zipPath, extractDir, overwriteFiles: true);
         var extracted = Directory
@@ -2757,6 +2800,17 @@ static async Task<int> InstallAgentBinaryAsync(string version, string downloadUr
         if (string.IsNullOrWhiteSpace(extracted) || !File.Exists(extracted))
         {
             return 21;
+        }
+
+        var service = await QueryServiceAsync(serviceName);
+        if (service.Exists)
+        {
+            var stopResult = await StopServiceAsync(serviceName);
+            if (stopResult != 0)
+            {
+                WriteBackgroundLog("ERROR", $"Beszel Agent {version} verified, but the existing service could not be stopped (code {stopResult}).");
+                return stopResult;
+            }
         }
 
         if (File.Exists(agentPath))
@@ -2768,8 +2822,9 @@ static async Task<int> InstallAgentBinaryAsync(string version, string downloadUr
         File.Move(extracted, agentPath, overwrite: true);
         return 0;
     }
-    catch
+    catch (Exception ex)
     {
+        WriteBackgroundLog("ERROR", $"Beszel Agent {version} download or installation failed: {ex.Message}");
         return 22;
     }
     finally
@@ -3131,29 +3186,37 @@ static AgentRelease? ParseAgentRelease(JsonElement release)
         : string.Empty;
     var version = NormalizeVersion(tag);
     if (string.IsNullOrWhiteSpace(version)
+        || !Regex.IsMatch(version, @"^\d+\.\d+\.\d+$", RegexOptions.CultureInvariant)
         || !release.TryGetProperty("assets", out var assets)
         || assets.ValueKind != JsonValueKind.Array)
     {
         return null;
     }
 
+    var checksumName = $"beszel_{version}_checksums.txt";
+    string downloadUrl = string.Empty;
+    string checksumUrl = string.Empty;
     foreach (var asset in assets.EnumerateArray())
     {
         var name = asset.TryGetProperty("name", out var nameProperty)
             ? nameProperty.GetString() ?? string.Empty
             : string.Empty;
-        if (!string.Equals(name, agentZipName, StringComparison.OrdinalIgnoreCase))
-        {
-            continue;
-        }
-
-        var downloadUrl = asset.TryGetProperty("browser_download_url", out var urlProperty)
+        var assetUrl = asset.TryGetProperty("browser_download_url", out var urlProperty)
             ? urlProperty.GetString() ?? string.Empty
             : string.Empty;
-        return IsTrustedGitHubAssetUrl(downloadUrl) ? new AgentRelease(version, downloadUrl) : null;
+        if (string.Equals(name, agentZipName, StringComparison.OrdinalIgnoreCase))
+        {
+            downloadUrl = assetUrl;
+        }
+        else if (string.Equals(name, checksumName, StringComparison.OrdinalIgnoreCase))
+        {
+            checksumUrl = assetUrl;
+        }
     }
 
-    return null;
+    return IsTrustedGitHubAssetUrl(downloadUrl)
+        ? new AgentRelease(version, downloadUrl, checksumUrl)
+        : null;
 }
 
 static HttpClient CreateGitHubClient()
@@ -3414,7 +3477,7 @@ static async Task<(int ExitCode, string Output)> RunProcessWithTimeoutAsync(
     }
 }
 
-internal readonly record struct AgentRelease(string Version, string DownloadUrl);
+internal readonly record struct AgentRelease(string Version, string DownloadUrl, string ChecksumUrl);
 
 [StructLayout(LayoutKind.Sequential)]
 internal struct Luid

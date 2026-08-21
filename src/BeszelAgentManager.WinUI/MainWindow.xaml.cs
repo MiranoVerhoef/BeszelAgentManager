@@ -7,6 +7,7 @@ using Microsoft.UI.Dispatching;
 using Windows.Graphics;
 using H.NotifyIcon.Core;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml.Media;
 
 namespace BeszelAgentManager.WinUI;
@@ -46,14 +47,7 @@ public sealed partial class MainWindow : Window
         SetTitleBar(AppTitleBar);
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
-        if (AppWindow.Presenter is OverlappedPresenter presenter)
-        {
-            presenter.PreferredMinimumWidth = 1080;
-            presenter.PreferredMinimumHeight = 780;
-            presenter.IsResizable = true;
-            presenter.IsMaximizable = true;
-        }
-        AppWindow.Resize(GetDefaultWindowSize());
+        ConfigureWindowSize();
         _trayIconService = new TrayIconService(
             ShowFromTray,
             OpenHubFromTray,
@@ -329,23 +323,66 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private SizeInt32 GetDefaultWindowSize()
+    private void ConfigureWindowSize()
     {
-        const int preferredWidth = 1180;
-        const int preferredHeight = 900;
+        const int logicalPreferredWidth = 1180;
+        const int logicalPreferredHeight = 900;
+        const int logicalMinimumWidth = 1080;
+        const int logicalMinimumHeight = 780;
+        const int logicalWorkAreaMargin = 48;
+
+        var scale = GetWindowScale();
+        var preferredWidth = ScalePixels(logicalPreferredWidth, scale);
+        var preferredHeight = ScalePixels(logicalPreferredHeight, scale);
+        var minimumWidth = ScalePixels(logicalMinimumWidth, scale);
+        var minimumHeight = ScalePixels(logicalMinimumHeight, scale);
         try
         {
             var display = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary);
             var workArea = display.WorkArea;
-            return new SizeInt32(
-                Math.Clamp(preferredWidth, 1080, Math.Max(1080, workArea.Width - 80)),
-                Math.Clamp(preferredHeight, 780, Math.Max(780, workArea.Height - 80)));
+            var margin = ScalePixels(logicalWorkAreaMargin, scale);
+            var maximumWidth = Math.Max(640, workArea.Width - margin);
+            var maximumHeight = Math.Max(480, workArea.Height - margin);
+            minimumWidth = Math.Min(minimumWidth, maximumWidth);
+            minimumHeight = Math.Min(minimumHeight, maximumHeight);
+            preferredWidth = Math.Clamp(preferredWidth, minimumWidth, maximumWidth);
+            preferredHeight = Math.Clamp(preferredHeight, minimumHeight, maximumHeight);
         }
         catch
         {
-            return new SizeInt32(preferredWidth, preferredHeight);
+            // Use the DPI-scaled preferred dimensions if display discovery is unavailable.
+        }
+
+        if (AppWindow.Presenter is OverlappedPresenter presenter)
+        {
+            presenter.PreferredMinimumWidth = minimumWidth;
+            presenter.PreferredMinimumHeight = minimumHeight;
+            presenter.IsResizable = true;
+            presenter.IsMaximizable = true;
+        }
+
+        AppWindow.Resize(new SizeInt32(preferredWidth, preferredHeight));
+    }
+
+    private double GetWindowScale()
+    {
+        try
+        {
+            var windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            var dpi = GetDpiForWindow(windowHandle);
+            return dpi > 0 ? dpi / 96d : 1d;
+        }
+        catch
+        {
+            return 1d;
         }
     }
+
+    private static int ScalePixels(int logicalPixels, double scale) =>
+        Math.Max(1, (int)Math.Round(logicalPixels * scale, MidpointRounding.AwayFromZero));
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr windowHandle);
 
     private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
@@ -917,6 +954,16 @@ public sealed partial class MainWindow : Window
             }
 
             var config = await _configService.LoadAsync();
+            if (config.HasRetryStrategyConflict())
+            {
+                App.Logger.Warning("Apply settings blocked: EXIT_ON_DNS_ERROR conflicts with WebSocket offline backoff");
+                ShowGlobalStatus(
+                    InfoBarSeverity.Error,
+                    "Conflicting retry settings",
+                    "EXIT_ON_DNS_ERROR cannot be enabled together with WebSocket offline backoff. Remove EXIT_ON_DNS_ERROR under Environment or disable offline backoff under Extra.");
+                return;
+            }
+
             var currentFingerprint = config.ApplyFingerprint();
             var currentManagerTasksFingerprint = config.ManagerTasksFingerprint();
             var serviceChangesPending = string.IsNullOrWhiteSpace(config.LastAppliedFingerprint)
@@ -1082,6 +1129,7 @@ public sealed partial class MainWindow : Window
         {
             3 => "The agent or configuration file could not be found.",
             4 => "The background service could not apply the Beszel Agent service configuration.",
+            55 => "EXIT_ON_DNS_ERROR cannot be enabled together with WebSocket offline backoff. Choose one retry strategy.",
             53 => "NSSM could not be found. Reinstall BeszelAgentManager or place nssm.exe next to the installed app.",
             _ => $"The background service returned exit code {exitCode}.",
         };
@@ -1201,6 +1249,7 @@ public sealed partial class MainWindow : Window
             20 => "Could not find a usable Beszel Agent release on GitHub.",
             21 => "The downloaded archive did not contain beszel-agent.exe.",
             22 => "The agent could not be downloaded or installed. Check the log and antivirus quarantine.",
+            24 => "The Beszel Agent archive checksum is missing or does not match. Installation was blocked.",
             23 => "One or more agent folders could not be removed. Stop the service and close any open agent logs or folders, then try again.",
             53 => "NSSM could not be found. Reinstall BeszelAgentManager or place nssm.exe next to the installed app.",
             _ => $"The background service returned error code {exitCode}.",
