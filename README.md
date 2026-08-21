@@ -7,7 +7,7 @@ Version 4 is a native .NET 10 and WinUI 3 application. Routine administrative ac
 ## Features
 
 - Install, update, roll back, force-reinstall, or uninstall the Beszel agent.
-- Configure `KEY`, `TOKEN`, `HUB_URL`, `LISTEN`, and supported advanced environment variables.
+- Configure `KEY`, `TOKEN`, `HUB_URL`, `LISTEN`, and current Beszel v0.18.8 advanced environment variables.
 - Start, stop, and restart the agent from the UI or tray.
 - Apply NSSM service and Windows Firewall settings.
 - Automatically switch to an IP fallback when primary Hub DNS fails, then restore the primary after five successful checks.
@@ -88,11 +88,13 @@ Schedules run inside the background service; Windows Scheduled Tasks are not use
 
 Optional WebSocket offline backoff is configured under **Extra**. After 12 consecutive `WebSocket connection failed` events, the background service pauses the agent and retries after 1, 2, 5, 10, 30, then 60 minutes. A successful connection immediately resets the delay. A Windows network-address change bypasses the current delay after a three-second trailing debounce, allowing adapters to settle before retrying. Disabling the option resumes an agent that the manager paused. Scheduled agent updates and periodic restarts are deferred while the backoff is active.
 
+`EXIT_ON_DNS_ERROR` is an alternative agent-owned retry strategy and cannot be enabled together with manager WebSocket offline backoff.
+
 Last-run and next-due state is persisted in `background-runtime-state.json`. Enabling a schedule starts its interval from the enable time rather than running immediately.
 
 ## Updates
 
-Agent assets are selected only from the official Beszel GitHub repository.
+Agent assets are selected only from the official Beszel GitHub repository. Every install, update, rollback, and scheduled update downloads the release's versioned checksum file and verifies `beszel-agent_windows_amd64.zip` with SHA-256 before extraction. Missing or mismatched checksums are rejected.
 
 Manager updates accept only a selected release tag from the hardcoded project repository. Standard installations keep using the standard installer and Lite installations keep using the Lite installer. Lite appears beside the manager version in the UI; the standard edition remains plain `BeszelAgentManager`. The background service downloads the exact installer and `SHA256SUMS.txt` assets into a restricted staging directory, verifies the checksum, rejects invalid paths and reparse points, and launches Inno Setup silently after the UI exits. Authenticode is also required when a release is signed.
 

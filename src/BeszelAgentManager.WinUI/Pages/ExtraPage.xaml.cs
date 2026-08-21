@@ -175,6 +175,17 @@ public sealed partial class ExtraPage : Page
         }
 
         _config.WebSocketOfflineBackoffEnabled = WebSocketBackoffCheckBox.IsChecked == true;
+        if (_config.HasRetryStrategyConflict())
+        {
+            _config.WebSocketOfflineBackoffEnabled = false;
+            WebSocketBackoffCheckBox.IsChecked = false;
+            App.MainWindow.ShowActionStatus(
+                InfoBarSeverity.Warning,
+                "Conflicting retry settings",
+                "Remove EXIT_ON_DNS_ERROR under Environment before enabling WebSocket offline backoff.");
+            return;
+        }
+
         var persisted = await _configService.LoadAsync();
         _config.LastAppliedFingerprint = persisted.LastAppliedFingerprint;
         _config.LastAppliedAt = persisted.LastAppliedAt;

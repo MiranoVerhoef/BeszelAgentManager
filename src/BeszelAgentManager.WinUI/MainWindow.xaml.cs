@@ -917,6 +917,16 @@ public sealed partial class MainWindow : Window
             }
 
             var config = await _configService.LoadAsync();
+            if (config.HasRetryStrategyConflict())
+            {
+                App.Logger.Warning("Apply settings blocked: EXIT_ON_DNS_ERROR conflicts with WebSocket offline backoff");
+                ShowGlobalStatus(
+                    InfoBarSeverity.Error,
+                    "Conflicting retry settings",
+                    "EXIT_ON_DNS_ERROR cannot be enabled together with WebSocket offline backoff. Remove EXIT_ON_DNS_ERROR under Environment or disable offline backoff under Extra.");
+                return;
+            }
+
             var currentFingerprint = config.ApplyFingerprint();
             var currentManagerTasksFingerprint = config.ManagerTasksFingerprint();
             var serviceChangesPending = string.IsNullOrWhiteSpace(config.LastAppliedFingerprint)
@@ -1082,6 +1092,7 @@ public sealed partial class MainWindow : Window
         {
             3 => "The agent or configuration file could not be found.",
             4 => "The background service could not apply the Beszel Agent service configuration.",
+            55 => "EXIT_ON_DNS_ERROR cannot be enabled together with WebSocket offline backoff. Choose one retry strategy.",
             53 => "NSSM could not be found. Reinstall BeszelAgentManager or place nssm.exe next to the installed app.",
             _ => $"The background service returned exit code {exitCode}.",
         };
@@ -1201,6 +1212,7 @@ public sealed partial class MainWindow : Window
             20 => "Could not find a usable Beszel Agent release on GitHub.",
             21 => "The downloaded archive did not contain beszel-agent.exe.",
             22 => "The agent could not be downloaded or installed. Check the log and antivirus quarantine.",
+            24 => "The Beszel Agent archive checksum is missing or does not match. Installation was blocked.",
             23 => "One or more agent folders could not be removed. Stop the service and close any open agent logs or folders, then try again.",
             53 => "NSSM could not be found. Reinstall BeszelAgentManager or place nssm.exe next to the installed app.",
             _ => $"The background service returned error code {exitCode}.",

@@ -46,13 +46,14 @@ Manager updates:
 - stage under a service-controlled directory;
 - launch only the fixed staged installer with fixed silent arguments.
 
-Agent updates accept only the expected Windows x64 asset from the hardcoded Beszel repository, enforce HTTPS GitHub URLs and a size limit, and extract into a restricted temporary directory.
+Agent updates accept only the expected Windows x64 asset and versioned checksum file from the hardcoded Beszel repository, enforce HTTPS GitHub URLs and size limits, verify the archive's SHA-256 entry, and extract only a verified archive into a restricted temporary directory. Missing checksum assets, missing archive entries, and mismatched hashes are rejected before extraction.
 
 ## Secrets
 
 - The optional GitHub token is encrypted with DPAPI `CurrentUser` scope.
 - Support bundles replace key, token, and encrypted-token fields with redacted values.
 - Logs do not intentionally write token values.
+- Credential-bearing `ALL_PROXY` values are redacted from manager logs and support bundles.
 - Broker policy stores a SID, not credentials.
 
 ## UAC boundary
