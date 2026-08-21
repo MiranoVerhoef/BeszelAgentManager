@@ -313,6 +313,8 @@ public sealed partial class EnvironmentPage : Page
         {
             Content = optionsPanel,
             MaxHeight = 360,
+            HorizontalScrollMode = ScrollMode.Disabled,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         };
 
