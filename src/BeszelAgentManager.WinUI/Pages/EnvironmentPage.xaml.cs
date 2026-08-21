@@ -262,7 +262,11 @@ public sealed partial class EnvironmentPage : Page
 
     private Flyout BuildEnvironmentFlyout()
     {
-        var optionsPanel = new StackPanel { Spacing = 2 };
+        var optionsPanel = new StackPanel
+        {
+            Spacing = 2,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
         var searchBox = new TextBox
         {
             MinHeight = 32,
@@ -313,6 +317,7 @@ public sealed partial class EnvironmentPage : Page
         {
             Content = optionsPanel,
             MaxHeight = 360,
+            HorizontalContentAlignment = HorizontalAlignment.Stretch,
             HorizontalScrollMode = ScrollMode.Disabled,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -326,10 +331,15 @@ public sealed partial class EnvironmentPage : Page
         content.Children.Add(searchBox);
         content.Children.Add(scroller);
 
+        var presenterStyle = new Style(typeof(FlyoutPresenter));
+        presenterStyle.Setters.Add(new Setter(ScrollViewer.HorizontalScrollModeProperty, ScrollMode.Disabled));
+        presenterStyle.Setters.Add(new Setter(ScrollViewer.HorizontalScrollBarVisibilityProperty, ScrollBarVisibility.Disabled));
+
         var flyout = new Flyout
         {
             Content = content,
             Placement = FlyoutPlacementMode.Bottom,
+            FlyoutPresenterStyle = presenterStyle,
         };
         SelectEnvironmentButton.Flyout = flyout;
         return flyout;
@@ -351,6 +361,7 @@ public sealed partial class EnvironmentPage : Page
             Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
             FontSize = 12,
             MaxLines = 1,
+            TextWrapping = TextWrapping.NoWrap,
             TextTrimming = TextTrimming.CharacterEllipsis,
         });
 
