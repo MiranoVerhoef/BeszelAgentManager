@@ -262,50 +262,71 @@ public sealed partial class EnvironmentPage : Page
 
     private Flyout BuildEnvironmentFlyout()
     {
-        var list = new StackPanel { Spacing = 2, Width = 520 };
-        var searchText = EnvironmentSearchBox?.Text?.Trim() ?? string.Empty;
-        var matchingDefinitions = Definitions.Where(definition => MatchesSearch(definition, searchText)).ToList();
-        foreach (var definition in matchingDefinitions)
+        var optionsPanel = new StackPanel { Spacing = 2 };
+        var searchBox = new TextBox
         {
-            var button = new Button
+            MinHeight = 32,
+            PlaceholderText = "Search name or description",
+        };
+
+        void RenderOptions()
+        {
+            optionsPanel.Children.Clear();
+            var searchText = searchBox.Text.Trim();
+            var matchingDefinitions = Definitions.Where(definition => MatchesSearch(definition, searchText)).ToList();
+            foreach (var definition in matchingDefinitions)
             {
-                HorizontalAlignment = HorizontalAlignment.Stretch,
-                HorizontalContentAlignment = HorizontalAlignment.Stretch,
-                Padding = new Thickness(10, 7, 10, 7),
-                Content = CreateEnvironmentOptionContent(definition),
-                Tag = definition,
-            };
-            button.Click += (_, _) =>
-            {
-                SetSelectedDefinition(definition);
-                if (SelectEnvironmentButton.Flyout is FlyoutBase attachedFlyout)
+                var button = new Button
                 {
-                    attachedFlyout.Hide();
-                }
-            };
-            list.Children.Add(button);
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    HorizontalContentAlignment = HorizontalAlignment.Stretch,
+                    Padding = new Thickness(10, 7, 10, 7),
+                    Content = CreateEnvironmentOptionContent(definition),
+                    Tag = definition,
+                };
+                button.Click += (_, _) =>
+                {
+                    SetSelectedDefinition(definition);
+                    if (SelectEnvironmentButton.Flyout is FlyoutBase attachedFlyout)
+                    {
+                        attachedFlyout.Hide();
+                    }
+                };
+                optionsPanel.Children.Add(button);
+            }
+
+            if (matchingDefinitions.Count == 0)
+            {
+                optionsPanel.Children.Add(new TextBlock
+                {
+                    Padding = new Thickness(10, 8, 10, 8),
+                    Text = "No environment variables match your search.",
+                    Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+                });
+            }
         }
 
-        if (matchingDefinitions.Count == 0)
-        {
-            list.Children.Add(new TextBlock
-            {
-                Padding = new Thickness(10, 8, 10, 8),
-                Text = "No environment variables match your search.",
-                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
-            });
-        }
+        searchBox.TextChanged += (_, _) => RenderOptions();
+        RenderOptions();
 
         var scroller = new ScrollViewer
         {
-            Content = list,
+            Content = optionsPanel,
             MaxHeight = 360,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         };
 
+        var content = new StackPanel
+        {
+            Spacing = 8,
+            Width = 520,
+        };
+        content.Children.Add(searchBox);
+        content.Children.Add(scroller);
+
         var flyout = new Flyout
         {
-            Content = scroller,
+            Content = content,
             Placement = FlyoutPlacementMode.Bottom,
         };
         SelectEnvironmentButton.Flyout = flyout;
