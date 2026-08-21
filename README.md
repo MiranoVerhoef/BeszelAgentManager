@@ -109,7 +109,7 @@ The v4 installer upgrades an existing 3.1.0 installation in place and preserves:
 
 The legacy autostart executable path is migrated to the v4 `app` directory while preserving hidden or visible startup behavior. The agent’s NSSM service path is migrated to a stable, quoted ProgramData path.
 
-Normal v4 upgrades use version-aware incremental replacement: unchanged versioned files are retained, same-version files are replaced only when their content differs, and debug symbols are not installed. A full application-directory refresh is reserved for v3 migration, an incomplete layout, or an explicit rollback.
+Normal v4 upgrades use a generated SHA-256 manifest: unchanged application files are retained, changed or missing files are replaced, obsolete manifest-owned files are removed, and every installed file is verified before the background service restarts. A full application-directory refresh is reserved for v3 migration, an incomplete layout, or an explicit rollback.
 
 ## Uninstall behavior
 

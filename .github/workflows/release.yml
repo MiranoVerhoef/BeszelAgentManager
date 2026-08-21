@@ -230,6 +230,7 @@ jobs:
                 throw "$distDir is missing $required"
               }
             }
+            .\installer\New-FileManifest.ps1 -DistDir $distDir
           }
 
       - name: Build Bundled and Lite installers

@@ -5,6 +5,9 @@
 #ifndef DistDir
 #define DistDir "..\build\main.dist"
 #endif
+#ifndef InstallerOutputDir
+#define InstallerOutputDir "..\installer-dist"
+#endif
 #ifdef LiteInstaller
 #define RuntimeVariantId "lite"
 #define RuntimeVariantSuffix " Lite"
@@ -24,7 +27,7 @@ AppPublisher=Verhoef
 DefaultDirName={autopf}\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
-OutputDir=..\installer-dist
+OutputDir={#InstallerOutputDir}
 OutputBaseFilename={#AppName}Setup{#OutputSuffix}
 SetupIconFile=..\BeszelAgentManager_icon.ico
 WizardSmallImageFile=WizardSmallImage.bmp
@@ -46,7 +49,9 @@ VersionInfoProductVersion={#AppVersion}
 VersionInfoVersion={#AppVersion}.0
 
 [Files]
-Source: "{#DistDir}\*"; DestDir: "{app}\app"; Excludes: "nssm.exe,*.pdb"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#DistDir}\INSTALL-MANIFEST.sha256"; Flags: dontcopy
+Source: "{#DistDir}\*"; DestDir: "{app}\app"; Excludes: "nssm.exe,*.pdb,INSTALL-MANIFEST.sha256"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: ShouldInstallApplicationFile
+Source: "{#DistDir}\INSTALL-MANIFEST.sha256"; DestDir: "{app}\app"; Flags: ignoreversion
 Source: "{#DistDir}\nssm.exe"; DestDir: "{commonappdata}\{#AppName}\nssm"; Flags: ignoreversion onlyifdoesntexist
 
 [Dirs]
@@ -61,10 +66,6 @@ Type: filesandordirs; Name: "{app}\*"; Check: ShouldCleanApplicationDirectory
 Type: files; Name: "{commonprograms}\{#AppName}.lnk"
 Type: files; Name: "{app}\app\*.pdb"
 Type: files; Name: "{app}\app\helper\*.pdb"
-Type: files; Name: "{app}\app\BeszelAgentManager.Helper.*"
-Type: files; Name: "{app}\app\VERSION"
-Type: files; Name: "{app}\app\RELEASE_CHANNEL"
-Type: filesandordirs; Name: "{app}\app\helper"
 
 [UninstallRun]
 Filename: "{app}\app\helper\BeszelAgentManager.Helper.exe"; Parameters: "{code:GetUninstallHelperParameters}"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveBeszelAgentManagerBackgroundService"
@@ -85,6 +86,132 @@ Filename: "{app}\app\BeszelAgentManager.exe"; Description: "Open BeszelAgentMana
 [Code]
 var
   KeepAgentLogs: Boolean;
+  FullApplicationRefresh: Boolean;
+  InstallManifestLoaded: Boolean;
+  InstallManifest: TArrayOfString;
+  PreviousInstallManifest: TArrayOfString;
+
+function NormalizeManifestPath(Value: String): String;
+begin
+  StringChangeEx(Value, '\', '/', True);
+  Result := Value;
+end;
+
+function IsSafeManifestPath(const RelativePath: String): Boolean;
+begin
+  if RelativePath = '' then
+  begin
+    Result := False;
+    Exit;
+  end;
+
+  Result :=
+    (RelativePath[1] <> '/') and
+    (Pos(':', RelativePath) = 0) and
+    (Pos('../', RelativePath) = 0) and
+    (Pos('/..', RelativePath) = 0) and
+    (RelativePath <> '..');
+end;
+
+function IsValidSha256(const Value: String): Boolean;
+var
+  Index: Integer;
+  Character: String;
+begin
+  Result := Length(Value) = 64;
+  if not Result then
+    Exit;
+
+  for Index := 1 to Length(Value) do
+  begin
+    Character := LowerCase(Copy(Value, Index, 1));
+    if Pos(Character, '0123456789abcdef') = 0 then
+    begin
+      Result := False;
+      Exit;
+    end;
+  end;
+end;
+
+function TryGetManifestHash(
+  const Manifest: TArrayOfString;
+  const RelativePath: String;
+  var ExpectedHash: String): Boolean;
+var
+  Index: Integer;
+  SeparatorIndex: Integer;
+  EntryPath: String;
+begin
+  Result := False;
+  ExpectedHash := '';
+  for Index := 0 to GetArrayLength(Manifest) - 1 do
+  begin
+    SeparatorIndex := Pos('|', Manifest[Index]);
+    if SeparatorIndex > 1 then
+    begin
+      EntryPath := NormalizeManifestPath(Copy(
+        Manifest[Index],
+        SeparatorIndex + 1,
+        Length(Manifest[Index]) - SeparatorIndex));
+      if LowerCase(EntryPath) = LowerCase(RelativePath) then
+      begin
+        ExpectedHash := LowerCase(Copy(Manifest[Index], 1, SeparatorIndex - 1));
+        Result := IsValidSha256(ExpectedHash);
+        Exit;
+      end;
+    end;
+  end;
+end;
+
+function GetCurrentApplicationRelativePath(): String;
+var
+  DestinationPath: String;
+  ApplicationRoot: String;
+begin
+  DestinationPath := NormalizeManifestPath(ExpandConstant(CurrentFileName()));
+  ApplicationRoot := NormalizeManifestPath(ExpandConstant('{app}\app\'));
+  if Pos(LowerCase(ApplicationRoot), LowerCase(DestinationPath)) = 1 then
+    Result := Copy(DestinationPath, Length(ApplicationRoot) + 1, Length(DestinationPath))
+  else
+    Result := '';
+end;
+
+function ShouldInstallApplicationFile(): Boolean;
+var
+  RelativePath: String;
+  DestinationPath: String;
+  ExpectedHash: String;
+  InstalledHash: String;
+begin
+  if FullApplicationRefresh then
+  begin
+    Result := True;
+    Exit;
+  end;
+
+  RelativePath := GetCurrentApplicationRelativePath();
+  DestinationPath := ExpandConstant(CurrentFileName());
+  if not InstallManifestLoaded or
+    not IsSafeManifestPath(RelativePath) or
+    not TryGetManifestHash(InstallManifest, RelativePath, ExpectedHash) or
+    not FileExists(DestinationPath) then
+  begin
+    Result := True;
+    Exit;
+  end;
+
+  try
+    InstalledHash := LowerCase(GetSHA256OfFile(DestinationPath));
+    Result := InstalledHash <> ExpectedHash;
+    if Result then
+      Log('Updating changed application file: ' + RelativePath)
+    else
+      Log('Keeping unchanged application file: ' + RelativePath);
+  except
+    Log('Could not hash installed application file; replacing it: ' + RelativePath);
+    Result := True;
+  end;
+end;
 
 function HasDotNet10DesktopRuntime(): Boolean;
 var
@@ -245,10 +372,81 @@ begin
     (ComparePackedVersion(InstalledVersion, TargetVersion) > 0);
 
   Result := IsLegacyLayout or IsRollback;
+  FullApplicationRefresh := Result;
   if Result then
     Log('A legacy, incomplete, or rollback installation requires a full application-directory refresh.')
   else
-    Log('Using version-aware incremental application-file replacement.');
+    Log('Using SHA-256-aware incremental application-file replacement.');
+end;
+
+procedure RemoveStaleApplicationFiles();
+var
+  Index: Integer;
+  SeparatorIndex: Integer;
+  RelativePath: String;
+  IgnoredHash: String;
+  StalePath: String;
+begin
+  if FullApplicationRefresh then
+    Exit;
+
+  for Index := 0 to GetArrayLength(PreviousInstallManifest) - 1 do
+  begin
+    SeparatorIndex := Pos('|', PreviousInstallManifest[Index]);
+    if SeparatorIndex > 1 then
+    begin
+      RelativePath := NormalizeManifestPath(Copy(
+        PreviousInstallManifest[Index],
+        SeparatorIndex + 1,
+        Length(PreviousInstallManifest[Index]) - SeparatorIndex));
+      if IsSafeManifestPath(RelativePath) and
+        not TryGetManifestHash(InstallManifest, RelativePath, IgnoredHash) then
+      begin
+        StalePath := ExpandConstant('{app}\app\') + RelativePath;
+        StringChangeEx(StalePath, '/', '\', True);
+        if FileExists(StalePath) then
+        begin
+          Log('Removing obsolete application file: ' + RelativePath);
+          if not DeleteFile(StalePath) then
+            RaiseException('Could not remove obsolete application file: ' + RelativePath);
+        end;
+      end;
+    end;
+  end;
+end;
+
+procedure VerifyInstalledManifest();
+var
+  Index: Integer;
+  SeparatorIndex: Integer;
+  RelativePath: String;
+  ExpectedHash: String;
+  InstalledHash: String;
+  InstalledPath: String;
+begin
+  for Index := 0 to GetArrayLength(InstallManifest) - 1 do
+  begin
+    SeparatorIndex := Pos('|', InstallManifest[Index]);
+    if SeparatorIndex <= 1 then
+      RaiseException('The installer application manifest contains an invalid entry.');
+
+    ExpectedHash := LowerCase(Copy(InstallManifest[Index], 1, SeparatorIndex - 1));
+    RelativePath := NormalizeManifestPath(Copy(
+      InstallManifest[Index],
+      SeparatorIndex + 1,
+      Length(InstallManifest[Index]) - SeparatorIndex));
+    if not IsSafeManifestPath(RelativePath) then
+      RaiseException('The installer application manifest contains an unsafe path.');
+
+    InstalledPath := ExpandConstant('{app}\app\') + RelativePath;
+    StringChangeEx(InstalledPath, '/', '\', True);
+    if not FileExists(InstalledPath) then
+      RaiseException('An expected application file is missing: ' + RelativePath);
+
+    InstalledHash := LowerCase(GetSHA256OfFile(InstalledPath));
+    if InstalledHash <> ExpectedHash then
+      RaiseException('Application file verification failed: ' + RelativePath);
+  end;
 end;
 
 function HasExpectedVersion(FileName: String): Boolean;
@@ -283,6 +481,8 @@ var
 begin
   if CurStep = ssPostInstall then
   begin
+    RemoveStaleApplicationFiles();
+    VerifyInstalledManifest();
     VerifyInstalledApplication();
     if not SaveStringToFile(
       ExpandConstant('{commonappdata}\{#AppName}\manager-runtime-variant.txt'),
@@ -329,8 +529,27 @@ end;
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
+  ManifestPath: String;
 begin
   Result := '';
+  try
+    ExtractTemporaryFile('INSTALL-MANIFEST.sha256');
+    ManifestPath := ExpandConstant('{tmp}\INSTALL-MANIFEST.sha256');
+    InstallManifestLoaded := LoadStringsFromFile(ManifestPath, InstallManifest);
+    if not InstallManifestLoaded or (GetArrayLength(InstallManifest) = 0) then
+    begin
+      Result := 'The installer application manifest could not be loaded.';
+      Exit;
+    end;
+
+    LoadStringsFromFile(
+      ExpandConstant('{app}\app\INSTALL-MANIFEST.sha256'),
+      PreviousInstallManifest);
+  except
+    Result := 'The installer application manifest could not be prepared: ' + GetExceptionMessage();
+    Exit;
+  end;
+
   Exec(
     ExpandConstant('{sys}\net.exe'),
     'stop "BeszelAgentManager Background" /y',

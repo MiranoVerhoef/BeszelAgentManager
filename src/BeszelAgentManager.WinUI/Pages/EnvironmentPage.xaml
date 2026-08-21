@@ -49,6 +49,13 @@
                     </Grid>
                 </Button>
                 <Button Grid.Column="2" MinHeight="28" Padding="10,3" Content="Add" Click="AddEnvironmentButton_Click" />
+                <TextBox
+                    x:Name="EnvironmentSearchBox"
+                    Grid.Column="3"
+                    MinHeight="28"
+                    VerticalContentAlignment="Center"
+                    PlaceholderText="Search name or description"
+                    TextChanged="EnvironmentSearchBox_TextChanged" />
             </Grid>
         </Border>
 

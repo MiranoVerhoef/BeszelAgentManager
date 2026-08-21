@@ -88,14 +88,18 @@ public sealed partial class EnvironmentPage : Page
     {
         EnvironmentListView.Items.Clear();
 
+        var searchText = EnvironmentSearchBox?.Text?.Trim() ?? string.Empty;
         var rows = _configService.GetActiveEnvironmentRows(_config)
+            .Where(row => MatchesSearch(row.Name, searchText))
             .OrderBy(static row => row.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
         if (rows.Count == 0)
         {
             EnvironmentListView.Items.Add(new TextBlock
             {
-                Text = "No environment variables are active.",
+                Text = string.IsNullOrEmpty(searchText)
+                    ? "No environment variables are active."
+                    : "No active environment variables match your search.",
                 Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
             });
             return;
@@ -105,6 +109,11 @@ public sealed partial class EnvironmentPage : Page
         {
             EnvironmentListView.Items.Add(CreateEnvironmentRow(row.Name, row.ConfigKey, row.Value));
         }
+    }
+
+    private void EnvironmentSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        RenderRows();
     }
 
     private Grid CreateEnvironmentRow(string name, string configKey, string value)
@@ -254,7 +263,9 @@ public sealed partial class EnvironmentPage : Page
     private Flyout BuildEnvironmentFlyout()
     {
         var list = new StackPanel { Spacing = 2, Width = 520 };
-        foreach (var definition in Definitions)
+        var searchText = EnvironmentSearchBox?.Text?.Trim() ?? string.Empty;
+        var matchingDefinitions = Definitions.Where(definition => MatchesSearch(definition, searchText)).ToList();
+        foreach (var definition in matchingDefinitions)
         {
             var button = new Button
             {
@@ -273,6 +284,16 @@ public sealed partial class EnvironmentPage : Page
                 }
             };
             list.Children.Add(button);
+        }
+
+        if (matchingDefinitions.Count == 0)
+        {
+            list.Children.Add(new TextBlock
+            {
+                Padding = new Thickness(10, 8, 10, 8),
+                Text = "No environment variables match your search.",
+                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+            });
         }
 
         var scroller = new ScrollViewer
@@ -326,6 +347,19 @@ public sealed partial class EnvironmentPage : Page
     {
         return Definitions.FirstOrDefault(definition => string.Equals(definition.Name, name, StringComparison.OrdinalIgnoreCase));
     }
+
+    private static bool MatchesSearch(string name, string searchText)
+    {
+        var definition = FindDefinition(name);
+        return string.IsNullOrEmpty(searchText) ||
+            name.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+            (definition?.Description.Contains(searchText, StringComparison.OrdinalIgnoreCase) ?? false);
+    }
+
+    private static bool MatchesSearch(EnvDefinition definition, string searchText) =>
+        string.IsNullOrEmpty(searchText) ||
+        definition.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+        definition.Description.Contains(searchText, StringComparison.OrdinalIgnoreCase);
 
     private sealed record EnvDefinition(string Name, string ConfigKey, string Description);
 

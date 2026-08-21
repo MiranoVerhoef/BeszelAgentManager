@@ -7,6 +7,7 @@ using Microsoft.UI.Dispatching;
 using Windows.Graphics;
 using H.NotifyIcon.Core;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Microsoft.UI.Xaml.Media;
 
 namespace BeszelAgentManager.WinUI;
@@ -46,14 +47,7 @@ public sealed partial class MainWindow : Window
         SetTitleBar(AppTitleBar);
         AppWindow.TitleBar.PreferredHeightOption = TitleBarHeightOption.Tall;
         AppWindow.SetIcon(Path.Combine(AppContext.BaseDirectory, "Assets", "AppIcon.ico"));
-        if (AppWindow.Presenter is OverlappedPresenter presenter)
-        {
-            presenter.PreferredMinimumWidth = 1080;
-            presenter.PreferredMinimumHeight = 780;
-            presenter.IsResizable = true;
-            presenter.IsMaximizable = true;
-        }
-        AppWindow.Resize(GetDefaultWindowSize());
+        ConfigureWindowSize();
         _trayIconService = new TrayIconService(
             ShowFromTray,
             OpenHubFromTray,
@@ -329,23 +323,66 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    private SizeInt32 GetDefaultWindowSize()
+    private void ConfigureWindowSize()
     {
-        const int preferredWidth = 1180;
-        const int preferredHeight = 900;
+        const int logicalPreferredWidth = 1180;
+        const int logicalPreferredHeight = 900;
+        const int logicalMinimumWidth = 1080;
+        const int logicalMinimumHeight = 780;
+        const int logicalWorkAreaMargin = 48;
+
+        var scale = GetWindowScale();
+        var preferredWidth = ScalePixels(logicalPreferredWidth, scale);
+        var preferredHeight = ScalePixels(logicalPreferredHeight, scale);
+        var minimumWidth = ScalePixels(logicalMinimumWidth, scale);
+        var minimumHeight = ScalePixels(logicalMinimumHeight, scale);
         try
         {
             var display = DisplayArea.GetFromWindowId(AppWindow.Id, DisplayAreaFallback.Primary);
             var workArea = display.WorkArea;
-            return new SizeInt32(
-                Math.Clamp(preferredWidth, 1080, Math.Max(1080, workArea.Width - 80)),
-                Math.Clamp(preferredHeight, 780, Math.Max(780, workArea.Height - 80)));
+            var margin = ScalePixels(logicalWorkAreaMargin, scale);
+            var maximumWidth = Math.Max(640, workArea.Width - margin);
+            var maximumHeight = Math.Max(480, workArea.Height - margin);
+            minimumWidth = Math.Min(minimumWidth, maximumWidth);
+            minimumHeight = Math.Min(minimumHeight, maximumHeight);
+            preferredWidth = Math.Clamp(preferredWidth, minimumWidth, maximumWidth);
+            preferredHeight = Math.Clamp(preferredHeight, minimumHeight, maximumHeight);
         }
         catch
         {
-            return new SizeInt32(preferredWidth, preferredHeight);
+            // Use the DPI-scaled preferred dimensions if display discovery is unavailable.
+        }
+
+        if (AppWindow.Presenter is OverlappedPresenter presenter)
+        {
+            presenter.PreferredMinimumWidth = minimumWidth;
+            presenter.PreferredMinimumHeight = minimumHeight;
+            presenter.IsResizable = true;
+            presenter.IsMaximizable = true;
+        }
+
+        AppWindow.Resize(new SizeInt32(preferredWidth, preferredHeight));
+    }
+
+    private double GetWindowScale()
+    {
+        try
+        {
+            var windowHandle = WinRT.Interop.WindowNative.GetWindowHandle(this);
+            var dpi = GetDpiForWindow(windowHandle);
+            return dpi > 0 ? dpi / 96d : 1d;
+        }
+        catch
+        {
+            return 1d;
         }
     }
+
+    private static int ScalePixels(int logicalPixels, double scale) =>
+        Math.Max(1, (int)Math.Round(logicalPixels * scale, MidpointRounding.AwayFromZero));
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr windowHandle);
 
     private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
