@@ -2327,7 +2327,6 @@ static async Task<string[]?> GetNssmParameterAsync(string nssmPath, string servi
     }
 
     return result.Output
-        .Replace("\0", string.Empty)
         .Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
         .Where(static line => !string.IsNullOrWhiteSpace(line))
         .ToArray();
@@ -3408,6 +3407,13 @@ static async Task<(int ExitCode, string Output)> RunProcessAsync(string fileName
         CreateNoWindow = true,
     };
 
+    if (IsNssm(fileName))
+    {
+        // nssm writes UTF-16 to stdout and stderr (_O_U16TEXT in nssm.cpp)
+        startInfo.StandardOutputEncoding = Encoding.Unicode;
+        startInfo.StandardErrorEncoding = Encoding.Unicode;
+    }
+
     foreach (var argument in arguments)
     {
         startInfo.ArgumentList.Add(argument);
@@ -3423,6 +3429,11 @@ static async Task<(int ExitCode, string Output)> RunProcessAsync(string fileName
     var stderr = await process.StandardError.ReadToEndAsync();
     await process.WaitForExitAsync();
     return (process.ExitCode, $"{stdout}{Environment.NewLine}{stderr}".Trim());
+}
+
+static bool IsNssm(string fileName)
+{
+    return string.Equals(Path.GetFileName(fileName), "nssm.exe", StringComparison.OrdinalIgnoreCase);
 }
 
 static async Task<(int ExitCode, string Output)> RunProcessWithTimeoutAsync(
