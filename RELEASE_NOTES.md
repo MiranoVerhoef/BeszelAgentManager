@@ -1,20 +1,16 @@
 ## Summary
 
-- Bumped version to 4.0.8.
-- Added Beszel v0.18.8 agent variables `ALL_PROXY` and `EXIT_ON_DNS_ERROR`.
-- Added previously missing `DOCKER_TIMEOUT` and `SMART_DEVICES_SEPARATOR` variables.
-- Updated `GPU_COLLECTOR` and `SMART_DEVICES` guidance for current collectors and explicit device-type hints.
-- Added official SHA-256 checksum verification for every Beszel Agent install, update, rollback, and scheduled update.
-- Blocked conflicting use of `EXIT_ON_DNS_ERROR` and manager WebSocket offline backoff.
-- Redacted credential-bearing `ALL_PROXY` values from logs and support bundles.
-- Added Environment-table search by variable name or description.
-- Made initial and minimum window sizing DPI-aware while retaining low-resolution fitting.
-- Added SHA-256-aware incremental installer updates that retain unchanged files, replace changed or missing files, remove obsolete manifest-owned files, and verify the final installation.
+- Bumped manager, helper, and installers to 4.0.9.
+- Fixed View fingerprint reading the signed-in user's fingerprint instead of the LocalSystem agent service's fingerprint (#61).
+- Routed fingerprint viewing through the secured background-service broker and serialized it with Reset.
+- Made View and Reset use the service's applied NSSM environment and working directory, including custom `DATA_DIR`, rather than saved but unapplied settings.
+- Included PR #60's NSSM UTF-16 output fix, preserving non-ASCII environment values and paths during settings verification (thanks @mews-se).
+- Added regression tests for SYSTEM-profile environment selection, custom data directories, and Unicode output decoding.
 
 ## Impact
 
-Agent archives are installed only when the selected official GitHub release contains both `beszel-agent_windows_amd64.zip` and its versioned checksum file, and the archive hash matches exactly. A missing or mismatched checksum blocks installation before extraction or replacement of the installed agent.
+Existing agent data and fingerprints remain in their current locations; no `DATA_DIR` migration is performed. Fingerprint viewing no longer runs the agent in the signed-in user's profile. The official agent command may initialize a missing fingerprint in the service's data directory, as it does during agent startup. Services manually changed to a non-LocalSystem account are rejected by fingerprint actions to avoid showing the wrong identity.
 
-`EXIT_ON_DNS_ERROR` and manager WebSocket offline backoff are alternative retry strategies. The UI and privileged broker reject configurations that enable both.
+Settings such as `SYSTEM_NAME=Bärbar` and filesystem paths containing non-ASCII characters now survive NSSM readback verification instead of incorrectly triggering rollback. Other Windows tools retain their existing output decoding.
 
-Bundled and Lite builds now include separate application-file manifests. Normal upgrades avoid rewriting unchanged application files; v3 migration, rollback, and incomplete layouts still use a full refresh.
+Bundled and Lite installers retain edition-aware updates and SHA-256-aware incremental file replacement.

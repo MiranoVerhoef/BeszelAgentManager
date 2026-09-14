@@ -14,7 +14,7 @@ Version 4 is a native .NET 10 and WinUI 3 application. Routine administrative ac
 - Optionally reduce unreachable-Hub WebSocket retries with a persistent 1-to-60-minute backoff.
 - Schedule automatic agent updates, periodic restarts, and daily log rotation in the background service.
 - View manager and agent logs, rotate logs, and create a redacted support bundle.
-- Reset the agent fingerprint.
+- View or reset the agent service's fingerprint through the secured background broker.
 - Install, roll back, or force-reinstall manager releases through a checksum-verified installer flow.
 - Optional manager-update notifications, prerelease checks, skipped versions, and tray status.
 - Optional Windows Defender exclusion with explicit consent.
@@ -68,7 +68,7 @@ The broker handles:
 
 - agent installation, updates, rollback, and uninstall;
 - service start, stop, restart, NSSM configuration, and firewall changes;
-- log rotation and fingerprint reset;
+- log rotation and fingerprint viewing/reset;
 - optional Defender exclusion changes;
 - verified manager installer staging;
 - scheduled updates, restarts, DNS failover, and log rotation.

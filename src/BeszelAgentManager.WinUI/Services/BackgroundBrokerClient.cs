@@ -56,6 +56,12 @@ internal sealed class BackgroundBrokerClient
 
     public Task<int> ResetAgentFingerprintAsync() => SendAsync("agent.fingerprint.reset");
 
+    public async Task<(bool Success, string Output)> ViewAgentFingerprintAsync(CancellationToken cancellationToken = default)
+    {
+        var response = await SendResponseAsync("agent.fingerprint.view", cancellationToken: cancellationToken);
+        return (response.Success, response.Message);
+    }
+
     public Task<int> SetDefenderExclusionAsync(bool enabled) =>
         SendAsync("defender.set", new Dictionary<string, string> { ["enabled"] = enabled.ToString() });
 
@@ -95,9 +101,10 @@ internal sealed class BackgroundBrokerClient
 
     private async Task<BrokerResponse> SendResponseAsync(
         string action,
-        Dictionary<string, string>? arguments = null)
+        Dictionary<string, string>? arguments = null,
+        CancellationToken cancellationToken = default)
     {
-        await _gate.WaitAsync();
+        await _gate.WaitAsync(cancellationToken);
         try
         {
             var request = new BrokerRequest
@@ -114,7 +121,8 @@ internal sealed class BackgroundBrokerClient
                 PipeDirection.InOut,
                 PipeOptions.Asynchronous,
                 TokenImpersonationLevel.Impersonation);
-            using var connectTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            using var connectTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            connectTimeout.CancelAfter(TimeSpan.FromSeconds(5));
             try
             {
                 await pipe.ConnectAsync(connectTimeout.Token);
@@ -130,7 +138,7 @@ internal sealed class BackgroundBrokerClient
             await using var writer = new StreamWriter(pipe, utf8, leaveOpen: true) { AutoFlush = true };
             using var reader = new StreamReader(pipe, utf8, leaveOpen: true);
             await writer.WriteLineAsync(JsonSerializer.Serialize(request, AppJsonContext.Default.BrokerRequest));
-            var payload = await reader.ReadLineAsync()
+            var payload = await reader.ReadLineAsync(cancellationToken)
                 ?? throw new InvalidOperationException("The background service closed the broker connection without a response.");
             var response = JsonSerializer.Deserialize(payload, AppJsonContext.Default.BrokerResponse)
                 ?? throw new InvalidOperationException("The background service returned an invalid broker response.");

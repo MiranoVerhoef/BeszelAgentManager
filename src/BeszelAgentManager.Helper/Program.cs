@@ -707,6 +707,23 @@ static async Task HandleBrokerConnectionAsync(
             await BrokerRuntime.MutationGate.WaitAsync(cancellationToken);
             try
             {
+                if (request.Action == "agent.fingerprint.view")
+                {
+                    if (request.Arguments is { Count: > 0 })
+                    {
+                        await WriteBrokerResponseAsync(pipe, BrokerResponse.Failed(request.RequestId, 2, "Fingerprint view does not accept arguments."));
+                        return;
+                    }
+
+                    var result = await RunAgentFingerprintCommandAsync("view", GetAppliedAgentProcessContext());
+                    var fingerprint = result.Output.Trim();
+                    var fingerprintResponse = result.ExitCode == 0 && Regex.IsMatch(fingerprint, @"\A[0-9a-fA-F]{48}\z")
+                        ? BrokerResponse.Completed(request.RequestId, fingerprint)
+                        : BrokerResponse.Failed(request.RequestId, result.ExitCode == 0 ? 4 : result.ExitCode, "The service fingerprint could not be read.");
+                    await WriteBrokerResponseAsync(pipe, fingerprintResponse);
+                    return;
+                }
+
                 var exitCode = await ExecuteBrokerActionAsync(request);
                 var response = exitCode == 0
                     ? BrokerResponse.Completed(request.RequestId)
@@ -1794,17 +1811,33 @@ static string AgentPath()
 
 static async Task<int> ResetAgentFingerprintAsync()
 {
-    var config = await LoadConfigurationAsync();
     var agentPath = AgentPath();
-    if (config is null || !File.Exists(agentPath))
+    if (!File.Exists(agentPath))
     {
         return 3;
     }
 
-    await StopServiceAsync(serviceName);
-    var result = await RunAgentProcessAsync(agentPath, ["fingerprint", "reset"], config.RootElement);
-    await StartServiceAsync(serviceName);
-    return result;
+    // Resolve the applied environment before stopping. Saved but unapplied DATA_DIR is irrelevant.
+    var context = GetAppliedAgentProcessContext();
+    var stopResult = await StopServiceAsync(serviceName);
+    if (stopResult != 0)
+    {
+        return stopResult;
+    }
+
+    var result = 4;
+    var startResult = 4;
+    try
+    {
+        var reset = await RunAgentFingerprintCommandAsync("reset", context);
+        result = reset.ExitCode;
+    }
+    finally
+    {
+        startResult = await StartServiceAsync(serviceName);
+    }
+
+    return result != 0 ? result : startResult;
 }
 
 static async Task<int> ApplyManagerTasksAsync()
@@ -1968,36 +2001,54 @@ static int GetUpdateIntervalHours(JsonElement config)
     return Math.Clamp(value, 1, 720);
 }
 
-static async Task<int> RunAgentProcessAsync(string agentPath, string[] arguments, JsonElement config)
+static AgentProcessContext GetAppliedAgentProcessContext()
 {
-    try
+    using var registry = RegistryKey.OpenBaseKey(RegistryHive.LocalMachine, RegistryView.Registry64);
+    using var service = registry.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\{serviceName}");
+    if (service is null)
     {
-        using var process = new Process();
-        process.StartInfo.FileName = agentPath;
-        foreach (var argument in arguments)
-        {
-            process.StartInfo.ArgumentList.Add(argument);
-        }
-
-        process.StartInfo.UseShellExecute = false;
-        process.StartInfo.CreateNoWindow = true;
-        foreach (var item in BuildAgentEnvironment(config))
-        {
-            var separator = item.IndexOf('=');
-            if (separator > 0)
-            {
-                process.StartInfo.Environment[item[..separator]] = item[(separator + 1)..];
-            }
-        }
-
-        process.Start();
-        await process.WaitForExitAsync();
-        return process.ExitCode == 0 ? 0 : 4;
+        throw new InvalidOperationException("The Beszel Agent service is not installed.");
     }
-    catch
+
+    var account = service.GetValue("ObjectName") as string;
+    if (!string.Equals(account, "LocalSystem", StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(account, @"NT AUTHORITY\SYSTEM", StringComparison.OrdinalIgnoreCase))
     {
-        return 4;
+        throw new InvalidOperationException("Fingerprint actions require the agent service to run as LocalSystem.");
     }
+
+    using var parameters = service.OpenSubKey("Parameters")
+        ?? throw new InvalidOperationException("The Beszel Agent service configuration is missing.");
+    var application = parameters.GetValue("Application") as string;
+    if (string.IsNullOrWhiteSpace(application)
+        || !string.Equals(Path.GetFullPath(application), Path.GetFullPath(AgentPath()), StringComparison.OrdinalIgnoreCase))
+    {
+        throw new InvalidOperationException("The service does not use the managed Beszel Agent executable.");
+    }
+
+    var directory = parameters.GetValue("AppDirectory") as string;
+    directory = string.IsNullOrWhiteSpace(directory) ? Path.GetDirectoryName(AgentPath())! : Path.GetFullPath(directory);
+    var inherited = new ProcessStartInfo().Environment;
+    var environment = ServiceProcessEnvironment.Compose(
+        inherited,
+        parameters.GetValue("AppEnvironment") as string[],
+        parameters.GetValue("AppEnvironmentExtra") as string[]);
+    return new AgentProcessContext(environment, directory);
+}
+
+static Task<(int ExitCode, string Output)> RunAgentFingerprintCommandAsync(string command, AgentProcessContext context)
+{
+    if (command is not ("view" or "reset"))
+    {
+        throw new ArgumentOutOfRangeException(nameof(command));
+    }
+
+    return RunProcessWithTimeoutAsync(
+        AgentPath(),
+        ["fingerprint", command],
+        TimeSpan.FromSeconds(10),
+        context.Environment,
+        context.WorkingDirectory);
 }
 
 static async Task<int> InstallOrUpdateAgentAsync()
@@ -3407,11 +3458,12 @@ static async Task<(int ExitCode, string Output)> RunProcessAsync(string fileName
         CreateNoWindow = true,
     };
 
-    if (IsNssm(fileName))
+    var outputEncoding = ProcessOutputEncoding.ForExecutable(fileName);
+    if (outputEncoding is not null)
     {
         // nssm writes UTF-16 to stdout and stderr (_O_U16TEXT in nssm.cpp)
-        startInfo.StandardOutputEncoding = Encoding.Unicode;
-        startInfo.StandardErrorEncoding = Encoding.Unicode;
+        startInfo.StandardOutputEncoding = outputEncoding;
+        startInfo.StandardErrorEncoding = outputEncoding;
     }
 
     foreach (var argument in arguments)
@@ -3431,15 +3483,12 @@ static async Task<(int ExitCode, string Output)> RunProcessAsync(string fileName
     return (process.ExitCode, $"{stdout}{Environment.NewLine}{stderr}".Trim());
 }
 
-static bool IsNssm(string fileName)
-{
-    return string.Equals(Path.GetFileName(fileName), "nssm.exe", StringComparison.OrdinalIgnoreCase);
-}
-
 static async Task<(int ExitCode, string Output)> RunProcessWithTimeoutAsync(
     string fileName,
     string[] arguments,
-    TimeSpan timeout)
+    TimeSpan timeout,
+    IReadOnlyDictionary<string, string>? environment = null,
+    string? workingDirectory = null)
 {
     if (!Path.IsPathRooted(fileName))
     {
@@ -3453,7 +3502,23 @@ static async Task<(int ExitCode, string Output)> RunProcessWithTimeoutAsync(
         RedirectStandardOutput = true,
         RedirectStandardError = true,
         CreateNoWindow = true,
+        StandardOutputEncoding = Encoding.UTF8,
+        StandardErrorEncoding = Encoding.UTF8,
     };
+
+    if (environment is not null)
+    {
+        startInfo.Environment.Clear();
+        foreach (var item in environment)
+        {
+            startInfo.Environment[item.Key] = item.Value;
+        }
+    }
+
+    if (workingDirectory is not null)
+    {
+        startInfo.WorkingDirectory = workingDirectory;
+    }
 
     foreach (var argument in arguments)
     {
@@ -3489,6 +3554,7 @@ static async Task<(int ExitCode, string Output)> RunProcessWithTimeoutAsync(
 }
 
 internal readonly record struct AgentRelease(string Version, string DownloadUrl, string ChecksumUrl);
+internal sealed record AgentProcessContext(Dictionary<string, string> Environment, string WorkingDirectory);
 
 [StructLayout(LayoutKind.Sequential)]
 internal struct Luid
