@@ -84,9 +84,9 @@ internal sealed class BackgroundBrokerClient
             : null;
     }
 
-    public async Task<BrokerAgentStatus> GetAgentStatusAsync()
+    public async Task<BrokerAgentStatus> GetAgentStatusAsync(CancellationToken cancellationToken = default)
     {
-        var response = await SendResponseAsync("agent.status");
+        var response = await SendResponseAsync("agent.status", cancellationToken: cancellationToken);
         if (!response.Success)
         {
             throw new InvalidOperationException(response.Message);
@@ -107,7 +107,13 @@ internal sealed class BackgroundBrokerClient
         Dictionary<string, string>? arguments = null,
         CancellationToken cancellationToken = default)
     {
-        await _gate.WaitAsync(cancellationToken);
+        using var operationTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        operationTimeout.CancelAfter(IsStatusRequest(action)
+            ? TimeSpan.FromSeconds(15)
+            : TimeSpan.FromMinutes(15));
+        var operationToken = operationTimeout.Token;
+
+        await _gate.WaitAsync(operationToken);
         try
         {
             var request = new BrokerRequest
@@ -124,7 +130,7 @@ internal sealed class BackgroundBrokerClient
                 PipeDirection.InOut,
                 PipeOptions.Asynchronous,
                 TokenImpersonationLevel.Identification);
-            using var connectTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            using var connectTimeout = CancellationTokenSource.CreateLinkedTokenSource(operationToken);
             connectTimeout.CancelAfter(TimeSpan.FromSeconds(5));
             try
             {
@@ -145,8 +151,16 @@ internal sealed class BackgroundBrokerClient
             await using var writer = new StreamWriter(pipe, utf8, leaveOpen: true) { AutoFlush = true };
             using var reader = new StreamReader(pipe, utf8, leaveOpen: true);
             await writer.WriteLineAsync(JsonSerializer.Serialize(request, AppJsonContext.Default.BrokerRequest));
-            var payload = await reader.ReadLineAsync(cancellationToken)
-                ?? throw new InvalidOperationException("The background service closed the broker connection without a response.");
+            string payload;
+            try
+            {
+                payload = await reader.ReadLineAsync(operationToken)
+                    ?? throw new InvalidOperationException("The background service closed the broker connection without a response.");
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new InvalidOperationException("The background service did not respond in time.");
+            }
             var response = JsonSerializer.Deserialize(payload, AppJsonContext.Default.BrokerResponse)
                 ?? throw new InvalidOperationException("The background service returned an invalid broker response.");
             if (!string.Equals(response.RequestId, request.RequestId, StringComparison.Ordinal))
@@ -161,6 +175,9 @@ internal sealed class BackgroundBrokerClient
             _gate.Release();
         }
     }
+
+    private static bool IsStatusRequest(string action) =>
+        action is "agent.status" or "agent.version";
 
     private static bool IsAgentVersion(string value)
     {

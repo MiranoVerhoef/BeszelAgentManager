@@ -923,12 +923,60 @@ static async Task WriteBrokerResponseAsync(NamedPipeServerStream pipe, BrokerRes
 static string? GetConnectedClientSid(NamedPipeServerStream pipe)
 {
     string? sid = null;
-    pipe.RunAsClient(() =>
-    {
-        using var identity = WindowsIdentity.GetCurrent(true);
-        sid = identity?.User?.Value;
-    });
+    pipe.RunAsClient(() => sid = GetCurrentThreadTokenSid());
     return sid;
+}
+
+static string GetCurrentThreadTokenSid()
+{
+    if (!NativeMethods.OpenThreadToken(
+            NativeMethods.GetCurrentThread(),
+            NativeMethods.TokenQuery,
+            openAsSelf: true,
+            out var token))
+    {
+        throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not open the connected pipe client's token.");
+    }
+
+    using (token)
+    {
+        _ = NativeMethods.GetTokenInformation(
+            token,
+            NativeMethods.TokenInformationClass.TokenUser,
+            IntPtr.Zero,
+            0,
+            out var requiredLength);
+        if (requiredLength == 0 || Marshal.GetLastWin32Error() != NativeMethods.ErrorInsufficientBuffer)
+        {
+            throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not determine the connected pipe client's SID size.");
+        }
+
+        var buffer = Marshal.AllocHGlobal(checked((int)requiredLength));
+        try
+        {
+            if (!NativeMethods.GetTokenInformation(
+                    token,
+                    NativeMethods.TokenInformationClass.TokenUser,
+                    buffer,
+                    requiredLength,
+                    out _))
+            {
+                throw new Win32Exception(Marshal.GetLastWin32Error(), "Could not read the connected pipe client's SID.");
+            }
+
+            var tokenUser = Marshal.PtrToStructure<NativeTokenUser>(buffer);
+            if (tokenUser.User.Sid == IntPtr.Zero)
+            {
+                throw new InvalidOperationException("The connected pipe client token did not contain a SID.");
+            }
+
+            return new SecurityIdentifier(tokenUser.User.Sid).Value;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+    }
 }
 
 static PipeSecurity CreateBrokerPipeSecurity(string authorizedSid)
@@ -3936,9 +3984,49 @@ internal struct TokenPrivileges
     public LuidAndAttributes Privileges;
 }
 
+[StructLayout(LayoutKind.Sequential)]
+internal struct SidAndAttributes
+{
+    public IntPtr Sid;
+    public uint Attributes;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct NativeTokenUser
+{
+    public SidAndAttributes User;
+}
+
 internal static class NativeMethods
 {
+    internal const uint TokenQuery = 0x0008;
+    internal const int ErrorInsufficientBuffer = 122;
     internal const uint SePrivilegeEnabled = 0x00000002;
+
+    internal enum TokenInformationClass
+    {
+        TokenUser = 1,
+    }
+
+    [DllImport("kernel32.dll")]
+    internal static extern IntPtr GetCurrentThread();
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool OpenThreadToken(
+        IntPtr threadHandle,
+        uint desiredAccess,
+        [MarshalAs(UnmanagedType.Bool)] bool openAsSelf,
+        out Microsoft.Win32.SafeHandles.SafeAccessTokenHandle tokenHandle);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool GetTokenInformation(
+        Microsoft.Win32.SafeHandles.SafeAccessTokenHandle tokenHandle,
+        TokenInformationClass tokenInformationClass,
+        IntPtr tokenInformation,
+        uint tokenInformationLength,
+        out uint returnLength);
 
     [DllImport("advapi32.dll", EntryPoint = "LookupPrivilegeValueW", SetLastError = true, CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]
