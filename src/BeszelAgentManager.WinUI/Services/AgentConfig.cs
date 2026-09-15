@@ -130,7 +130,6 @@ internal sealed class AgentConfig
                     .Select(static item => $"{item.Name.Trim()}={item.Value}")),
         };
 
-        AddExtra("data_dir");
         AddExtra("all_proxy");
         AddExtra("docker_host");
         AddExtra("docker_timeout");
@@ -140,8 +139,6 @@ internal sealed class AgentConfig
         AddExtra("filesystem");
         AddExtra("exit_on_dns_error");
         AddExtra("intel_gpu_device");
-        AddExtra("key_file");
-        AddExtra("token_file");
         AddExtra("lhm");
         AddExtra("log_level");
         AddExtra("mem_calc");

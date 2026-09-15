@@ -1,8 +1,8 @@
 [CmdletBinding()]
 param(
     [string]$ConfigPath = "$env:ProgramData\BeszelAgentManager\config.json",
-    [string]$StatePath = "$env:ProgramData\BeszelAgentManager\dns-fallback-state.json",
-    [string]$NssmPath = "$env:ProgramData\BeszelAgentManager\nssm\nssm.exe"
+    [string]$StatePath = "$env:ProgramData\BeszelAgentManager.ServiceData\dns-fallback-state.json",
+    [string]$NssmPath = "$env:ProgramFiles\Beszel-Agent\nssm.exe"
 )
 
 $ErrorActionPreference = 'Stop'
@@ -33,7 +33,7 @@ function Invoke-BrokerConfigApply {
         'BeszelAgentManager.Background.v1',
         [System.IO.Pipes.PipeDirection]::InOut,
         [System.IO.Pipes.PipeOptions]::Asynchronous,
-        [System.Security.Principal.TokenImpersonationLevel]::Impersonation)
+        [System.Security.Principal.TokenImpersonationLevel]::Identification)
     try {
         $pipe.Connect(5000)
         $encoding = [System.Text.UTF8Encoding]::new($false)

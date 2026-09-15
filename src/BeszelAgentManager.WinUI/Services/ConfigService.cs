@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using BeszelAgentManager.Core;
 
 namespace BeszelAgentManager.WinUI.Services;
 
@@ -125,6 +126,10 @@ internal sealed class ConfigService
 
     private static AgentConfig Normalize(AgentConfig config)
     {
+        var extraFields = new Dictionary<string, JsonElement>(config.ExtraFields ?? [], StringComparer.OrdinalIgnoreCase);
+        extraFields.Remove("data_dir");
+        extraFields.Remove("key_file");
+        extraFields.Remove("token_file");
         return new AgentConfig
         {
             Key = config.Key ?? string.Empty,
@@ -133,8 +138,12 @@ internal sealed class ConfigService
             HubUrlIpFallback = config.HubUrlIpFallback ?? string.Empty,
             HubUrlIpFallbackEnabled = config.HubUrlIpFallbackEnabled,
             Listen = config.Listen,
-            EnvActiveNames = config.EnvActiveNames ?? [],
-            EnvCustom = config.EnvCustom ?? [],
+            EnvActiveNames = (config.EnvActiveNames ?? [])
+                .Where(static name => PrivilegedConfigurationValidator.IsSupportedOptionalVariable(name.Trim()))
+                .ToList(),
+            EnvCustom = (config.EnvCustom ?? [])
+                .Where(static item => !PrivilegedConfigurationValidator.IsDeniedCustomVariable(item.Name.Trim()))
+                .ToList(),
             AutoUpdateEnabled = config.AutoUpdateEnabled,
             UpdateIntervalHours = config.UpdateIntervalHours > 0 ? Math.Clamp(config.UpdateIntervalHours, 1, 720) : 24,
             AutoRestartEnabled = config.AutoRestartEnabled,
@@ -161,7 +170,7 @@ internal sealed class ConfigService
             LastAppliedFingerprint = config.LastAppliedFingerprint ?? string.Empty,
             LastAppliedAt = config.LastAppliedAt ?? string.Empty,
             LastAppliedManagerTasksFingerprint = config.LastAppliedManagerTasksFingerprint ?? string.Empty,
-            ExtraFields = config.ExtraFields ?? [],
+            ExtraFields = extraFields,
         };
     }
 

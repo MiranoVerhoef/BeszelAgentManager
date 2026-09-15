@@ -1130,6 +1130,7 @@ public sealed partial class MainWindow : Window
             3 => "The agent or configuration file could not be found.",
             4 => "The background service could not apply the Beszel Agent service configuration.",
             55 => "EXIT_ON_DNS_ERROR cannot be enabled together with WebSocket offline backoff. Choose one retry strategy.",
+            57 => "The configuration was rejected by the security policy. Remove unsupported or reserved environment variables and try again.",
             53 => "NSSM could not be found. Reinstall BeszelAgentManager or place nssm.exe next to the installed app.",
             _ => $"The background service returned exit code {exitCode}.",
         };
@@ -1252,6 +1253,7 @@ public sealed partial class MainWindow : Window
             24 => "The Beszel Agent archive checksum is missing or does not match. Installation was blocked.",
             23 => "One or more agent folders could not be removed. Stop the service and close any open agent logs or folders, then try again.",
             53 => "NSSM could not be found. Reinstall BeszelAgentManager or place nssm.exe next to the installed app.",
+            56 => "The background service blocked a version downgrade. Install older versions manually with administrator approval.",
             _ => $"The background service returned error code {exitCode}.",
         };
     }
@@ -1312,12 +1314,11 @@ public sealed partial class MainWindow : Window
                 }
             };
 
-            var force = new CheckBox { Content = "Force reinstall even when this version is already installed" };
             var versionSection = new StackPanel { Spacing = 10 };
-            versionSection.Children.Add(new TextBlock { Text = "Install, roll back, or reinstall", FontSize = 17, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+            versionSection.Children.Add(new TextBlock { Text = "Open an installer release", FontSize = 17, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
             versionSection.Children.Add(new TextBlock
             {
-                Text = "Choose a release to install. Installing an older release performs a rollback.",
+                Text = "Choose a release. Its official GitHub page opens so you can download and run the installer with administrator approval.",
                 Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
                 TextWrapping = TextWrapping.Wrap,
             });
@@ -1329,7 +1330,6 @@ public sealed partial class MainWindow : Window
                 Padding = new Thickness(10),
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             });
-            versionSection.Children.Add(force);
 
             var panel = new StackPanel { Width = 650 };
             panel.Children.Add(new Border
@@ -1347,7 +1347,7 @@ public sealed partial class MainWindow : Window
                 XamlRoot = NavView.XamlRoot,
                 Title = "Manage Manager Version",
                 Content = panel,
-                PrimaryButtonText = "Install selected version",
+                PrimaryButtonText = "Open selected release",
                 CloseButtonText = "Cancel",
                 DefaultButton = ContentDialogButton.Primary,
             };
@@ -1358,13 +1358,6 @@ public sealed partial class MainWindow : Window
             }
 
             var selected = releases[Math.Max(0, picker.SelectedIndex)];
-            if (!force.IsChecked.GetValueOrDefault()
-                && string.Equals(VersionComparer.Normalize(selected.Version), VersionComparer.Normalize(AppInfo.ReleaseTag), StringComparison.OrdinalIgnoreCase))
-            {
-                ShowGlobalStatus(InfoBarSeverity.Warning, "Force reinstall required", "Enable force reinstall to install the currently installed manager version.");
-                return;
-            }
-
             await InstallManagerReleaseAsync(selected);
         }
         catch (Exception ex)
@@ -1468,10 +1461,10 @@ public sealed partial class MainWindow : Window
             Title = $"Install BeszelAgentManager {release.Version}?",
             Content = new TextBlock
             {
-                Text = $"The background service will download and verify the official {AppInfo.RuntimeVariantDisplayName} installer, close this app, install silently, and reopen the manager.",
+                Text = $"V{release.Version} is not digitally signed. GitHub will open the official release page. Download the {AppInfo.InstallerAssetName} asset and run it manually; Windows will request administrator approval.",
                 TextWrapping = TextWrapping.Wrap,
             },
-            PrimaryButtonText = "Install",
+            PrimaryButtonText = "Open release page",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
         };
@@ -1480,65 +1473,9 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        var relaunchToken = Guid.NewGuid().ToString("N");
-        var relauncher = StartUpdateRelauncher(relaunchToken);
-        try
-        {
-            ShowGlobalStatus(InfoBarSeverity.Informational, "Preparing manager update", "Downloading and verifying the official installer.");
-            var exitCode = await App.Broker.InstallManagerVersionAsync(release.Tag, relaunchToken);
-            if (exitCode != 0)
-            {
-                throw new InvalidOperationException(exitCode switch
-                {
-                    30 => "The selected release or its required installer/checksum assets could not be found.",
-                    31 => "The downloaded manager installer failed SHA-256 verification.",
-                    _ => $"The background service could not stage the manager installer (code {exitCode}).",
-                });
-            }
-
-            App.Logger.Info($"Manager update {release.Tag} verified and scheduled");
-            _exitRequested = true;
-            Close();
-        }
-        catch
-        {
-            if (!relauncher.HasExited)
-            {
-                relauncher.Kill(entireProcessTree: true);
-            }
-            relauncher.Dispose();
-            throw;
-        }
-    }
-
-    private static Process StartUpdateRelauncher(string relaunchToken)
-    {
-        var scriptPath = Path.Combine(Path.GetTempPath(), $"BeszelAgentManager-relaunch-{Guid.NewGuid():N}.ps1");
-        var executable = (Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory, "BeszelAgentManager.exe")).Replace("'", "''", StringComparison.Ordinal);
-        var completionMarker = Path.Combine(
-            ManagerPaths.DataDir,
-            "manager-update",
-            $"relaunch-{relaunchToken}.complete").Replace("'", "''", StringComparison.Ordinal);
-        var script = $$"""
-            $deadline = (Get-Date).AddMinutes(15)
-            while (Get-Process -Id {{Environment.ProcessId}} -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 1 }
-            while ((Get-Date) -lt $deadline -and -not (Test-Path -LiteralPath '{{completionMarker}}')) {
-              Start-Sleep -Milliseconds 500
-            }
-            if (Test-Path -LiteralPath '{{completionMarker}}') {
-              Start-Sleep -Seconds 2
-              if (Test-Path -LiteralPath '{{executable}}') { Start-Process -FilePath '{{executable}}' }
-            }
-            Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
-            """;
-        File.WriteAllText(scriptPath, script);
-        return Process.Start(new ProcessStartInfo
-        {
-            FileName = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"),
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            ArgumentList = { "-NoProfile", "-NonInteractive", "-WindowStyle", "Hidden", "-File", scriptPath },
-        }) ?? throw new InvalidOperationException("Could not start the manager update relauncher.");
+        App.Logger.Info($"Opening manual manager update page for {release.Tag}");
+        OpenUrl($"https://github.com/{AppInfo.ManagerRepo}/releases/tag/{Uri.EscapeDataString(release.Tag)}");
+        ShowGlobalStatus(InfoBarSeverity.Informational, "Manual update required", $"Download and run {AppInfo.InstallerAssetName} from the opened release page.");
     }
 
     private void VersionBadgeButton_Click(object sender, RoutedEventArgs e)

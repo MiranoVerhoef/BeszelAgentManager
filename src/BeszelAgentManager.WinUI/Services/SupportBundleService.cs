@@ -20,6 +20,7 @@ internal sealed partial class SupportBundleService
         {
             await WriteRedactedConfigAsync(Path.Combine(tempDir, "config-redacted.json"), cancellationToken);
             await CopyRedactedAsync(ManagerPaths.ManagerLogPath, Path.Combine(tempDir, "manager.log"), cancellationToken);
+            await CopyRedactedAsync(ManagerPaths.BackgroundServiceLogPath, Path.Combine(tempDir, "background-service.log"), cancellationToken);
             await CopyRedactedAsync(ManagerPaths.AgentLogPath, Path.Combine(tempDir, "beszel-agent.log"), cancellationToken);
             await WriteCommandAsync(Path.Combine(tempDir, "service-diagnostics.txt"), "sc.exe", ["queryex", "Beszel Agent"], cancellationToken);
             await WriteCommandAsync(Path.Combine(tempDir, "service-config.txt"), "sc.exe", ["qc", "Beszel Agent"], cancellationToken);

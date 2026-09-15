@@ -7,8 +7,14 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $configPath = "$env:ProgramData\BeszelAgentManager\config.json"
-$nssmPath = "$env:ProgramData\BeszelAgentManager\nssm\nssm.exe"
-$agentLogPath = "$env:ProgramData\BeszelAgentManager\agent_logs"
+$nssmPath = @(
+    "$env:ProgramFiles\Beszel-Agent\nssm.exe",
+    "$env:ProgramData\BeszelAgentManager\nssm\nssm.exe"
+) | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+$agentLogPaths = @(
+    "$env:ProgramData\BeszelAgentManager.ServiceData\agent_logs",
+    "$env:ProgramData\BeszelAgentManager\agent_logs"
+)
 
 function Get-FileHashOrEmpty([string]$Path) {
     if (Test-Path -LiteralPath $Path -PathType Leaf) {
@@ -18,6 +24,9 @@ function Get-FileHashOrEmpty([string]$Path) {
 }
 
 function Invoke-NssmGet([string]$Parameter) {
+    if ([string]::IsNullOrWhiteSpace($nssmPath)) {
+        throw 'NSSM was not found in the protected or legacy manager location.'
+    }
     $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
     $startInfo.FileName = $nssmPath
     $startInfo.UseShellExecute = $false
@@ -55,11 +64,10 @@ $environmentDigestInput = [string]::Join("`n", $environmentEntries)
 $environmentDigest = [Convert]::ToHexString(
     [Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes($environmentDigestInput)))
 $service = Get-Service -Name 'Beszel Agent'
-$logs = if (Test-Path -LiteralPath $agentLogPath) {
-    @(Get-ChildItem -LiteralPath $agentLogPath -File | Select-Object -ExpandProperty Name | Sort-Object)
-} else {
-    @()
-}
+$logs = @($agentLogPaths | Where-Object { Test-Path -LiteralPath $_ } | ForEach-Object {
+    $directory = $_
+    Get-ChildItem -LiteralPath $directory -File | ForEach-Object { "${directory}::$($_.Name)" }
+} | Sort-Object)
 
 $snapshot = [ordered]@{
     CapturedAt = (Get-Date).ToString('o')

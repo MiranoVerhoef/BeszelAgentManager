@@ -20,14 +20,15 @@ sc.exe qc "Beszel Agent"
 The Beszel Agent service should use the quoted stable wrapper:
 
 ```text
-C:\ProgramData\BeszelAgentManager\nssm\nssm.exe
+C:\Program Files\Beszel-Agent\nssm.exe
 ```
 
 ## Logs
 
-- Manager and broker: `C:\ProgramData\BeszelAgentManager\manager.log`
-- Agent: `C:\ProgramData\BeszelAgentManager\agent_logs`
-- Last helper failure: `C:\ProgramData\BeszelAgentManager\helper-last-error.txt`
+- Manager UI: `C:\ProgramData\BeszelAgentManager\manager.log`
+- Background service: `C:\ProgramData\BeszelAgentManager.ServiceData\background-service.log`
+- Agent: `C:\ProgramData\BeszelAgentManager.ServiceData\agent_logs`
+- Last helper failure: `C:\ProgramData\BeszelAgentManager.ServiceData\helper-last-error.txt`
 
 Use **Extra → Create support bundle** to collect redacted diagnostics.
 
@@ -40,7 +41,7 @@ Use **Extra → Create support bundle** to collect redacted diagnostics.
 
 ## Failed manager update
 
-The service rejects missing checksums, checksum mismatches, invalid signatures, unexpected asset names, invalid versions, oversized downloads, and reparse points. Review `manager.log`, then retry from **Manage Manager Version…**.
+Use **Manage Manager Version…** to open the official release. Download the installer matching the installed edition, verify it against `SHA256SUMS.txt`, and approve the installer through Windows. The service refuses unsigned silent installation and version downgrades.
 
 ## Failed agent update
 
@@ -48,7 +49,7 @@ The service requires the official release's `beszel_<version>_checksums.txt` ass
 
 ## DNS fallback recovery
 
-The current mode and success streak are stored in `dns-fallback-state.json`. Restoring valid primary DNS should return to primary mode after five one-minute checks. Disabling fallback applies the primary immediately.
+The current mode and success streak are stored in the protected service-data `dns-fallback-state.json`. Restoring valid primary DNS should return to primary mode after five one-minute checks. Disabling fallback applies the primary immediately.
 
 The guarded VM validation is available at:
 
@@ -60,6 +61,6 @@ It backs up configuration and NSSM environment, performs the invalid-host test, 
 
 ## Reinstall and migration
 
-Reinstalling v4 repairs application files and the broker without replacing the running NSSM binary. Upgrading from v3.1.0 preserves configuration, token ciphertext, agent state, environment, and logs.
+Reinstalling v4 repairs application files and the broker while preserving an existing protected NSSM binary. Upgrading from v3.1.0 preserves configuration, token ciphertext, safe allowlisted agent settings, agent state, and logs. Legacy logs remain readable from their old directory without being copied by LocalSystem.
 
 Manager uninstall leaves the independently running agent, stable NSSM wrapper, and—when selected—historical agent logs. Use the manager’s separate **Uninstall agent** action to remove the agent.

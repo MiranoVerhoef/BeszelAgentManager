@@ -15,7 +15,7 @@ Version 4 is a native .NET 10 and WinUI 3 application. Routine administrative ac
 - Schedule automatic agent updates, periodic restarts, and daily log rotation in the background service.
 - View manager and agent logs, rotate logs, and create a redacted support bundle.
 - View or reset the agent service's fingerprint through the secured background broker.
-- Install, roll back, or force-reinstall manager releases through a checksum-verified installer flow.
+- Browse manager releases and open the exact official installer page for manual installation.
 - Optional manager-update notifications, prerelease checks, skipped versions, and tray status.
 - Optional Windows Defender exclusion with explicit consent.
 - Third-party antivirus allowlist instructions covering application, data, and process paths.
@@ -54,10 +54,16 @@ The agent is installed under:
 C:\Program Files\Beszel-Agent
 ```
 
-Manager configuration and logs are stored under:
+Manager configuration and UI logs are stored under:
 
 ```text
 C:\ProgramData\BeszelAgentManager
+```
+
+LocalSystem-owned logs, state, policy, and staging are stored read-only for the authorized user under:
+
+```text
+C:\ProgramData\BeszelAgentManager.ServiceData
 ```
 
 ## Privileged background service
@@ -66,11 +72,10 @@ C:\ProgramData\BeszelAgentManager
 
 The broker handles:
 
-- agent installation, updates, rollback, and uninstall;
+- agent installation, upgrades, and uninstall;
 - service start, stop, restart, NSSM configuration, and firewall changes;
 - log rotation and fingerprint viewing/reset;
 - optional Defender exclusion changes;
-- verified manager installer staging;
 - scheduled updates, restarts, DNS failover, and log rotation.
 
 **Edit service…** intentionally remains a UAC action because the NSSM editor must run interactively in the signed-in user’s desktop session.
@@ -90,24 +95,24 @@ Optional WebSocket offline backoff is configured under **Extra**. After 12 conse
 
 `EXIT_ON_DNS_ERROR` is an alternative agent-owned retry strategy and cannot be enabled together with manager WebSocket offline backoff.
 
-Last-run and next-due state is persisted in `background-runtime-state.json`. Enabling a schedule starts its interval from the enable time rather than running immediately.
+Last-run and next-due state is persisted in the protected service-data directory. Enabling a schedule starts its interval from the enable time rather than running immediately.
 
 ## Updates
 
-Agent assets are selected only from the official Beszel GitHub repository. Every install, update, rollback, and scheduled update downloads the release's versioned checksum file and verifies `beszel-agent_windows_amd64.zip` with SHA-256 before extraction. Missing or mismatched checksums are rejected.
+Agent assets are selected only from the official Beszel GitHub repository. Every install, upgrade, and scheduled update downloads the release's versioned checksum file and verifies `beszel-agent_windows_amd64.zip` with SHA-256 before extraction. Missing or mismatched checksums are rejected. Broker-driven downgrades are blocked.
 
-Manager updates accept only a selected release tag from the hardcoded project repository. Standard installations keep using the standard installer and Lite installations keep using the Lite installer. Lite appears beside the manager version in the UI; the standard edition remains plain `BeszelAgentManager`. The background service downloads the exact installer and `SHA256SUMS.txt` assets into a restricted staging directory, verifies the checksum, rejects invalid paths and reparse points, and launches Inno Setup silently after the UI exits. Authenticode is also required when a release is signed.
+Manager update checks use only the hardcoded project repository. Standard installations select the standard installer and Lite installations select the Lite installer. Because releases are currently unsigned, Update Manager opens the exact official GitHub release page and requires the user to run the installer with normal Windows administrator approval. Silent broker installation accepts only signed installers and never downgrades the installed manager.
 
 ## Migration from 3.1.0
 
 The v4 installer upgrades an existing 3.1.0 installation in place and preserves:
 
 - configuration and encrypted GitHub token;
-- agent environment and service state;
+- allowlisted agent environment and service state;
 - agent executable and historical logs;
 - update, restart, and startup preferences.
 
-The legacy autostart executable path is migrated to the v4 `app` directory while preserving hidden or visible startup behavior. The agent’s NSSM service path is migrated to a stable, quoted ProgramData path.
+The legacy autostart executable path is migrated to the v4 `app` directory while preserving hidden or visible startup behavior. The agent’s NSSM service path is migrated to the protected Beszel Agent directory under Program Files.
 
 Normal v4 upgrades use a generated SHA-256 manifest: unchanged application files are retained, changed or missing files are replaced, obsolete manifest-owned files are removed, and every installed file is verified before the background service restarts. A full application-directory refresh is reserved for v3 migration, an incomplete layout, or an explicit rollback.
 
