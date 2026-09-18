@@ -11,6 +11,7 @@ public sealed partial class EnvironmentPage : Page
     private static readonly IReadOnlyList<EnvDefinition> Definitions =
     [
         new("ALL_PROXY", "all_proxy", "SOCKS5 or SOCKS5H proxy for the outbound Hub WebSocket, for example socks5h://proxy.example.com:1080."),
+        new("CA_CERT_FILE", "ca_cert_file", "Absolute local path to a PEM certificate file used to trust a private or self-signed Hub certificate."),
         new("DOCKER_HOST", "docker_host", "Points the agent at a specific Docker daemon endpoint."),
         new("DOCKER_TIMEOUT", "docker_timeout", "Docker API timeout in Go duration format, for example 5s or 2100ms."),
         new("EXCLUDE_CONTAINERS", "exclude_containers", "Comma-separated container names or patterns to hide from monitoring."),
@@ -34,6 +35,7 @@ public sealed partial class EnvironmentPage : Page
         new("SMART_DEVICES_SEPARATOR", "smart_devices_separator", "Separator used between SMART_DEVICES entries. Defaults to a comma."),
         new("SMART_INTERVAL", "smart_interval", "How often S.M.A.R.T. data is refreshed, for example 1h."),
         new("SYSTEM_NAME", "system_name", "Overrides the system name reported by the agent."),
+        new("ZFS_INTERVAL", "zfs_interval", "How often ZFS pool statistics are refreshed, for example 15m."),
         new("SKIP_GPU", "skip_gpu", "Skips GPU collection when set."),
         new("GPU_COLLECTOR", "gpu_collector", "Ordered collectors such as nvtop, nvml, intel_sysfs, intel_gpu_top, amd_sysfs, or rocm-smi."),
         new("DISABLE_SSH", "disable_ssh", "Disables the agent SSH server when set to true."),

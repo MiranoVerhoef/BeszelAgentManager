@@ -59,6 +59,9 @@ internal sealed class BackgroundBrokerClient
 
     public Task<int> ResetAgentFingerprintAsync() => SendAsync("agent.fingerprint.reset");
 
+    public Task<int> ImportAgentFingerprintAsync(string fingerprint) =>
+        SendAsync("agent.fingerprint.import", new Dictionary<string, string> { ["fingerprint"] = fingerprint });
+
     public async Task<(bool Success, string Output)> ViewAgentFingerprintAsync(CancellationToken cancellationToken = default)
     {
         var response = await SendResponseAsync("agent.fingerprint.view", cancellationToken: cancellationToken);

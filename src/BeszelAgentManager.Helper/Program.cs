@@ -40,6 +40,7 @@ const int ServiceNotRunning = 1062;
 
 if (args.Length == 1 && string.Equals(args[0], "--auto-update-agent", StringComparison.OrdinalIgnoreCase))
 {
+    PrepareExistingServiceDataLogging();
     return await RunScheduledAgentUpdateAsync();
 }
 
@@ -55,6 +56,7 @@ if (args.Length == 1 && string.Equals(args[0], "--install-background-service", S
 
 if (args.Length is 1 or 2 && string.Equals(args[0], "--remove-background-service", StringComparison.OrdinalIgnoreCase))
 {
+    PrepareExistingServiceDataLogging();
     var removeAgentLogs = args.Length == 2
         && string.Equals(args[1], "--remove-agent-logs", StringComparison.OrdinalIgnoreCase);
     return await RemoveBackgroundServiceAsync(removeAgentLogs);
@@ -62,11 +64,13 @@ if (args.Length is 1 or 2 && string.Equals(args[0], "--remove-background-service
 
 if (args.Length == 1 && string.Equals(args[0], "--uninstall-background-service-only", StringComparison.OrdinalIgnoreCase))
 {
+    PrepareExistingServiceDataLogging();
     return await RemoveBackgroundServiceOnlyAsync();
 }
 
 if (args.Length == 2 && string.Equals(args[0], "--apply-hub-url", StringComparison.OrdinalIgnoreCase))
 {
+    PrepareExistingServiceDataLogging();
     return await ApplyHubUrlOverrideAsync(serviceName, args[1]);
 }
 
@@ -698,6 +702,7 @@ static async Task RunBrokerServerAsync(CancellationToken cancellationToken)
         $"Privileged broker listening for authorized account {DisplayAccountName(policy.AuthorizedSid)}.");
 
     var firstInstance = true;
+    var pipeNameUnavailableLogged = false;
     while (!cancellationToken.IsCancellationRequested)
     {
         var options = PipeOptions.Asynchronous;
@@ -705,15 +710,36 @@ static async Task RunBrokerServerAsync(CancellationToken cancellationToken)
         {
             options |= PipeOptions.FirstPipeInstance;
         }
-        var pipe = NamedPipeServerStreamAcl.Create(
-            brokerPipeName,
-            PipeDirection.InOut,
-            NamedPipeServerStream.MaxAllowedServerInstances,
-            PipeTransmissionMode.Byte,
-            options,
-            0,
-            0,
-            pipeSecurity);
+        NamedPipeServerStream pipe;
+        try
+        {
+            pipe = NamedPipeServerStreamAcl.Create(
+                brokerPipeName,
+                PipeDirection.InOut,
+                NamedPipeServerStream.MaxAllowedServerInstances,
+                PipeTransmissionMode.Byte,
+                options,
+                0,
+                0,
+                pipeSecurity);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            if (!pipeNameUnavailableLogged)
+            {
+                WriteBackgroundLog("WARN", $"Privileged broker pipe name is unavailable; retrying until it is released. {ex.Message}");
+                pipeNameUnavailableLogged = true;
+            }
+
+            await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+            continue;
+        }
+
+        if (pipeNameUnavailableLogged)
+        {
+            WriteBackgroundLog("INFO", "Privileged broker recovered after the pipe name became available.");
+            pipeNameUnavailableLogged = false;
+        }
         firstInstance = false;
         try
         {
@@ -902,6 +928,7 @@ static async Task<int> ExecuteBrokerActionAsync(BrokerRequest request)
         "agent.uninstall" when TryReadBoolean(arguments, "keepLogs", out var keepLogs) => await UninstallAgentAsync(!keepLogs),
         "agent.logs.rotate" => await RotateAgentLogsAsync(),
         "agent.fingerprint.reset" => await ResetAgentFingerprintAsync(),
+        "agent.fingerprint.import" when TryReadFingerprint(arguments, out var fingerprint) => await ImportAgentFingerprintAsync(fingerprint),
         "defender.set" when TryReadBoolean(arguments, "enabled", out var enabled) => await SetDefenderExclusionAsync(enabled),
         "manager.installVersion" when TryReadManagerTag(arguments, out var tag)
             && TryReadManagerVariant(arguments, out var variant)
@@ -1150,6 +1177,24 @@ static void WriteBackgroundLog(string level, string message)
     }
     catch
     {
+    }
+}
+
+static void PrepareExistingServiceDataLogging()
+{
+    try
+    {
+        var policy = LoadBrokerPolicy();
+        if (policy is not null
+            && policy.ProtocolVersion == brokerProtocolVersion
+            && IsValidAccountSid(policy.AuthorizedSid))
+        {
+            EnsureServiceDataSecurity(ServiceDataPath(), policy.AuthorizedSid, setProtectedOwner: false);
+        }
+    }
+    catch
+    {
+        ServiceDataRuntime.SecurityReady = false;
     }
 }
 
@@ -1845,6 +1890,12 @@ static bool TryReadVersion(Dictionary<string, string> arguments, out string vers
     return Regex.IsMatch(version, @"^v?\d+\.\d+\.\d+$", RegexOptions.CultureInvariant);
 }
 
+static bool TryReadFingerprint(Dictionary<string, string> arguments, out string fingerprint)
+{
+    fingerprint = arguments.GetValueOrDefault("fingerprint")?.Trim().ToLowerInvariant() ?? string.Empty;
+    return Regex.IsMatch(fingerprint, @"\A[0-9a-f]{48}\z", RegexOptions.CultureInvariant);
+}
+
 static bool TryReadManagerTag(Dictionary<string, string> arguments, out string tag)
 {
     tag = arguments.GetValueOrDefault("tag")?.Trim() ?? string.Empty;
@@ -2220,6 +2271,79 @@ static async Task<int> ResetAgentFingerprintAsync()
     }
 
     return result != 0 ? result : startResult;
+}
+
+static async Task<int> ImportAgentFingerprintAsync(string fingerprint)
+{
+    if (!Regex.IsMatch(fingerprint, @"\A[0-9a-fA-F]{48}\z", RegexOptions.CultureInvariant))
+    {
+        return 2;
+    }
+    if (!File.Exists(AgentPath()))
+    {
+        return 3;
+    }
+
+    var service = await QueryServiceAsync(serviceName);
+    if (!service.Exists)
+    {
+        return 3;
+    }
+
+    var wasRunning = !IsStoppedState(service.State);
+    if (wasRunning && await StopServiceAsync(serviceName) != 0)
+    {
+        return 4;
+    }
+
+    var result = 4;
+    try
+    {
+        var roamingData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        if (string.IsNullOrWhiteSpace(roamingData))
+        {
+            return 4;
+        }
+
+        var dataDirectory = Path.GetFullPath(Path.Combine(roamingData, "beszel-agent"));
+        var expectedRoot = Path.GetFullPath(roamingData).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        if (!dataDirectory.StartsWith(expectedRoot, StringComparison.OrdinalIgnoreCase))
+        {
+            return 4;
+        }
+        if (Directory.Exists(dataDirectory)
+            && File.GetAttributes(dataDirectory).HasFlag(FileAttributes.ReparsePoint))
+        {
+            return 4;
+        }
+
+        Directory.CreateDirectory(dataDirectory);
+        if (File.GetAttributes(dataDirectory).HasFlag(FileAttributes.ReparsePoint))
+        {
+            return 4;
+        }
+
+        var fingerprintPath = Path.Combine(dataDirectory, "fingerprint");
+        if (File.Exists(fingerprintPath)
+            && File.GetAttributes(fingerprintPath).HasFlag(FileAttributes.ReparsePoint))
+        {
+            return 4;
+        }
+
+        var temporaryPath = $"{fingerprintPath}.{Environment.ProcessId}.tmp";
+        await File.WriteAllTextAsync(temporaryPath, fingerprint.ToLowerInvariant());
+        File.Move(temporaryPath, fingerprintPath, overwrite: true);
+        result = 0;
+    }
+    finally
+    {
+        if (wasRunning && await StartServiceAsync(serviceName) != 0)
+        {
+            result = 4;
+        }
+    }
+
+    return result;
 }
 
 static async Task<int> ApplyManagerTasksAsync()
@@ -2947,6 +3071,7 @@ static string[] BuildAgentEnvironment(JsonElement config)
     var mapping = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
         ["ALL_PROXY"] = "all_proxy",
+        ["CA_CERT_FILE"] = "ca_cert_file",
         ["DOCKER_HOST"] = "docker_host",
         ["DOCKER_TIMEOUT"] = "docker_timeout",
         ["EXCLUDE_CONTAINERS"] = "exclude_containers",
@@ -2970,6 +3095,7 @@ static string[] BuildAgentEnvironment(JsonElement config)
         ["SMART_DEVICES_SEPARATOR"] = "smart_devices_separator",
         ["SMART_INTERVAL"] = "smart_interval",
         ["SYSTEM_NAME"] = "system_name",
+        ["ZFS_INTERVAL"] = "zfs_interval",
         ["SKIP_GPU"] = "skip_gpu",
         ["GPU_COLLECTOR"] = "gpu_collector",
         ["DISABLE_SSH"] = "disable_ssh",

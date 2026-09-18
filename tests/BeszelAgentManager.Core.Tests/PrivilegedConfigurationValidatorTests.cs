@@ -61,4 +61,66 @@ public sealed class PrivilegedConfigurationValidatorTests
 
         Assert.False(PrivilegedConfigurationValidator.Validate(config.RootElement).Success);
     }
+
+    [Fact]
+    public void RejectsControlCharactersInActiveMappedValue()
+    {
+        using var config = JsonDocument.Parse("""
+            {"env_active_names":["SYSTEM_NAME"],"system_name":"host\nPATH=C:\\evil"}
+            """);
+
+        var result = PrivilegedConfigurationValidator.Validate(config.RootElement);
+
+        Assert.False(result.Success);
+        Assert.Contains("system_name", result.Message);
+    }
+
+    [Theory]
+    [InlineData("ca.pem")]
+    [InlineData("\\\\server\\share\\ca.pem")]
+    [InlineData("C:ca.pem")]
+    public void RejectsNonLocalCaCertificatePath(string path)
+    {
+        using var config = JsonDocument.Parse(JsonSerializer.Serialize(new
+        {
+            env_active_names = new[] { "CA_CERT_FILE" },
+            ca_cert_file = path,
+        }));
+
+        Assert.False(PrivilegedConfigurationValidator.Validate(config.RootElement).Success);
+    }
+
+    [Fact]
+    public void AcceptsNewAgentVariables()
+    {
+        using var config = JsonDocument.Parse("""
+            {
+              "env_active_names":["CA_CERT_FILE","ZFS_INTERVAL"],
+              "ca_cert_file":"C:\\certificates\\hub-ca.pem",
+              "zfs_interval":"15m"
+            }
+            """);
+
+        Assert.True(PrivilegedConfigurationValidator.Validate(config.RootElement).Success);
+    }
+
+    [Fact]
+    public void AcceptsAbsoluteLocalCaCertificateCustomVariable()
+    {
+        using var config = JsonDocument.Parse("""
+            {"env_custom":[{"name":"CA_CERT_FILE","value":"D:\\Beszel\\hub-ca.pem"}]}
+            """);
+
+        Assert.True(PrivilegedConfigurationValidator.Validate(config.RootElement).Success);
+    }
+
+    [Fact]
+    public void RejectsRelativeCaCertificateCustomVariable()
+    {
+        using var config = JsonDocument.Parse("""
+            {"env_custom":[{"name":"CA_CERT_FILE","value":"hub-ca.pem"}]}
+            """);
+
+        Assert.False(PrivilegedConfigurationValidator.Validate(config.RootElement).Success);
+    }
 }

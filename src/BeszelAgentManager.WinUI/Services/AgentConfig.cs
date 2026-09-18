@@ -101,6 +101,9 @@ internal sealed class AgentConfig
     [JsonExtensionData]
     public Dictionary<string, JsonElement> ExtraFields { get; set; } = [];
 
+    [JsonIgnore]
+    public List<string> LegacyFileSettings { get; set; } = [];
+
     public string GetEnvironmentValue(string configKey)
     {
         if (ExtraFields.TryGetValue(configKey, out var value) && value.ValueKind == JsonValueKind.String)
@@ -131,6 +134,7 @@ internal sealed class AgentConfig
         };
 
         AddExtra("all_proxy");
+        AddExtra("ca_cert_file");
         AddExtra("docker_host");
         AddExtra("docker_timeout");
         AddExtra("exclude_containers");
@@ -152,6 +156,7 @@ internal sealed class AgentConfig
         AddExtra("smart_devices");
         AddExtra("smart_devices_separator");
         AddExtra("system_name");
+        AddExtra("zfs_interval");
         AddExtra("skip_gpu");
         AddExtra("gpu_collector");
         AddExtra("disable_ssh");

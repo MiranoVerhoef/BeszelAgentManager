@@ -16,6 +16,7 @@ public static class PrivilegedConfigurationValidator
     private static readonly HashSet<string> SupportedOptionalVariables = new(StringComparer.OrdinalIgnoreCase)
     {
         "ALL_PROXY",
+        "CA_CERT_FILE",
         "DISABLE_SSH",
         "DISK_USAGE_CACHE",
         "DOCKER_HOST",
@@ -44,6 +45,7 @@ public static class PrivilegedConfigurationValidator
         "SMART_INTERVAL",
         "SYS_SENSORS",
         "SYSTEM_NAME",
+        "ZFS_INTERVAL",
     };
 
     public static ConfigurationValidationResult Validate(JsonElement config)
@@ -97,6 +99,29 @@ public static class PrivilegedConfigurationValidator
                 {
                     return ConfigurationValidationResult.Failed($"{name} is not an allowlisted Beszel Agent variable.");
                 }
+
+                var configName = name.ToLowerInvariant();
+                if (config.TryGetProperty(configName, out var activeValue))
+                {
+                    var mappedValue = activeValue.ValueKind switch
+                    {
+                        JsonValueKind.String => activeValue.GetString(),
+                        JsonValueKind.Number => activeValue.ToString(),
+                        JsonValueKind.True => "1",
+                        JsonValueKind.False or JsonValueKind.Null => string.Empty,
+                        _ => null,
+                    };
+                    if (mappedValue is null || !IsSafeValue(mappedValue, 16 * 1024))
+                    {
+                        return ConfigurationValidationResult.Failed($"{configName} contains unsupported characters or is too long.");
+                    }
+                    if (string.Equals(name, "CA_CERT_FILE", StringComparison.OrdinalIgnoreCase)
+                        && !string.IsNullOrWhiteSpace(mappedValue)
+                        && !IsAbsoluteLocalPath(mappedValue))
+                    {
+                        return ConfigurationValidationResult.Failed("ca_cert_file must be an absolute path on a local drive.");
+                    }
+                }
             }
         }
 
@@ -130,6 +155,12 @@ public static class PrivilegedConfigurationValidator
                 {
                     return ConfigurationValidationResult.Failed($"Custom environment variable {name} is reserved or unsafe for a LocalSystem service.");
                 }
+                if (string.Equals(name, "CA_CERT_FILE", StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrWhiteSpace(value)
+                    && !IsAbsoluteLocalPath(value))
+                {
+                    return ConfigurationValidationResult.Failed("CA_CERT_FILE must be an absolute path on a local drive.");
+                }
             }
         }
 
@@ -149,6 +180,12 @@ public static class PrivilegedConfigurationValidator
         value is not null
         && value.Length <= maximumLength
         && value.IndexOfAny(['\0', '\r', '\n']) < 0;
+
+    private static bool IsAbsoluteLocalPath(string value) =>
+        Regex.IsMatch(value, @"\A[A-Za-z]:\\", RegexOptions.CultureInvariant)
+        && !value.StartsWith(@"\\", StringComparison.Ordinal)
+        && !value.StartsWith(@"\\?\", StringComparison.Ordinal)
+        && !value.StartsWith(@"\\.\", StringComparison.Ordinal);
 
     public static bool IsSupportedHubUrl(string value) =>
         Uri.TryCreate(value, UriKind.Absolute, out var uri)

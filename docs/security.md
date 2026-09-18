@@ -15,6 +15,7 @@
 - Server-side verification: connected client is impersonated and its SID must match policy
 - Client-side verification: pipe server PID, service image path, and LocalSystem service account must match
 - First server instance: `PipeOptions.FirstPipeInstance`
+- Pipe-name collision recovery: warning logged once, five-second retries, and automatic recovery when the name is released
 - Request size: bounded before JSON parsing
 - Mutations: serialized through one process-wide gate
 - Arguments: action-specific booleans, versions, and release tags are validated
@@ -34,7 +35,9 @@ Before privileged recursive cleanup, the service:
 5. rejects any nested reparse point;
 6. deletes only after validation and ACL hardening.
 
-Broker configuration is size-bounded and validated before use. Only explicit Beszel Agent variables are accepted. File-backed `TOKEN_FILE`, `KEY_FILE`, and `DATA_DIR` settings and arbitrary process-environment names are rejected for the LocalSystem agent.
+Broker configuration is size-bounded and validated before use. Only explicit Beszel Agent variables are accepted, and every applied value rejects NUL, CR, and LF characters. `CA_CERT_FILE` is restricted to an absolute local-drive path. File-backed `TOKEN_FILE`, `KEY_FILE`, and `DATA_DIR` settings and arbitrary process-environment names are rejected for the LocalSystem agent.
+
+During upgrade, the unelevated manager reads any legacy `TOKEN_FILE`, `KEY_FILE`, and `DATA_DIR\fingerprint` values that the signed-in user can already access. Credentials are promoted into the typed configuration and a 48-character fingerprint is passed through a dedicated validated broker action. The elevated installer never reads caller-selected legacy files. Failed migrations remain visible in the UI and are not silently discarded.
 
 ## Update verification
 

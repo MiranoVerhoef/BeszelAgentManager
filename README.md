@@ -7,7 +7,7 @@ Version 4 is a native .NET 10 and WinUI 3 application. Routine administrative ac
 ## Features
 
 - Install, update, roll back, force-reinstall, or uninstall the Beszel agent.
-- Configure `KEY`, `TOKEN`, `HUB_URL`, `LISTEN`, and current Beszel v0.18.8 advanced environment variables.
+- Configure `KEY`, `TOKEN`, `HUB_URL`, `LISTEN`, and current Beszel v0.19 advanced environment variables, including `CA_CERT_FILE` and `ZFS_INTERVAL`.
 - Start, stop, and restart the agent from the UI or tray.
 - Apply NSSM service and Windows Firewall settings.
 - Automatically switch to an IP fallback when primary Hub DNS fails, then restore the primary after five successful checks.
@@ -113,6 +113,8 @@ The v4 installer upgrades an existing 3.1.0 installation in place and preserves:
 - update, restart, and startup preferences.
 
 The legacy autostart executable path is migrated to the v4 `app` directory while preserving hidden or visible startup behavior. The agent’s NSSM service path is migrated to the protected Beszel Agent directory under Program Files.
+
+Legacy `TOKEN_FILE`, `KEY_FILE`, and custom `DATA_DIR` values are no longer passed to the LocalSystem agent. On first launch after upgrade, the manager reads those files as the signed-in user, promotes readable credentials into typed settings, imports a valid legacy fingerprint through the secured broker, and shows a warning if any item needs manual attention.
 
 Normal v4 upgrades use a generated SHA-256 manifest: unchanged application files are retained, changed or missing files are replaced, obsolete manifest-owned files are removed, and every installed file is verified before the background service restarts. A full application-directory refresh is reserved for v3 migration, an incomplete layout, or an explicit rollback.
 
