@@ -81,6 +81,24 @@ public static class PrivilegedConfigurationValidator
             }
         }
 
+        if (config.TryGetProperty("listen", out var listen)
+            && listen.ValueKind != JsonValueKind.Null)
+        {
+            var validPort = listen.ValueKind switch
+            {
+                JsonValueKind.Number => listen.TryGetInt32(out var numericPort)
+                    && numericPort is >= 1 and <= 65535,
+                JsonValueKind.String => IsSafeValue(listen.GetString(), 16 * 1024)
+                    && int.TryParse(listen.GetString(), out var textPort)
+                    && textPort is >= 1 and <= 65535,
+                _ => false,
+            };
+            if (!validPort)
+            {
+                return ConfigurationValidationResult.Failed("listen must be a port number from 1 through 65535 without control characters.");
+            }
+        }
+
         if (config.TryGetProperty("env_active_names", out var activeNames))
         {
             if (activeNames.ValueKind != JsonValueKind.Array || activeNames.GetArrayLength() > 64)

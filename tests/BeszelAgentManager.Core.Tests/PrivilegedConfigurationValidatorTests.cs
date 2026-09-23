@@ -75,6 +75,41 @@ public sealed class PrivilegedConfigurationValidatorTests
         Assert.Contains("system_name", result.Message);
     }
 
+    [Fact]
+    public void RejectsControlCharactersInListenBeforeServiceMutation()
+    {
+        using var config = JsonDocument.Parse("""
+            {"listen":"45876\nPATH=C:\\evil"}
+            """);
+
+        var result = PrivilegedConfigurationValidator.Validate(config.RootElement);
+
+        Assert.False(result.Success);
+        Assert.Contains("listen", result.Message);
+    }
+
+    [Theory]
+    [InlineData("{\"listen\":45876}")]
+    [InlineData("{\"listen\":\"45876\"}")]
+    [InlineData("{\"listen\":null}")]
+    public void AcceptsSupportedListenRepresentations(string json)
+    {
+        using var config = JsonDocument.Parse(json);
+
+        Assert.True(PrivilegedConfigurationValidator.Validate(config.RootElement).Success);
+    }
+
+    [Theory]
+    [InlineData("{\"listen\":0}")]
+    [InlineData("{\"listen\":65536}")]
+    [InlineData("{\"listen\":\"not-a-port\"}")]
+    public void RejectsInvalidListenValues(string json)
+    {
+        using var config = JsonDocument.Parse(json);
+
+        Assert.False(PrivilegedConfigurationValidator.Validate(config.RootElement).Success);
+    }
+
     [Theory]
     [InlineData("ca.pem")]
     [InlineData("\\\\server\\share\\ca.pem")]
