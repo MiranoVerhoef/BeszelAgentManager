@@ -12,7 +12,7 @@ internal sealed class SystemStatusService
         cancellationToken.ThrowIfCancellationRequested();
         try
         {
-            var brokerStatus = await App.Broker.GetAgentStatusAsync();
+            var brokerStatus = await App.Broker.GetAgentStatusAsync(cancellationToken);
             var status = new AgentStatus(
                 brokerStatus.ServiceExists,
                 brokerStatus.ServiceName,

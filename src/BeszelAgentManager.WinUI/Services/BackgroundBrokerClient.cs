@@ -1,8 +1,10 @@
 using System.Diagnostics;
 using System.IO.Pipes;
+using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Win32;
 using BeszelAgentManager.Core;
 
 namespace BeszelAgentManager.WinUI.Services;
@@ -10,6 +12,7 @@ namespace BeszelAgentManager.WinUI.Services;
 internal sealed class BackgroundBrokerClient
 {
     private const string PipeName = "BeszelAgentManager.Background.v1";
+    private const string BackgroundServiceName = "BeszelAgentManager Background";
     private const int ProtocolVersion = 1;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
@@ -56,6 +59,9 @@ internal sealed class BackgroundBrokerClient
 
     public Task<int> ResetAgentFingerprintAsync() => SendAsync("agent.fingerprint.reset");
 
+    public Task<int> ImportAgentFingerprintAsync(string fingerprint) =>
+        SendAsync("agent.fingerprint.import", new Dictionary<string, string> { ["fingerprint"] = fingerprint });
+
     public async Task<(bool Success, string Output)> ViewAgentFingerprintAsync(CancellationToken cancellationToken = default)
     {
         var response = await SendResponseAsync("agent.fingerprint.view", cancellationToken: cancellationToken);
@@ -81,9 +87,9 @@ internal sealed class BackgroundBrokerClient
             : null;
     }
 
-    public async Task<BrokerAgentStatus> GetAgentStatusAsync()
+    public async Task<BrokerAgentStatus> GetAgentStatusAsync(CancellationToken cancellationToken = default)
     {
-        var response = await SendResponseAsync("agent.status");
+        var response = await SendResponseAsync("agent.status", cancellationToken: cancellationToken);
         if (!response.Success)
         {
             throw new InvalidOperationException(response.Message);
@@ -104,7 +110,13 @@ internal sealed class BackgroundBrokerClient
         Dictionary<string, string>? arguments = null,
         CancellationToken cancellationToken = default)
     {
-        await _gate.WaitAsync(cancellationToken);
+        using var operationTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        operationTimeout.CancelAfter(IsStatusRequest(action)
+            ? TimeSpan.FromSeconds(15)
+            : TimeSpan.FromMinutes(15));
+        var operationToken = operationTimeout.Token;
+
+        await _gate.WaitAsync(operationToken);
         try
         {
             var request = new BrokerRequest
@@ -120,12 +132,16 @@ internal sealed class BackgroundBrokerClient
                 PipeName,
                 PipeDirection.InOut,
                 PipeOptions.Asynchronous,
-                TokenImpersonationLevel.Impersonation);
-            using var connectTimeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                TokenImpersonationLevel.Identification);
+            using var connectTimeout = CancellationTokenSource.CreateLinkedTokenSource(operationToken);
             connectTimeout.CancelAfter(TimeSpan.FromSeconds(5));
             try
             {
                 await pipe.ConnectAsync(connectTimeout.Token);
+                if (!IsLocalSystemBroker(pipe))
+                {
+                    throw new UnauthorizedAccessException("The background broker identity could not be verified.");
+                }
             }
             catch (Exception ex) when (ex is TimeoutException or OperationCanceledException or IOException)
             {
@@ -138,8 +154,16 @@ internal sealed class BackgroundBrokerClient
             await using var writer = new StreamWriter(pipe, utf8, leaveOpen: true) { AutoFlush = true };
             using var reader = new StreamReader(pipe, utf8, leaveOpen: true);
             await writer.WriteLineAsync(JsonSerializer.Serialize(request, AppJsonContext.Default.BrokerRequest));
-            var payload = await reader.ReadLineAsync(cancellationToken)
-                ?? throw new InvalidOperationException("The background service closed the broker connection without a response.");
+            string payload;
+            try
+            {
+                payload = await reader.ReadLineAsync(operationToken)
+                    ?? throw new InvalidOperationException("The background service closed the broker connection without a response.");
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new InvalidOperationException("The background service did not respond in time.");
+            }
             var response = JsonSerializer.Deserialize(payload, AppJsonContext.Default.BrokerResponse)
                 ?? throw new InvalidOperationException("The background service returned an invalid broker response.");
             if (!string.Equals(response.RequestId, request.RequestId, StringComparison.Ordinal))
@@ -155,6 +179,9 @@ internal sealed class BackgroundBrokerClient
         }
     }
 
+    private static bool IsStatusRequest(string action) =>
+        action is "agent.status" or "agent.version";
+
     private static bool IsAgentVersion(string value)
     {
         var parts = value.Split('.', 4, StringSplitOptions.RemoveEmptyEntries);
@@ -164,6 +191,31 @@ internal sealed class BackgroundBrokerClient
             && int.TryParse(parts[2].Split('-', '+')[0], out _);
     }
 
+    private static bool IsLocalSystemBroker(NamedPipeClientStream pipe)
+    {
+        if (!NativeMethods.GetNamedPipeServerProcessId(pipe.SafePipeHandle.DangerousGetHandle(), out var processId))
+        {
+            return false;
+        }
+
+        using var serviceKey = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\{BackgroundServiceName}");
+        var account = serviceKey?.GetValue("ObjectName")?.ToString();
+        var imagePath = Environment.ExpandEnvironmentVariables(serviceKey?.GetValue("ImagePath")?.ToString() ?? string.Empty).Trim();
+        var expectedImagePath = $"\"{Path.GetFullPath(GetHelperPath())}\" --background-service";
+        if ((!string.Equals(account, "LocalSystem", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(account, @"NT AUTHORITY\SYSTEM", StringComparison.OrdinalIgnoreCase))
+            || !string.Equals(imagePath, expectedImagePath, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var serviceProcessId = NativeMethods.GetServiceProcessId(BackgroundServiceName);
+        return serviceProcessId != 0
+            && serviceProcessId == processId
+            && NativeMethods.GetNamedPipeServerProcessId(pipe.SafePipeHandle.DangerousGetHandle(), out var confirmedProcessId)
+            && confirmedProcessId == processId;
+    }
+
     private static string GetHelperPath()
     {
         var helperPath = Path.Combine(AppContext.BaseDirectory, "helper", "BeszelAgentManager.Helper.exe");
@@ -171,4 +223,78 @@ internal sealed class BackgroundBrokerClient
             ? helperPath
             : throw new FileNotFoundException("The privileged helper is not present in the application folder.", helperPath);
     }
+}
+
+file static class NativeMethods
+{
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ServiceStatusProcess
+    {
+        internal uint ServiceType;
+        internal uint CurrentState;
+        internal uint ControlsAccepted;
+        internal uint Win32ExitCode;
+        internal uint ServiceSpecificExitCode;
+        internal uint CheckPoint;
+        internal uint WaitHint;
+        internal uint ProcessId;
+        internal uint ServiceFlags;
+    }
+
+    internal static uint GetServiceProcessId(string serviceName)
+    {
+        const uint scManagerConnect = 0x0001;
+        const uint serviceQueryStatus = 0x0004;
+        var manager = OpenSCManager(null, null, scManagerConnect);
+        if (manager == IntPtr.Zero)
+        {
+            return 0;
+        }
+        try
+        {
+            var service = OpenService(manager, serviceName, serviceQueryStatus);
+            if (service == IntPtr.Zero)
+            {
+                return 0;
+            }
+            try
+            {
+                var size = (uint)Marshal.SizeOf<ServiceStatusProcess>();
+                return QueryServiceStatusEx(service, 0, out var status, size, out _)
+                    ? status.ProcessId
+                    : 0;
+            }
+            finally
+            {
+                CloseServiceHandle(service);
+            }
+        }
+        finally
+        {
+            CloseServiceHandle(manager);
+        }
+    }
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    internal static extern bool GetNamedPipeServerProcessId(IntPtr pipe, out uint serverProcessId);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr OpenSCManager(string? machineName, string? databaseName, uint desiredAccess);
+
+    [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr OpenService(IntPtr manager, string serviceName, uint desiredAccess);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool QueryServiceStatusEx(
+        IntPtr service,
+        int infoLevel,
+        out ServiceStatusProcess buffer,
+        uint bufferSize,
+        out uint bytesNeeded);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseServiceHandle(IntPtr serviceHandle);
 }

@@ -9,6 +9,10 @@ internal sealed class LogReaderService
         {
             files.Add(new LogFileItem("Current (manager.log)", ManagerPaths.ManagerLogPath));
         }
+        if (File.Exists(ManagerPaths.BackgroundServiceLogPath))
+        {
+            files.Add(new LogFileItem("Background service", ManagerPaths.BackgroundServiceLogPath));
+        }
 
         var archiveDirs = new[]
         {
@@ -39,8 +43,12 @@ internal sealed class LogReaderService
             files.Add(new LogFileItem("Current (beszel-agent.log)", ManagerPaths.AgentLogPath));
         }
 
-        var agentLogDir = Path.GetDirectoryName(ManagerPaths.AgentLogPath) ?? string.Empty;
-        if (Directory.Exists(agentLogDir))
+        var agentLogDirs = new[]
+        {
+            Path.GetDirectoryName(ManagerPaths.AgentLogPath) ?? string.Empty,
+            Path.Combine(ManagerPaths.DataDir, "agent_logs"),
+        }.Distinct(StringComparer.OrdinalIgnoreCase);
+        foreach (var agentLogDir in agentLogDirs.Where(Directory.Exists))
         {
             files.AddRange(Directory
                 .EnumerateFiles(agentLogDir, "*.txt")

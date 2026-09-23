@@ -15,7 +15,7 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <TextBlock Text="Agent log folder: C:\ProgramData\BeszelAgentManager\agent_logs" />
+        <TextBlock Text="Agent log folder: C:\ProgramData\BeszelAgentManager.ServiceData\agent_logs" />
 
         <Grid Grid.Row="1" ColumnSpacing="8">
             <Grid.ColumnDefinitions>
@@ -39,7 +39,7 @@
             <Button Grid.Column="5" x:Name="RotateNowButton" Content="Rotate now" Click="RotateNowButton_Click" />
         </Grid>
 
-        <TextBlock Grid.Row="2" x:Name="LogPathText" Text="Current capture file: C:\ProgramData\BeszelAgentManager\agent_logs\beszel-agent.log" />
+        <TextBlock Grid.Row="2" x:Name="LogPathText" Text="Current capture file: C:\ProgramData\BeszelAgentManager.ServiceData\agent_logs\beszel-agent.log" />
 
         <ScrollViewer
             x:Name="LogScrollViewer"

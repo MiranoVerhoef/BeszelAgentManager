@@ -47,14 +47,34 @@ public partial class App : Application
         }
 
         _mainInstance.Activated += MainInstance_Activated;
-        var config = await new ConfigService().LoadAsync();
+        var configService = new ConfigService();
+        var config = await configService.LoadAsync();
         Logger.SetDebugEnabled(config.DebugLogging);
         Logger.Info($"Starting WinUI manager v{AppInfo.ReleaseTag}");
+        var legacyMigration = await configService.MigrateLegacyFileSettingsAsync(config);
+        if (legacyMigration.Migrated.Count > 0)
+        {
+            Logger.Info($"Migrated legacy agent file settings: {string.Join(", ", legacyMigration.Migrated)}.");
+        }
         if (new AutostartService().MigrateLegacyInstallTarget())
         {
             Logger.Info("Migrated the v3 manager autostart target to the v4 application path.");
         }
         MainWindow = new MainWindow();
+        if (legacyMigration.Failed.Count > 0)
+        {
+            MainWindow.ShowActionStatus(
+                InfoBarSeverity.Warning,
+                "Legacy agent settings need attention",
+                $"Could not migrate {string.Join(", ", legacyMigration.Failed)}. Enter KEY/TOKEN values directly and preserve or re-register the fingerprint before applying settings.");
+        }
+        else if (legacyMigration.Migrated.Count > 0)
+        {
+            MainWindow.ShowActionStatus(
+                InfoBarSeverity.Success,
+                "Legacy agent settings migrated",
+                $"Migrated {string.Join(", ", legacyMigration.Migrated)} without exposing their file paths to the privileged service.");
+        }
         var startHidden = Environment.GetCommandLineArgs().Any(static argument =>
             string.Equals(argument, "--hidden", StringComparison.OrdinalIgnoreCase));
         if (!startHidden)

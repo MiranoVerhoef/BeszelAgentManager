@@ -11,7 +11,7 @@ public sealed partial class EnvironmentPage : Page
     private static readonly IReadOnlyList<EnvDefinition> Definitions =
     [
         new("ALL_PROXY", "all_proxy", "SOCKS5 or SOCKS5H proxy for the outbound Hub WebSocket, for example socks5h://proxy.example.com:1080."),
-        new("DATA_DIR", "data_dir", "Changes where the Beszel Agent stores its own runtime data."),
+        new("CA_CERT_FILE", "ca_cert_file", "Absolute local path to a PEM certificate file used to trust a private or self-signed Hub certificate."),
         new("DOCKER_HOST", "docker_host", "Points the agent at a specific Docker daemon endpoint."),
         new("DOCKER_TIMEOUT", "docker_timeout", "Docker API timeout in Go duration format, for example 5s or 2100ms."),
         new("EXCLUDE_CONTAINERS", "exclude_containers", "Comma-separated container names or patterns to hide from monitoring."),
@@ -21,8 +21,6 @@ public sealed partial class EnvironmentPage : Page
         new("EXIT_ON_DNS_ERROR", "exit_on_dns_error", "Exits the agent when Hub DNS lookup fails. Do not combine with manager WebSocket offline backoff."),
         new("INTEL_GPU_DEVICE", "intel_gpu_device", "Device path used by intel_gpu_top for Intel GPU metrics."),
         new("NVML", "nvml", "Enables NVIDIA NVML GPU monitoring when set to true."),
-        new("KEY_FILE", "key_file", "Reads the agent key from a file instead of the Key field."),
-        new("TOKEN_FILE", "token_file", "Reads the token from a file instead of the Token field."),
         new("LHM", "lhm", "Enables LibreHardwareMonitor sensor collection on Windows."),
         new("LOG_LEVEL", "log_level", "Controls agent verbosity, for example info, warn, or debug."),
         new("MEM_CALC", "mem_calc", "Changes how memory usage is calculated."),
@@ -37,6 +35,7 @@ public sealed partial class EnvironmentPage : Page
         new("SMART_DEVICES_SEPARATOR", "smart_devices_separator", "Separator used between SMART_DEVICES entries. Defaults to a comma."),
         new("SMART_INTERVAL", "smart_interval", "How often S.M.A.R.T. data is refreshed, for example 1h."),
         new("SYSTEM_NAME", "system_name", "Overrides the system name reported by the agent."),
+        new("ZFS_INTERVAL", "zfs_interval", "How often ZFS pool statistics are refreshed, for example 15m."),
         new("SKIP_GPU", "skip_gpu", "Skips GPU collection when set."),
         new("GPU_COLLECTOR", "gpu_collector", "Ordered collectors such as nvtop, nvml, intel_sysfs, intel_gpu_top, amd_sysfs, or rocm-smi."),
         new("DISABLE_SSH", "disable_ssh", "Disables the agent SSH server when set to true."),

@@ -1,0 +1,219 @@
+using System.Text.Json;
+using System.Text.RegularExpressions;
+
+namespace BeszelAgentManager.Core;
+
+public static class PrivilegedConfigurationValidator
+{
+    private static readonly HashSet<string> ReservedAgentVariables = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "KEY",
+        "TOKEN",
+        "HUB_URL",
+        "LISTEN",
+    };
+
+    private static readonly HashSet<string> SupportedOptionalVariables = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ALL_PROXY",
+        "CA_CERT_FILE",
+        "DISABLE_SSH",
+        "DISK_USAGE_CACHE",
+        "DOCKER_HOST",
+        "DOCKER_TIMEOUT",
+        "EXCLUDE_CONTAINERS",
+        "EXCLUDE_SMART",
+        "EXIT_ON_DNS_ERROR",
+        "EXTRA_FILESYSTEMS",
+        "FILESYSTEM",
+        "GPU_COLLECTOR",
+        "INTEL_GPU_DEVICE",
+        "LHM",
+        "LOG_LEVEL",
+        "MEM_CALC",
+        "NETWORK",
+        "NICS",
+        "NVML",
+        "PRIMARY_SENSOR",
+        "SENSORS",
+        "SENSORS_TIMEOUT",
+        "SERVICE_PATTERNS",
+        "SKIP_GPU",
+        "SKIP_SYSTEMD",
+        "SMART_DEVICES",
+        "SMART_DEVICES_SEPARATOR",
+        "SMART_INTERVAL",
+        "SYS_SENSORS",
+        "SYSTEM_NAME",
+        "ZFS_INTERVAL",
+    };
+
+    public static ConfigurationValidationResult Validate(JsonElement config)
+    {
+        if (config.ValueKind != JsonValueKind.Object)
+        {
+            return ConfigurationValidationResult.Failed("Configuration must be a JSON object.");
+        }
+
+        foreach (var propertyName in new[] { "key", "token", "hub_url", "hub_url_ip_fallback" })
+        {
+            if (config.TryGetProperty(propertyName, out var value)
+                && value.ValueKind is not (JsonValueKind.String or JsonValueKind.Null))
+            {
+                return ConfigurationValidationResult.Failed($"{propertyName} must be text.");
+            }
+
+            if (value.ValueKind == JsonValueKind.String
+                && !IsSafeValue(value.GetString(), 16 * 1024))
+            {
+                return ConfigurationValidationResult.Failed($"{propertyName} contains unsupported characters or is too long.");
+            }
+        }
+
+        foreach (var propertyName in new[] { "hub_url", "hub_url_ip_fallback" })
+        {
+            var value = config.TryGetProperty(propertyName, out var property) && property.ValueKind == JsonValueKind.String
+                ? property.GetString()?.Trim()
+                : null;
+            if (!string.IsNullOrEmpty(value) && !IsSupportedHubUrl(value))
+            {
+                return ConfigurationValidationResult.Failed($"{propertyName} must be an absolute HTTP, HTTPS, WS, or WSS URL.");
+            }
+        }
+
+        if (config.TryGetProperty("listen", out var listen)
+            && listen.ValueKind != JsonValueKind.Null)
+        {
+            var validPort = listen.ValueKind switch
+            {
+                JsonValueKind.Number => listen.TryGetInt32(out var numericPort)
+                    && numericPort is >= 1 and <= 65535,
+                JsonValueKind.String => IsSafeValue(listen.GetString(), 16 * 1024)
+                    && int.TryParse(listen.GetString(), out var textPort)
+                    && textPort is >= 1 and <= 65535,
+                _ => false,
+            };
+            if (!validPort)
+            {
+                return ConfigurationValidationResult.Failed("listen must be a port number from 1 through 65535 without control characters.");
+            }
+        }
+
+        if (config.TryGetProperty("env_active_names", out var activeNames))
+        {
+            if (activeNames.ValueKind != JsonValueKind.Array || activeNames.GetArrayLength() > 64)
+            {
+                return ConfigurationValidationResult.Failed("env_active_names must contain at most 64 entries.");
+            }
+
+            foreach (var item in activeNames.EnumerateArray())
+            {
+                var name = item.ValueKind == JsonValueKind.String ? item.GetString()?.Trim() : null;
+                if (string.IsNullOrWhiteSpace(name) || name.Length > 128)
+                {
+                    return ConfigurationValidationResult.Failed("An active environment-variable name is invalid.");
+                }
+                if (!IsSupportedOptionalVariable(name))
+                {
+                    return ConfigurationValidationResult.Failed($"{name} is not an allowlisted Beszel Agent variable.");
+                }
+
+                var configName = name.ToLowerInvariant();
+                if (config.TryGetProperty(configName, out var activeValue))
+                {
+                    var mappedValue = activeValue.ValueKind switch
+                    {
+                        JsonValueKind.String => activeValue.GetString(),
+                        JsonValueKind.Number => activeValue.ToString(),
+                        JsonValueKind.True => "1",
+                        JsonValueKind.False or JsonValueKind.Null => string.Empty,
+                        _ => null,
+                    };
+                    if (mappedValue is null || !IsSafeValue(mappedValue, 16 * 1024))
+                    {
+                        return ConfigurationValidationResult.Failed($"{configName} contains unsupported characters or is too long.");
+                    }
+                    if (string.Equals(name, "CA_CERT_FILE", StringComparison.OrdinalIgnoreCase)
+                        && !string.IsNullOrWhiteSpace(mappedValue)
+                        && !IsAbsoluteLocalPath(mappedValue))
+                    {
+                        return ConfigurationValidationResult.Failed("ca_cert_file must be an absolute path on a local drive.");
+                    }
+                }
+            }
+        }
+
+        if (config.TryGetProperty("env_custom", out var customVariables))
+        {
+            if (customVariables.ValueKind != JsonValueKind.Array || customVariables.GetArrayLength() > 64)
+            {
+                return ConfigurationValidationResult.Failed("env_custom must contain at most 64 entries.");
+            }
+
+            foreach (var item in customVariables.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object
+                    || !item.TryGetProperty("name", out var nameProperty)
+                    || !item.TryGetProperty("value", out var valueProperty)
+                    || nameProperty.ValueKind != JsonValueKind.String)
+                {
+                    return ConfigurationValidationResult.Failed("A custom environment-variable entry is invalid.");
+                }
+
+                var name = nameProperty.GetString()?.Trim() ?? string.Empty;
+                var value = valueProperty.ValueKind == JsonValueKind.String
+                    ? valueProperty.GetString()
+                    : valueProperty.ToString();
+                if (!Regex.IsMatch(name, @"\A[A-Za-z_][A-Za-z0-9_]{0,127}\z", RegexOptions.CultureInvariant)
+                    || !IsSafeValue(value, 16 * 1024))
+                {
+                    return ConfigurationValidationResult.Failed("A custom environment variable contains an invalid name or value.");
+                }
+                if (IsDeniedCustomVariable(name))
+                {
+                    return ConfigurationValidationResult.Failed($"Custom environment variable {name} is reserved or unsafe for a LocalSystem service.");
+                }
+                if (string.Equals(name, "CA_CERT_FILE", StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrWhiteSpace(value)
+                    && !IsAbsoluteLocalPath(value))
+                {
+                    return ConfigurationValidationResult.Failed("CA_CERT_FILE must be an absolute path on a local drive.");
+                }
+            }
+        }
+
+        return ConfigurationValidationResult.Successful;
+    }
+
+    public static bool IsSupportedOptionalVariable(string name) =>
+        SupportedOptionalVariables.Contains(name);
+
+    public static bool IsUnsafeAppliedVariable(string name) =>
+        !ReservedAgentVariables.Contains(name) && !SupportedOptionalVariables.Contains(name);
+
+    public static bool IsDeniedCustomVariable(string name) =>
+        ReservedAgentVariables.Contains(name) || !SupportedOptionalVariables.Contains(name);
+
+    private static bool IsSafeValue(string? value, int maximumLength) =>
+        value is not null
+        && value.Length <= maximumLength
+        && value.IndexOfAny(['\0', '\r', '\n']) < 0;
+
+    private static bool IsAbsoluteLocalPath(string value) =>
+        Regex.IsMatch(value, @"\A[A-Za-z]:\\", RegexOptions.CultureInvariant)
+        && !value.StartsWith(@"\\", StringComparison.Ordinal)
+        && !value.StartsWith(@"\\?\", StringComparison.Ordinal)
+        && !value.StartsWith(@"\\.\", StringComparison.Ordinal);
+
+    public static bool IsSupportedHubUrl(string value) =>
+        Uri.TryCreate(value, UriKind.Absolute, out var uri)
+        && !string.IsNullOrWhiteSpace(uri.Host)
+        && uri.Scheme is "http" or "https" or "ws" or "wss"
+        && string.IsNullOrEmpty(uri.UserInfo);
+}
+
+public readonly record struct ConfigurationValidationResult(bool Success, string Message)
+{
+    public static ConfigurationValidationResult Successful => new(true, string.Empty);
+    public static ConfigurationValidationResult Failed(string message) => new(false, message);
+}

@@ -14,7 +14,7 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <TextBlock Margin="2,0" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Environment variables are always enabled." />
+        <TextBlock Margin="2,0" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Only the supported variables listed under Add environment can be configured. Added variables are always enabled." />
 
         <Border Grid.Row="1" Padding="10,8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="6">
             <Grid ColumnSpacing="8">

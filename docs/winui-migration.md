@@ -8,8 +8,8 @@ BeszelAgentManager 4.0.0 replaces the Python/Tk/Nuitka application with .NET 10,
 - secured no-UAC broker for routine privileged actions
 - background-service scheduling
 - DNS failover persistence and automated tests
-- manager version selection, rollback, force reinstall, and notifications
-- checksum-verified silent manager installation
+- manager version selection, manual rollback/reinstall, and notifications
+- official-release selection with manual administrator-approved installation while builds remain unsigned
 - optional Defender exclusion and third-party antivirus instructions
 - v3.1.0 configuration, token, logs, service, NSSM, and autostart migration
 - clean install, v4 replacement, uninstall, crash recovery, and reboot validation

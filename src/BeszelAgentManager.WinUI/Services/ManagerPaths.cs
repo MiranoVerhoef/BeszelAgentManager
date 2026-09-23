@@ -9,9 +9,11 @@ internal static class ManagerPaths
 
     public static string InstallDir => Path.Combine(ProgramFiles, AppInfo.ProjectName);
     public static string DataDir => Path.Combine(ProgramData, AppInfo.ProjectName);
+    public static string ServiceDataDir => Path.Combine(ProgramData, $"{AppInfo.ProjectName}.ServiceData");
     public static string ConfigPath => Path.Combine(DataDir, "config.json");
-    public static string HelperLastErrorPath => Path.Combine(DataDir, "helper-last-error.txt");
-    public static string DnsFallbackStatePath => Path.Combine(DataDir, "dns-fallback-state.json");
+    public static string HelperLastErrorPath => Path.Combine(ServiceDataDir, "helper-last-error.txt");
+    public static string DnsFallbackStatePath => Path.Combine(ServiceDataDir, "dns-fallback-state.json");
+    public static string BackgroundServiceLogPath => Path.Combine(ServiceDataDir, "background-service.log");
     public static string ManagerLogPath => WritableManagerLogPath.Value;
     public static string ManagerLogDir => Path.GetDirectoryName(ManagerLogPath) ?? DataDir;
     public static string ManagerLogArchiveDir => Path.Combine(ManagerLogDir, "manager_logs");
@@ -22,7 +24,7 @@ internal static class ManagerPaths
 
     public static string AgentDir => Path.Combine(ProgramFiles, "Beszel-Agent");
     public static string AgentExePath => Path.Combine(AgentDir, "beszel-agent.exe");
-    public static string AgentLogPath => Path.Combine(DataDir, "agent_logs", "beszel-agent.log");
+    public static string AgentLogPath => Path.Combine(ServiceDataDir, "agent_logs", "beszel-agent.log");
 
     private static string ResolveWritableManagerLogPath()
     {

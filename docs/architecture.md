@@ -29,19 +29,21 @@ Mutating operations share one semaphore, preventing tray, UI, and schedule actio
 
 ### Installer
 
-Inno Setup installs the self-contained WinUI application and helper, places NSSM in a stable ProgramData directory, configures the background service, and preserves v3.1.0 data during upgrade.
+Inno Setup installs the WinUI application and helper, places NSSM beside the agent in a protected Program Files directory, configures the background service, and preserves v3.1.0 data during upgrade.
 
 ## State
 
 | File | Purpose |
 | --- | --- |
-| `config.json` | User configuration and typed v3-compatible settings |
-| `broker-policy.json` | Protocol version and authorized installer-user SID |
-| `background-runtime-state.json` | Schedule last-run and next-due timestamps |
-| `dns-fallback-state.json` | Active DNS mode and recovery streak |
-| `manager.log` | UI and background-service operational log |
+| `BeszelAgentManager\config.json` | User configuration and typed v3-compatible settings |
+| `BeszelAgentManager\manager.log` | Unelevated UI operational log |
+| `BeszelAgentManager.ServiceData\broker-policy.json` | Protocol version and authorized installer-user SID |
+| `BeszelAgentManager.ServiceData\background-runtime-state.json` | Schedule last-run and next-due timestamps |
+| `BeszelAgentManager.ServiceData\dns-fallback-state.json` | Active DNS mode and recovery streak |
+| `BeszelAgentManager.ServiceData\background-service.log` | LocalSystem background-service log |
+| `BeszelAgentManager.ServiceData\agent_logs` | LocalSystem agent output and archives |
 
-All paths are under `C:\ProgramData\BeszelAgentManager` unless otherwise stated.
+The table paths are relative to `C:\ProgramData`. The UI account may modify only the `BeszelAgentManager` configuration area; service data is read-only to that account.
 
 ## Broker protocol
 
@@ -61,7 +63,7 @@ Responses contain:
 - stable numeric error code;
 - user-safe message.
 
-The endpoint is local-only. Pipe ACLs permit SYSTEM and the authorized installer account, deny network clients, and the service impersonates each connection to verify the caller SID again.
+The endpoint is local-only. Pipe ACLs permit SYSTEM and the authorized installer account and deny network clients. The service impersonates each connection to verify the caller SID again. The client also verifies that the pipe server PID belongs to the configured LocalSystem background service before sending a request.
 
 ## DNS fallback states
 

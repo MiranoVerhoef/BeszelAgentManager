@@ -357,9 +357,7 @@ public sealed partial class ExtraPage : Page
             ("Data, logs, and update staging",
             [
                 Path.Combine(programData, "BeszelAgentManager"),
-                Path.Combine(programData, "BeszelAgentManager", "agent_logs"),
-                Path.Combine(programData, "BeszelAgentManager", "tmp_agent"),
-                Path.Combine(programData, "BeszelAgentManager", "manager-update"),
+                Path.Combine(programData, "BeszelAgentManager.ServiceData"),
             ]),
             ("Executables and processes",
             [

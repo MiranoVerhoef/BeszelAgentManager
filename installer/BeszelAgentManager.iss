@@ -52,7 +52,7 @@ VersionInfoVersion={#AppVersion}.0
 Source: "{#DistDir}\INSTALL-MANIFEST.sha256"; Flags: dontcopy
 Source: "{#DistDir}\*"; DestDir: "{app}\app"; Excludes: "nssm.exe,*.pdb,INSTALL-MANIFEST.sha256"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: ShouldInstallApplicationFile
 Source: "{#DistDir}\INSTALL-MANIFEST.sha256"; DestDir: "{app}\app"; Flags: ignoreversion
-Source: "{#DistDir}\nssm.exe"; DestDir: "{commonappdata}\{#AppName}\nssm"; Flags: ignoreversion onlyifdoesntexist
+Source: "{#DistDir}\nssm.exe"; DestDir: "{autopf}\Beszel-Agent"; Flags: ignoreversion onlyifdoesntexist
 
 [Dirs]
 Name: "{commonappdata}\{#AppName}"
@@ -80,7 +80,6 @@ Name: "{group}\{#AppName}"; Filename: "{app}\app\BeszelAgentManager.exe"; Workin
 Name: "{commondesktop}\{#AppName}"; Filename: "{app}\app\BeszelAgentManager.exe"; WorkingDir: "{app}\app"; Tasks: desktopicon
 
 [Run]
-Filename: "{cmd}"; Parameters: "/C if exist ""{autopf}\Beszel-Agent"" icacls ""{autopf}\Beszel-Agent"" /inheritance:e /grant *S-1-5-32-545:(OI)(CI)RX *S-1-5-11:(OI)(CI)RX *S-1-5-32-544:(OI)(CI)F *S-1-5-18:(OI)(CI)F /T /C"; Flags: runhidden waituntilterminated
 Filename: "{app}\app\BeszelAgentManager.exe"; Description: "Open BeszelAgentManager"; WorkingDir: "{app}\app"; Flags: nowait postinstall skipifsilent unchecked runasoriginaluser
 
 [Code]

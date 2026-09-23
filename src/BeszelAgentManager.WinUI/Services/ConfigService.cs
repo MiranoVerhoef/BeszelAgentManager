@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using BeszelAgentManager.Core;
 
 namespace BeszelAgentManager.WinUI.Services;
 
@@ -95,6 +96,122 @@ internal sealed class ConfigService
         }
     }
 
+    public async Task<LegacyFileSettingsMigrationResult> MigrateLegacyFileSettingsAsync(
+        AgentConfig config,
+        CancellationToken cancellationToken = default)
+    {
+        if (config.LegacyFileSettings.Count == 0)
+        {
+            return LegacyFileSettingsMigrationResult.Empty;
+        }
+
+        var migrated = new List<string>();
+        var failed = new List<string>();
+        var configurationChanged = false;
+
+        await MigrateTextFileAsync("TOKEN_FILE", "token_file", value => config.Token = value, () => config.Token);
+        await MigrateTextFileAsync("KEY_FILE", "key_file", value => config.Key = value, () => config.Key);
+
+        var dataDirectory = GetLegacyPath(config, "data_dir");
+        if (!string.IsNullOrWhiteSpace(dataDirectory))
+        {
+            try
+            {
+                var fingerprint = await ReadSmallTextFileAsync(
+                    Path.Combine(RequireAbsoluteLocalPath(dataDirectory), "fingerprint"),
+                    1024,
+                    cancellationToken);
+                if (!System.Text.RegularExpressions.Regex.IsMatch(
+                        fingerprint,
+                        @"\A[0-9a-fA-F]{48}\z",
+                        System.Text.RegularExpressions.RegexOptions.CultureInvariant))
+                {
+                    throw new InvalidDataException("The legacy fingerprint file is invalid.");
+                }
+
+                var importResult = await App.Broker.ImportAgentFingerprintAsync(fingerprint);
+                if (importResult != 0)
+                {
+                    throw new InvalidOperationException($"The background service returned code {importResult}.");
+                }
+
+                config.ExtraFields.Remove("data_dir");
+                migrated.Add("DATA_DIR");
+                configurationChanged = true;
+            }
+            catch (Exception ex)
+            {
+                App.Logger.Warning($"Legacy DATA_DIR migration needs attention: {ex.Message}");
+                failed.Add("DATA_DIR");
+            }
+        }
+
+        config.LegacyFileSettings = failed.ToList();
+        if (configurationChanged)
+        {
+            await SaveAsync(config, cancellationToken);
+            if (File.Exists(ManagerPaths.AgentExePath))
+            {
+                var applyResult = await App.Broker.ApplyConfigurationAsync();
+                if (applyResult == 0)
+                {
+                    config.LastAppliedFingerprint = config.ApplyFingerprint();
+                    config.LastAppliedAt = DateTimeOffset.Now.ToString("O");
+                    await SaveAsync(config, cancellationToken);
+                }
+                else
+                {
+                    failed.Add("APPLY_SETTINGS");
+                }
+            }
+        }
+
+        return new LegacyFileSettingsMigrationResult(migrated, failed);
+
+        async Task MigrateTextFileAsync(
+            string displayName,
+            string configName,
+            Action<string> assign,
+            Func<string> currentValue)
+        {
+            var path = GetLegacyPath(config, configName);
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(currentValue()))
+            {
+                config.ExtraFields.Remove(configName);
+                migrated.Add(displayName);
+                configurationChanged = true;
+                return;
+            }
+
+            try
+            {
+                var value = await ReadSmallTextFileAsync(
+                    RequireAbsoluteLocalPath(path),
+                    16 * 1024,
+                    cancellationToken);
+                if (value.Length == 0 || value.IndexOfAny(['\0', '\r', '\n']) >= 0)
+                {
+                    throw new InvalidDataException("The legacy credential file contains an unsupported value.");
+                }
+
+                assign(value);
+                config.ExtraFields.Remove(configName);
+                migrated.Add(displayName);
+                configurationChanged = true;
+            }
+            catch (Exception ex)
+            {
+                App.Logger.Warning($"Legacy {displayName} migration needs attention: {ex.Message}");
+                failed.Add(displayName);
+            }
+        }
+    }
+
     public IReadOnlyList<(string Name, string ConfigKey, string Value)> GetActiveEnvironmentRows(AgentConfig config)
     {
         var rows = new List<(string Name, string ConfigKey, string Value)>();
@@ -125,6 +242,16 @@ internal sealed class ConfigService
 
     private static AgentConfig Normalize(AgentConfig config)
     {
+        var extraFields = new Dictionary<string, JsonElement>(config.ExtraFields ?? [], StringComparer.OrdinalIgnoreCase);
+        var legacyFileSettings = new[]
+            {
+                (ConfigName: "data_dir", DisplayName: "DATA_DIR"),
+                (ConfigName: "key_file", DisplayName: "KEY_FILE"),
+                (ConfigName: "token_file", DisplayName: "TOKEN_FILE"),
+            }
+            .Where(item => !string.IsNullOrWhiteSpace(GetLegacyPath(extraFields, item.ConfigName)))
+            .Select(static item => item.DisplayName)
+            .ToList();
         return new AgentConfig
         {
             Key = config.Key ?? string.Empty,
@@ -133,8 +260,12 @@ internal sealed class ConfigService
             HubUrlIpFallback = config.HubUrlIpFallback ?? string.Empty,
             HubUrlIpFallbackEnabled = config.HubUrlIpFallbackEnabled,
             Listen = config.Listen,
-            EnvActiveNames = config.EnvActiveNames ?? [],
-            EnvCustom = config.EnvCustom ?? [],
+            EnvActiveNames = (config.EnvActiveNames ?? [])
+                .Where(static name => PrivilegedConfigurationValidator.IsSupportedOptionalVariable(name.Trim()))
+                .ToList(),
+            EnvCustom = (config.EnvCustom ?? [])
+                .Where(static item => !PrivilegedConfigurationValidator.IsDeniedCustomVariable(item.Name.Trim()))
+                .ToList(),
             AutoUpdateEnabled = config.AutoUpdateEnabled,
             UpdateIntervalHours = config.UpdateIntervalHours > 0 ? Math.Clamp(config.UpdateIntervalHours, 1, 720) : 24,
             AutoRestartEnabled = config.AutoRestartEnabled,
@@ -161,8 +292,44 @@ internal sealed class ConfigService
             LastAppliedFingerprint = config.LastAppliedFingerprint ?? string.Empty,
             LastAppliedAt = config.LastAppliedAt ?? string.Empty,
             LastAppliedManagerTasksFingerprint = config.LastAppliedManagerTasksFingerprint ?? string.Empty,
-            ExtraFields = config.ExtraFields ?? [],
+            ExtraFields = extraFields,
+            LegacyFileSettings = legacyFileSettings,
         };
+    }
+
+    private static string GetLegacyPath(AgentConfig config, string name) =>
+        GetLegacyPath(config.ExtraFields, name);
+
+    private static string GetLegacyPath(IReadOnlyDictionary<string, JsonElement> fields, string name) =>
+        fields.TryGetValue(name, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString()?.Trim() ?? string.Empty
+            : string.Empty;
+
+    private static string RequireAbsoluteLocalPath(string path)
+    {
+        if (!Path.IsPathFullyQualified(path)
+            || path.StartsWith(@"\\", StringComparison.Ordinal)
+            || path.StartsWith(@"\\?\", StringComparison.Ordinal)
+            || path.StartsWith(@"\\.\", StringComparison.Ordinal))
+        {
+            throw new InvalidDataException("The legacy path is not an absolute path on a local drive.");
+        }
+
+        return Path.GetFullPath(path);
+    }
+
+    private static async Task<string> ReadSmallTextFileAsync(
+        string path,
+        int maximumBytes,
+        CancellationToken cancellationToken)
+    {
+        var file = new FileInfo(path);
+        if (!file.Exists || file.Length > maximumBytes || file.Attributes.HasFlag(FileAttributes.ReparsePoint))
+        {
+            throw new IOException("The legacy file is missing, too large, or a reparse point.");
+        }
+
+        return (await File.ReadAllTextAsync(path, cancellationToken)).Trim();
     }
 
     private static async Task<AgentConfig> ApplyLocalOverridesAsync(AgentConfig config, CancellationToken cancellationToken)
@@ -188,4 +355,11 @@ internal sealed class ConfigService
     {
         return envName.Trim().ToLowerInvariant();
     }
+}
+
+internal sealed record LegacyFileSettingsMigrationResult(
+    IReadOnlyList<string> Migrated,
+    IReadOnlyList<string> Failed)
+{
+    public static LegacyFileSettingsMigrationResult Empty { get; } = new([], []);
 }
