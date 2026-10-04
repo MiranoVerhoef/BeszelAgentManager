@@ -3073,6 +3073,7 @@ static string[] BuildAgentEnvironment(JsonElement config)
         ["ALL_PROXY"] = "all_proxy",
         ["CA_CERT_FILE"] = "ca_cert_file",
         ["DOCKER_HOST"] = "docker_host",
+        ["DOCKER_IMAGE_CHECK"] = "docker_image_check",
         ["DOCKER_TIMEOUT"] = "docker_timeout",
         ["EXCLUDE_CONTAINERS"] = "exclude_containers",
         ["EXCLUDE_SMART"] = "exclude_smart",
@@ -3081,6 +3082,7 @@ static string[] BuildAgentEnvironment(JsonElement config)
         ["EXIT_ON_DNS_ERROR"] = "exit_on_dns_error",
         ["INTEL_GPU_DEVICE"] = "intel_gpu_device",
         ["NVML"] = "nvml",
+        ["PACKAGE_UPDATES_INTERVAL"] = "package_updates_interval",
         ["LHM"] = "lhm",
         ["LOG_LEVEL"] = "log_level",
         ["MEM_CALC"] = "mem_calc",
@@ -3101,6 +3103,8 @@ static string[] BuildAgentEnvironment(JsonElement config)
         ["DISABLE_SSH"] = "disable_ssh",
         ["DISK_USAGE_CACHE"] = "disk_usage_cache",
         ["SKIP_SYSTEMD"] = "skip_systemd",
+        ["SKIP_SYSTEMD_LOGS"] = "skip_systemd_logs",
+        ["SKIP_WIFI"] = "skip_wifi",
     };
 
     if (config.TryGetProperty("env_active_names", out var activeNames)
@@ -3131,7 +3135,11 @@ static string[] BuildAgentEnvironment(JsonElement config)
             }
 
             var name = nameProperty.GetString()?.Trim();
-            var value = valueProperty.ToString().Trim();
+            if (!AgentEnvironmentValue.TryFormat(valueProperty, out var formattedValue))
+            {
+                continue;
+            }
+            var value = formattedValue.Trim();
             if (!string.IsNullOrWhiteSpace(name)
                 && !string.IsNullOrWhiteSpace(value)
                 && Regex.IsMatch(name, @"^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant)
@@ -3153,13 +3161,11 @@ static string[] BuildAgentEnvironment(JsonElement config)
             return;
         }
 
-        var value = property.ValueKind switch
+        if (!AgentEnvironmentValue.TryFormat(property, out var formattedValue))
         {
-            JsonValueKind.String => property.GetString()?.Trim(),
-            JsonValueKind.Number => property.ToString(),
-            JsonValueKind.True => "1",
-            _ => null,
-        };
+            return;
+        }
+        var value = formattedValue.Trim();
         if (!string.IsNullOrWhiteSpace(value))
         {
             values[environmentName] = value;
@@ -3806,7 +3812,7 @@ static AgentRelease? ParseAgentRelease(JsonElement release)
 static HttpClient CreateGitHubClient()
 {
     var http = new HttpClient();
-    http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("BeszelAgentManager", "4.0.10"));
+    http.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("BeszelAgentManager", "4.21.0"));
     return http;
 }
 

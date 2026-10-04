@@ -12,5 +12,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\src\BeszelAgentManager.Core\BeszelAgentManager.Core.csproj" />
+    <Compile Include="..\..\src\BeszelAgentManager.WinUI\Services\AgentConfig.cs" Link="AgentConfig.cs" />
   </ItemGroup>
 </Project>

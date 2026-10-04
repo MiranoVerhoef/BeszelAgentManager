@@ -13,6 +13,7 @@ public sealed partial class EnvironmentPage : Page
         new("ALL_PROXY", "all_proxy", "SOCKS5 or SOCKS5H proxy for the outbound Hub WebSocket, for example socks5h://proxy.example.com:1080."),
         new("CA_CERT_FILE", "ca_cert_file", "Absolute local path to a PEM certificate file used to trust a private or self-signed Hub certificate."),
         new("DOCKER_HOST", "docker_host", "Points the agent at a specific Docker daemon endpoint."),
+        new("DOCKER_IMAGE_CHECK", "docker_image_check", "Set to false to disable container image update checks and registry requests. Defaults to true."),
         new("DOCKER_TIMEOUT", "docker_timeout", "Docker API timeout in Go duration format, for example 5s or 2100ms."),
         new("EXCLUDE_CONTAINERS", "exclude_containers", "Comma-separated container names or patterns to hide from monitoring."),
         new("EXCLUDE_SMART", "exclude_smart", "Disk names or patterns to skip during S.M.A.R.T. collection."),
@@ -26,6 +27,7 @@ public sealed partial class EnvironmentPage : Page
         new("MEM_CALC", "mem_calc", "Changes how memory usage is calculated."),
         new("NETWORK", "network", "Changes network collection mode."),
         new("NICS", "nics", "Limits network monitoring to specific interface names."),
+        new("PACKAGE_UPDATES_INTERVAL", "package_updates_interval", "Linux only. Package update check interval, for example 1h (default). Set to 0 to disable checks."),
         new("SENSORS", "sensors", "Selects which hardware sensors the agent reads."),
         new("SENSORS_TIMEOUT", "sensors_timeout", "Maximum time allowed for sensor collection, for example 5s."),
         new("PRIMARY_SENSOR", "primary_sensor", "Selects the primary temperature sensor shown in Beszel."),
@@ -35,12 +37,14 @@ public sealed partial class EnvironmentPage : Page
         new("SMART_DEVICES_SEPARATOR", "smart_devices_separator", "Separator used between SMART_DEVICES entries. Defaults to a comma."),
         new("SMART_INTERVAL", "smart_interval", "How often S.M.A.R.T. data is refreshed, for example 1h."),
         new("SYSTEM_NAME", "system_name", "Overrides the system name reported by the agent."),
-        new("ZFS_INTERVAL", "zfs_interval", "How often ZFS pool statistics are refreshed, for example 15m."),
-        new("SKIP_GPU", "skip_gpu", "Skips GPU collection when set."),
+        new("ZFS_INTERVAL", "zfs_interval", "ZFS pool detail refresh interval (scrub, vdevs, datasets), for example 1h. Not applicable to Windows."),
+        new("SKIP_GPU", "skip_gpu", "Set to true to skip GPU metrics, including GPU temperature and fan sensors."),
         new("GPU_COLLECTOR", "gpu_collector", "Ordered collectors such as nvtop, nvml, intel_sysfs, intel_gpu_top, amd_sysfs, or rocm-smi."),
         new("DISABLE_SSH", "disable_ssh", "Disables the agent SSH server when set to true."),
         new("DISK_USAGE_CACHE", "disk_usage_cache", "Caches disk usage results for a duration, for example 10m."),
-        new("SKIP_SYSTEMD", "skip_systemd", "Skips systemd integration when set to 1."),
+        new("SKIP_SYSTEMD", "skip_systemd", "Linux only. Set to true to skip systemd integration."),
+        new("SKIP_SYSTEMD_LOGS", "skip_systemd_logs", "Linux only. Set to true to disable systemd journal log collection."),
+        new("SKIP_WIFI", "skip_wifi", "Set to true to skip Wi-Fi signal collection. Windows uses the native WLAN API."),
     ];
 
     private readonly ConfigService _configService = new();

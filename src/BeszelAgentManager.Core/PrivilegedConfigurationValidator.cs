@@ -20,6 +20,7 @@ public static class PrivilegedConfigurationValidator
         "DISABLE_SSH",
         "DISK_USAGE_CACHE",
         "DOCKER_HOST",
+        "DOCKER_IMAGE_CHECK",
         "DOCKER_TIMEOUT",
         "EXCLUDE_CONTAINERS",
         "EXCLUDE_SMART",
@@ -34,12 +35,15 @@ public static class PrivilegedConfigurationValidator
         "NETWORK",
         "NICS",
         "NVML",
+        "PACKAGE_UPDATES_INTERVAL",
         "PRIMARY_SENSOR",
         "SENSORS",
         "SENSORS_TIMEOUT",
         "SERVICE_PATTERNS",
         "SKIP_GPU",
         "SKIP_SYSTEMD",
+        "SKIP_SYSTEMD_LOGS",
+        "SKIP_WIFI",
         "SMART_DEVICES",
         "SMART_DEVICES_SEPARATOR",
         "SMART_INTERVAL",
@@ -121,15 +125,8 @@ public static class PrivilegedConfigurationValidator
                 var configName = name.ToLowerInvariant();
                 if (config.TryGetProperty(configName, out var activeValue))
                 {
-                    var mappedValue = activeValue.ValueKind switch
-                    {
-                        JsonValueKind.String => activeValue.GetString(),
-                        JsonValueKind.Number => activeValue.ToString(),
-                        JsonValueKind.True => "1",
-                        JsonValueKind.False or JsonValueKind.Null => string.Empty,
-                        _ => null,
-                    };
-                    if (mappedValue is null || !IsSafeValue(mappedValue, 16 * 1024))
+                    if (!AgentEnvironmentValue.TryFormat(activeValue, out var mappedValue)
+                        || !IsSafeValue(mappedValue, 16 * 1024))
                     {
                         return ConfigurationValidationResult.Failed($"{configName} contains unsupported characters or is too long.");
                     }
@@ -161,10 +158,8 @@ public static class PrivilegedConfigurationValidator
                 }
 
                 var name = nameProperty.GetString()?.Trim() ?? string.Empty;
-                var value = valueProperty.ValueKind == JsonValueKind.String
-                    ? valueProperty.GetString()
-                    : valueProperty.ToString();
-                if (!Regex.IsMatch(name, @"\A[A-Za-z_][A-Za-z0-9_]{0,127}\z", RegexOptions.CultureInvariant)
+                if (!AgentEnvironmentValue.TryFormat(valueProperty, out var value)
+                    || !Regex.IsMatch(name, @"\A[A-Za-z_][A-Za-z0-9_]{0,127}\z", RegexOptions.CultureInvariant)
                     || !IsSafeValue(value, 16 * 1024))
                 {
                     return ConfigurationValidationResult.Failed("A custom environment variable contains an invalid name or value.");

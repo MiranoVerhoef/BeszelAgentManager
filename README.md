@@ -7,7 +7,8 @@ Version 4 is a native .NET 10 and WinUI 3 application. Routine administrative ac
 ## Features
 
 - Install, update, roll back, force-reinstall, or uninstall the Beszel agent.
-- Configure `KEY`, `TOKEN`, `HUB_URL`, `LISTEN`, and current Beszel v0.19 advanced environment variables, including `CA_CERT_FILE` and `ZFS_INTERVAL`.
+- Configure `KEY`, `TOKEN`, `HUB_URL`, `LISTEN`, and Beszel v0.21 advanced environment variables, including `SKIP_WIFI`, `DOCKER_IMAGE_CHECK`, `SKIP_SYSTEMD_LOGS`, and `PACKAGE_UPDATES_INTERVAL`.
+- Windows Wi-Fi signal collection uses the agent's native WLAN support. Linux-only environment options are labelled in the picker; boolean overrides use literal `true` and `false`.
 - Start, stop, and restart the agent from the UI or tray.
 - Apply NSSM service and Windows Firewall settings.
 - Automatically switch to an IP fallback when primary Hub DNS fails, then restore the primary after five successful checks.
@@ -165,6 +166,7 @@ Remove-Item 'build\winui-dist\BeszelAgentManager.Helper.*' -Force -ErrorAction S
 Place the official x64 NSSM 2.24 binary at `build\winui-dist\nssm.exe`, then compile the installer:
 
 ```powershell
+.\installer\New-FileManifest.ps1 -DistDir 'build\winui-dist'
 & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" `
   installer\BeszelAgentManager.iss `
   /DAppVersion="$((Get-Content VERSION -Raw).Trim())" `
@@ -177,7 +179,7 @@ Output:
 installer-dist\BeszelAgentManagerSetup.exe
 ```
 
-For Lite, rebuild with `--self-contained false`, stage the output in `build\winui-lite-dist`, and compile with `/DLiteInstaller`. This produces:
+For Lite, start with clean WinUI and Helper output directories before rebuilding with `--self-contained false`. Stage the output and NSSM in `build\winui-lite-dist`, generate its manifest with `New-FileManifest.ps1`, and compile with `/DLiteInstaller`. This avoids including stale Bundled runtime files and produces:
 
 ```text
 installer-dist\BeszelAgentManagerSetup-Lite.exe
