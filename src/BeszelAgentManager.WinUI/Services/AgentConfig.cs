@@ -106,9 +106,10 @@ internal sealed class AgentConfig
 
     public string GetEnvironmentValue(string configKey)
     {
-        if (ExtraFields.TryGetValue(configKey, out var value) && value.ValueKind == JsonValueKind.String)
+        if (ExtraFields.TryGetValue(configKey, out var value)
+            && AgentEnvironmentValue.TryFormat(value, out var text))
         {
-            return value.GetString() ?? string.Empty;
+            return text;
         }
 
         return string.Empty;
@@ -136,6 +137,7 @@ internal sealed class AgentConfig
         AddExtra("all_proxy");
         AddExtra("ca_cert_file");
         AddExtra("docker_host");
+        AddExtra("docker_image_check");
         AddExtra("docker_timeout");
         AddExtra("exclude_containers");
         AddExtra("exclude_smart");
@@ -161,9 +163,12 @@ internal sealed class AgentConfig
         AddExtra("gpu_collector");
         AddExtra("disable_ssh");
         AddExtra("nvml");
+        AddExtra("package_updates_interval");
         AddExtra("smart_interval");
         AddExtra("disk_usage_cache");
         AddExtra("skip_systemd");
+        AddExtra("skip_systemd_logs");
+        AddExtra("skip_wifi");
 
         var builder = new StringBuilder();
         foreach (var item in values)

@@ -7,6 +7,8 @@ public sealed class SecureVersionPolicyTests
 {
     [Theory]
     [InlineData("4.0.10", "4.0.9", true)]
+    [InlineData("4.21.0", "4.0.10", true)]
+    [InlineData("4.21.0-rc1", "4.0.10", true)]
     [InlineData("v4.0.10-rc1", "4.0.10", false)]
     [InlineData("4.0.10", "4.0.10-rc1", true)]
     [InlineData("4.0.10-rc2", "4.0.10-rc1", true)]

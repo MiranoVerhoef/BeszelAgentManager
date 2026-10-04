@@ -6,6 +6,79 @@ namespace BeszelAgentManager.Core.Tests;
 
 public sealed class PrivilegedConfigurationValidatorTests
 {
+    [Theory]
+    [InlineData("SKIP_WIFI", "true")]
+    [InlineData("DOCKER_IMAGE_CHECK", "false")]
+    [InlineData("SKIP_SYSTEMD_LOGS", "true")]
+    [InlineData("PACKAGE_UPDATES_INTERVAL", "1h")]
+    public void AcceptsBeszel021VariablesInPickerAndCustomEntries(string name, string value)
+    {
+        var active = new Dictionary<string, object>
+        {
+            ["env_active_names"] = new[] { name },
+            [name.ToLowerInvariant()] = value,
+        };
+        using var activeConfig = JsonDocument.Parse(JsonSerializer.Serialize(active));
+        using var customConfig = JsonDocument.Parse(JsonSerializer.Serialize(new
+        {
+            env_custom = new[] { new { name, value } },
+        }));
+
+        Assert.True(PrivilegedConfigurationValidator.Validate(activeConfig.RootElement).Success);
+        Assert.True(PrivilegedConfigurationValidator.Validate(customConfig.RootElement).Success);
+    }
+
+    [Theory]
+    [InlineData("SKIP_WIFI")]
+    [InlineData("DOCKER_IMAGE_CHECK")]
+    [InlineData("SKIP_SYSTEMD_LOGS")]
+    [InlineData("PACKAGE_UPDATES_INTERVAL")]
+    public void RejectsControlCharactersInBeszel021Variables(string name)
+    {
+        var value = "true\nPATH=C:\\evil";
+        var active = new Dictionary<string, object>
+        {
+            ["env_active_names"] = new[] { name },
+            [name.ToLowerInvariant()] = value,
+        };
+        using var activeConfig = JsonDocument.Parse(JsonSerializer.Serialize(active));
+        using var customConfig = JsonDocument.Parse(JsonSerializer.Serialize(new
+        {
+            env_custom = new[] { new { name, value } },
+        }));
+
+        Assert.False(PrivilegedConfigurationValidator.Validate(activeConfig.RootElement).Success);
+        Assert.False(PrivilegedConfigurationValidator.Validate(customConfig.RootElement).Success);
+    }
+
+    [Theory]
+    [InlineData("true")]
+    [InlineData("false")]
+    [InlineData("0")]
+    public void AcceptsPrimitiveEnvironmentValues(string value)
+    {
+        using var config = JsonDocument.Parse($$"""
+            {"env_active_names":["DOCKER_IMAGE_CHECK"],"docker_image_check":{{value}},
+             "env_custom":[{"name":"SKIP_WIFI","value":{{value}}}]}
+            """);
+        Assert.True(PrivilegedConfigurationValidator.Validate(config.RootElement).Success);
+    }
+
+    [Theory]
+    [InlineData("{}")]
+    [InlineData("[]")]
+    public void RejectsStructuredEnvironmentValues(string value)
+    {
+        using var activeConfig = JsonDocument.Parse($$"""
+            {"env_active_names":["SKIP_WIFI"],"skip_wifi":{{value}}}
+            """);
+        using var customConfig = JsonDocument.Parse($$"""
+            {"env_custom":[{"name":"SKIP_WIFI","value":{{value}}}]}
+            """);
+        Assert.False(PrivilegedConfigurationValidator.Validate(activeConfig.RootElement).Success);
+        Assert.False(PrivilegedConfigurationValidator.Validate(customConfig.RootElement).Success);
+    }
+
     [Fact]
     public void AcceptsSafeAgentConfiguration()
     {
