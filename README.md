@@ -67,7 +67,7 @@ LocalSystem-owned logs, state, policy, and staging are stored read-only for the 
 C:\ProgramData\BeszelAgentManager.ServiceData
 ```
 
-## Privileged background service
+## Background service
 
 `BeszelAgentManager Background` runs as LocalSystem and exposes a versioned local named-pipe protocol. Installation records the installing Windows account’s SID in an administrator-protected policy file. Only that account and SYSTEM can connect, and the service verifies the connected client identity again before accepting an allowlisted action.
 
@@ -103,21 +103,6 @@ Last-run and next-due state is persisted in the protected service-data directory
 Agent assets are selected only from the official Beszel GitHub repository. Every install, upgrade, and scheduled update downloads the release's versioned checksum file and verifies `beszel-agent_windows_amd64.zip` with SHA-256 before extraction. Missing or mismatched checksums are rejected. Broker-driven downgrades are blocked.
 
 Manager update checks use only the hardcoded project repository. Standard installations select the standard installer and Lite installations select the Lite installer. Because releases are currently unsigned, Update Manager opens the exact official GitHub release page and requires the user to run the installer with normal Windows administrator approval. Silent broker installation accepts only signed installers and never downgrades the installed manager.
-
-## Migration from 3.1.0
-
-The v4 installer upgrades an existing 3.1.0 installation in place and preserves:
-
-- configuration and encrypted GitHub token;
-- allowlisted agent environment and service state;
-- agent executable and historical logs;
-- update, restart, and startup preferences.
-
-The legacy autostart executable path is migrated to the v4 `app` directory while preserving hidden or visible startup behavior. The agent’s NSSM service path is migrated to the protected Beszel Agent directory under Program Files.
-
-Legacy `TOKEN_FILE`, `KEY_FILE`, and custom `DATA_DIR` values are no longer passed to the LocalSystem agent. On first launch after upgrade, the manager reads those files as the signed-in user, promotes readable credentials into typed settings, imports a valid legacy fingerprint through the secured broker, and shows a warning if any item needs manual attention.
-
-Normal v4 upgrades use a generated SHA-256 manifest: unchanged application files are retained, changed or missing files are replaced, obsolete manifest-owned files are removed, and every installed file is verified before the background service restarts. A full application-directory refresh is reserved for v3 migration, an incomplete layout, or an explicit rollback.
 
 ## Uninstall behavior
 
@@ -183,17 +168,6 @@ For Lite, start with clean WinUI and Helper output directories before rebuilding
 
 ```text
 installer-dist\BeszelAgentManagerSetup-Lite.exe
-```
-
-## Repository layout
-
-```text
-src/BeszelAgentManager.WinUI/   WinUI desktop application
-src/BeszelAgentManager.Helper/ LocalSystem service and privileged actions
-src/BeszelAgentManager.Core/   Shared broker and failover logic
-tests/                         Unit and guarded integration validation
-installer/                     Inno Setup installer
-docs/                          Architecture, security, migration, and recovery
 ```
 
 ## Credits
