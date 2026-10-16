@@ -7,11 +7,11 @@ internal sealed class LogReaderService
         var files = new List<LogFileItem>();
         if (File.Exists(ManagerPaths.ManagerLogPath))
         {
-            files.Add(new LogFileItem("Current (manager.log)", ManagerPaths.ManagerLogPath));
+            files.Add(new LogFileItem(Localization.Get("CurrentManagerLog"), ManagerPaths.ManagerLogPath));
         }
         if (File.Exists(ManagerPaths.BackgroundServiceLogPath))
         {
-            files.Add(new LogFileItem("Background service", ManagerPaths.BackgroundServiceLogPath));
+            files.Add(new LogFileItem(Localization.Get("BackgroundService"), ManagerPaths.BackgroundServiceLogPath));
         }
 
         var archiveDirs = new[]
@@ -40,7 +40,7 @@ internal sealed class LogReaderService
         var files = new List<LogFileItem>();
         if (File.Exists(ManagerPaths.AgentLogPath))
         {
-            files.Add(new LogFileItem("Current (beszel-agent.log)", ManagerPaths.AgentLogPath));
+            files.Add(new LogFileItem(Localization.Get("CurrentBeszelAgentLog"), ManagerPaths.AgentLogPath));
         }
 
         var agentLogDirs = new[]
@@ -69,7 +69,7 @@ internal sealed class LogReaderService
     {
         if (!File.Exists(path))
         {
-            return $"Log file not found: {path}";
+            return Localization.Get("LogFileNotFound0", path);
         }
 
         try
@@ -79,14 +79,14 @@ internal sealed class LogReaderService
             var content = await reader.ReadToEndAsync(cancellationToken);
             if (string.IsNullOrEmpty(content))
             {
-                return $"Log file is empty: {path}";
+                return Localization.Get("LogFileIsEmpty0", path);
             }
 
             return FilterLogText(content, typeFilter);
         }
         catch (Exception ex)
         {
-            return $"Could not read log file: {path}{Environment.NewLine}{ex.Message}";
+            return Localization.Get("CouldNotReadLogFile012", path, Environment.NewLine, ex.Message);
         }
     }
 
@@ -98,7 +98,7 @@ internal sealed class LogReaderService
     {
         if (!File.Exists(path))
         {
-            return $"Log file not found: {path}";
+            return Localization.Get("LogFileNotFound0", path);
         }
 
         try
@@ -119,7 +119,7 @@ internal sealed class LogReaderService
             var content = await reader.ReadToEndAsync(cancellationToken);
             if (string.IsNullOrEmpty(content))
             {
-                return $"Log file is empty: {path}";
+                return Localization.Get("LogFileIsEmpty0", path);
             }
 
             var lines = content
@@ -129,12 +129,12 @@ internal sealed class LogReaderService
                 .ToList();
 
             return lines.Count == 0
-                ? $"Log file is empty: {path}"
+                ? Localization.Get("LogFileIsEmpty0", path)
                 : string.Join(Environment.NewLine, lines);
         }
         catch (Exception ex)
         {
-            return $"Could not read log file: {path}{Environment.NewLine}{ex.Message}";
+            return Localization.Get("CouldNotReadLogFile012", path, Environment.NewLine, ex.Message);
         }
     }
 
@@ -179,7 +179,7 @@ internal sealed class LogReaderService
             .ToList();
 
         return filtered.Count == 0
-            ? $"No {typeFilter.ToLowerInvariant()} entries in selected log."
+            ? Localization.Get("No0EntriesInSelectedLog", Localization.LogFilter(typeFilter))
             : string.Join(Environment.NewLine, filtered);
     }
 }

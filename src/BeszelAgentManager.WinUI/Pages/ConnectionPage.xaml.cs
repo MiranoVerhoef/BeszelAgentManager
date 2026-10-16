@@ -45,17 +45,17 @@ public sealed partial class ConnectionPage : Page
         TokenBox.Password = config.Token;
         HubUrlTextBox.Text = config.HubUrl;
         FallbackUrlTextBox.Text = config.HubUrlIpFallback;
-        FallbackToggleButton.Content = config.HubUrlIpFallbackEnabled ? "Disable" : "Enable";
+        FallbackToggleButton.Content = config.HubUrlIpFallbackEnabled ? Localization.Get("Disable") : Localization.Get("Enable");
 
         if (config.Listen is int listen)
         {
             PortNumberBox.Value = listen;
-            ListenToggleButton.Content = "Disable";
+            ListenToggleButton.Content = Localization.Get("Disable");
         }
         else
         {
             PortNumberBox.Value = double.NaN;
-            ListenToggleButton.Content = "Enable";
+            ListenToggleButton.Content = Localization.Get("Enable");
         }
 
         AutoUpdateCheckBox.IsChecked = config.AutoUpdateEnabled;
@@ -112,8 +112,8 @@ public sealed partial class ConnectionPage : Page
         {
             ShowServiceStatus(
                 InfoBarSeverity.Warning,
-                "Invalid update interval",
-                "Enter a whole number from 1 to 720 hours. 720 hours is 30 days.");
+                Localization.Get("InvalidUpdateInterval"),
+                Localization.Get("EnterAWholeNumberFrom1To720Hours"));
             return;
         }
 
@@ -129,13 +129,13 @@ public sealed partial class ConnectionPage : Page
         catch (Exception ex)
         {
             App.Logger.Error($"Could not save {description}: {ex}");
-            ShowServiceStatus(InfoBarSeverity.Error, "Could not save settings", ex.Message);
+            ShowServiceStatus(InfoBarSeverity.Error, Localization.Get("CouldNotSaveSettings"), ex.Message);
         }
     }
 
     private static bool IsToggleEnabled(Button button)
     {
-        return string.Equals(button.Content?.ToString(), "Disable", StringComparison.OrdinalIgnoreCase);
+        return string.Equals(button.Content?.ToString(), Localization.Get("Disable"), StringComparison.OrdinalIgnoreCase);
     }
 
     private static int NormalizeHours(int value)
@@ -160,13 +160,13 @@ public sealed partial class ConnectionPage : Page
         if (!TokenBox.IsEnabled)
         {
             TokenBox.IsEnabled = true;
-            TokenChangeButton.Content = "Save";
+            TokenChangeButton.Content = Localization.Get("Save");
             TokenBox.Focus(FocusState.Programmatic);
             return;
         }
 
         TokenBox.IsEnabled = false;
-        TokenChangeButton.Content = "Change";
+        TokenChangeButton.Content = Localization.Get("Change");
         await SaveControlChangeAsync("Token");
     }
 
@@ -185,13 +185,13 @@ public sealed partial class ConnectionPage : Page
         if (!PortNumberBox.IsEnabled)
         {
             PortNumberBox.IsEnabled = true;
-            PortChangeButton.Content = "Save";
+            PortChangeButton.Content = Localization.Get("Save");
             PortNumberBox.Focus(FocusState.Programmatic);
             return;
         }
 
         PortNumberBox.IsEnabled = false;
-        PortChangeButton.Content = "Change";
+        PortChangeButton.Content = Localization.Get("Change");
         await SaveControlChangeAsync("Listen Port");
     }
 
@@ -200,14 +200,14 @@ public sealed partial class ConnectionPage : Page
         if (textBox.IsReadOnly)
         {
             textBox.IsReadOnly = false;
-            button.Content = "Save";
+            button.Content = Localization.Get("Save");
             textBox.Focus(FocusState.Programmatic);
             textBox.SelectionStart = textBox.Text.Length;
             return;
         }
 
         textBox.IsReadOnly = true;
-        button.Content = "Change";
+        button.Content = Localization.Get("Change");
         await SaveControlChangeAsync(description);
     }
 
@@ -218,16 +218,16 @@ public sealed partial class ConnectionPage : Page
         {
             ShowServiceStatus(
                 InfoBarSeverity.Warning,
-                "Fallback URL missing",
-                "Enter a Hub URL IP fallback before enabling this option.");
+                Localization.Get("FallbackURLMissing"),
+                Localization.Get("EnterAHubURLIPFallbackBeforeEnablingThis"));
             return;
         }
 
-        FallbackToggleButton.Content = IsToggleEnabled(FallbackToggleButton) ? "Enable" : "Disable";
+        FallbackToggleButton.Content = IsToggleEnabled(FallbackToggleButton) ? Localization.Get("Enable") : Localization.Get("Disable");
         await SaveControlChangeAsync("Hub URL IP fallback state");
         ShowServiceStatus(
             InfoBarSeverity.Informational,
-            enable ? "Fallback enabled" : "Fallback disabled",
+            enable ? Localization.Get("FallbackEnabled") : Localization.Get("FallbackDisabled"),
             GetServiceChangeNextStepMessage());
     }
 
@@ -237,12 +237,12 @@ public sealed partial class ConnectionPage : Page
         if (disabling)
         {
             PortNumberBox.Value = double.NaN;
-            ListenToggleButton.Content = "Enable";
+            ListenToggleButton.Content = Localization.Get("Enable");
         }
         else
         {
             PortNumberBox.Value = double.IsNaN(PortNumberBox.Value) ? 45876 : PortNumberBox.Value;
-            ListenToggleButton.Content = "Disable";
+            ListenToggleButton.Content = Localization.Get("Disable");
         }
 
         await SaveControlChangeAsync("Listen Port state");
@@ -252,8 +252,8 @@ public sealed partial class ConnectionPage : Page
         {
             ShowServiceStatus(
                 InfoBarSeverity.Success,
-                "Listen Port state saved",
-                "Choose Install agent to install and configure Beszel Agent with these settings.");
+                Localization.Get("ListenPortStateSaved"),
+                Localization.Get("ChooseInstallAgentToInstallAndConfigureBeszelAgent"));
             return;
         }
 
@@ -293,17 +293,17 @@ public sealed partial class ConnectionPage : Page
 
     private async void StartServiceButton_Click(object sender, RoutedEventArgs e)
     {
-        await RunServiceActionAsync("start", "Start service");
+        await RunServiceActionAsync("start", Localization.Get("StartService"));
     }
 
     private async void StopServiceButton_Click(object sender, RoutedEventArgs e)
     {
-        await RunServiceActionAsync("stop", "Stop service");
+        await RunServiceActionAsync("stop", Localization.Get("StopService"));
     }
 
     private async void RestartServiceButton_Click(object sender, RoutedEventArgs e)
     {
-        await RunServiceActionAsync("restart", "Restart service");
+        await RunServiceActionAsync("restart", Localization.Get("RestartService"));
     }
 
     private async void EditServiceButton_Click(object sender, RoutedEventArgs e)
@@ -312,8 +312,8 @@ public sealed partial class ConnectionPage : Page
         App.Logger.Info("Open service editor requested");
         ShowServiceStatus(
             InfoBarSeverity.Informational,
-            "Opening service editor",
-            "Approve the administrator prompt to edit the Beszel Agent service.");
+            Localization.Get("OpeningServiceEditor"),
+            Localization.Get("ApproveTheAdministratorPromptToEditTheBeszelAgent"));
 
         try
         {
@@ -322,15 +322,15 @@ public sealed partial class ConnectionPage : Page
             {
                 ShowServiceStatus(
                     InfoBarSeverity.Success,
-                    "Service editor opened",
-                    "You can now edit the Beszel Agent service settings.");
+                    Localization.Get("ServiceEditorOpened"),
+                    Localization.Get("YouCanNowEditTheBeszelAgentServiceSettings"));
                 App.Logger.Info("Service editor opened successfully");
             }
             else
             {
                 ShowServiceStatus(
                     InfoBarSeverity.Error,
-                    "Could not open service editor",
+                    Localization.Get("CouldNotOpenServiceEditor"),
                     GetFriendlyHelperError(exitCode));
                 App.Logger.Error($"Open service editor failed with helper exit code {exitCode}");
             }
@@ -339,13 +339,13 @@ public sealed partial class ConnectionPage : Page
         {
             ShowServiceStatus(
                 InfoBarSeverity.Warning,
-                "Service editor cancelled",
-                "The administrator prompt was cancelled.");
+                Localization.Get("ServiceEditorCancelled"),
+                Localization.Get("TheAdministratorPromptWasCancelled"));
             App.Logger.Info("Open service editor cancelled at UAC prompt");
         }
         catch (Exception ex)
         {
-            ShowServiceStatus(InfoBarSeverity.Error, "Could not open service editor", ex.Message);
+            ShowServiceStatus(InfoBarSeverity.Error, Localization.Get("CouldNotOpenServiceEditor"), ex.Message);
             App.Logger.Error($"Open service editor failed: {ex}");
         }
         finally
@@ -366,7 +366,7 @@ public sealed partial class ConnectionPage : Page
                 App.Logger.Info($"{displayName} skipped because service state is {currentStatus.ServiceState}");
                 ShowServiceStatus(
                     InfoBarSeverity.Informational,
-                    $"{displayName} not required",
+                    Localization.Get("0NotRequired", displayName),
                     GetUnavailableServiceActionMessage(action, currentStatus));
                 return;
             }
@@ -374,15 +374,15 @@ public sealed partial class ConnectionPage : Page
             App.Logger.Info($"{displayName} requested");
             ShowServiceStatus(
                 InfoBarSeverity.Informational,
-                $"{displayName} in progress",
-                "The background service is completing the requested action.");
+                Localization.Get("0InProgress", displayName),
+                Localization.Get("TheBackgroundServiceIsCompletingTheRequestedAction"));
             var exitCode = await App.Broker.RunServiceActionAsync(action);
             if (exitCode == 0)
             {
                 await App.MainWindow.RefreshServiceStatusNowAsync();
                 ShowServiceStatus(
                     InfoBarSeverity.Success,
-                    $"{displayName} completed",
+                    Localization.Get("0Completed", displayName),
                     GetFriendlyServiceSuccess(action));
                 App.Logger.Info($"{displayName} completed successfully");
             }
@@ -390,7 +390,7 @@ public sealed partial class ConnectionPage : Page
             {
                 ShowServiceStatus(
                     InfoBarSeverity.Error,
-                    $"{displayName} failed",
+                    Localization.Get("0Failed", displayName),
                     GetFriendlyHelperError(exitCode));
                 App.Logger.Error($"{displayName} failed with helper exit code {exitCode}");
             }
@@ -399,13 +399,13 @@ public sealed partial class ConnectionPage : Page
         {
             ShowServiceStatus(
                 InfoBarSeverity.Warning,
-                $"{displayName} cancelled",
-                "The administrator prompt was cancelled.");
+                Localization.Get("0Cancelled", displayName),
+                Localization.Get("TheAdministratorPromptWasCancelled"));
             App.Logger.Info($"{displayName} cancelled at UAC prompt");
         }
         catch (Exception ex)
         {
-            ShowServiceStatus(InfoBarSeverity.Error, $"{displayName} failed", ex.Message);
+            ShowServiceStatus(InfoBarSeverity.Error, Localization.Get("0Failed", displayName), ex.Message);
             App.Logger.Error($"{displayName} failed: {ex}");
         }
         finally
@@ -456,16 +456,16 @@ public sealed partial class ConnectionPage : Page
     {
         if (!status.ServiceExists)
         {
-            return "The Beszel Agent service is not installed.";
+            return Localization.Get("TheBeszelAgentServiceIsNotInstalled");
         }
 
         return action switch
         {
             "start" when string.Equals(status.ServiceState, "RUNNING", StringComparison.OrdinalIgnoreCase)
-                => "The Beszel Agent service is already running.",
+                => Localization.Get("TheBeszelAgentServiceIsAlreadyRunning"),
             "stop" or "restart" when string.Equals(status.ServiceState, "STOPPED", StringComparison.OrdinalIgnoreCase)
-                => "The Beszel Agent service is already stopped.",
-            _ => $"The action is unavailable while the service state is {status.ServiceState}.",
+                => Localization.Get("TheBeszelAgentServiceIsAlreadyStopped"),
+            _ => Localization.Get("TheActionIsUnavailableWhileTheServiceStateIs", Localization.Status(status.ServiceState)),
         };
     }
 
@@ -480,32 +480,46 @@ public sealed partial class ConnectionPage : Page
         {
             ShowServiceStatus(
                 InfoBarSeverity.Informational,
-                "Pending changes",
-                "Choose Apply settings to update the automatic update schedule. The Beszel Agent service will not be restarted.");
+                Localization.Get("PendingChanges"),
+                Localization.Get("ChooseApplySettingsToUpdateTheAutomaticUpdateSchedule"));
             return;
         }
 
         var serviceAffecting = !IsManagerOnlySetting(description);
         ShowServiceStatus(
             InfoBarSeverity.Success,
-            $"{description} saved",
+            Localization.Get("0Saved", LocalizedSettingName(description)),
             serviceAffecting
                 ? GetServiceChangeNextStepMessage()
-                : "This setting was saved.");
+                : Localization.Get("ThisSettingWasSaved"));
     }
 
     private string GetServiceChangeNextStepMessage()
     {
         var agentInstalled = _serviceStatus?.AgentExeExists == true || File.Exists(ManagerPaths.AgentExePath);
         return agentInstalled
-            ? "Apply settings when you are ready to restart the Beszel Agent service with this change."
-            : "Choose Install agent to install and configure Beszel Agent with these settings.";
+            ? Localization.Get("ApplySettingsWhenYouAreReadyToRestartThe")
+            : Localization.Get("ChooseInstallAgentToInstallAndConfigureBeszelAgent");
     }
 
     private static bool IsManagerOnlySetting(string description)
     {
         return description is "Automatic update setting" or "Automatic update interval" or "Manager startup setting";
     }
+
+    private static string LocalizedSettingName(string description) => description switch
+    {
+        "Public Key" => Localization.Get("PublicKey"),
+        "Token" => Localization.Get("Token"),
+        "Hub URL" => Localization.Get("HubURL"),
+        "Hub URL IP fallback" => Localization.Get("HubURLIPFallback"),
+        "Hub URL IP fallback state" => Localization.Get("HubURLIPFallbackState"),
+        "Listen Port" => Localization.Get("ListenPort"),
+        "Listen Port state" => Localization.Get("ListenPortState"),
+        "Manager startup setting" => Localization.Get("ManagerStartupSetting"),
+        "Connection option" => Localization.Get("ConnectionOption"),
+        _ => description,
+    };
 
     private static bool IsAutomaticUpdateSetting(string description)
     {
@@ -523,8 +537,8 @@ public sealed partial class ConnectionPage : Page
         SetServiceButtonsEnabled(false);
         ShowServiceStatus(
             InfoBarSeverity.Informational,
-            disabling ? "Disabling listen port" : "Enabling listen port",
-            "The background service is applying the service and firewall configuration.");
+            disabling ? Localization.Get("DisablingListenPort") : Localization.Get("EnablingListenPort"),
+            Localization.Get("TheBackgroundServiceIsApplyingTheServiceAndFirewall"));
         try
         {
             var exitCode = await App.Broker.ApplyConfigurationAsync();
@@ -533,17 +547,17 @@ public sealed partial class ConnectionPage : Page
                 await MarkCurrentSettingsAppliedAsync();
                 ShowServiceStatus(
                     InfoBarSeverity.Success,
-                    disabling ? "Listen port disabled" : "Listen port enabled",
+                    disabling ? Localization.Get("ListenPortDisabled") : Localization.Get("ListenPortEnabled"),
                     disabling
-                        ? "The service configuration was updated and the firewall rule was removed."
-                        : "The service configuration was updated and the firewall rule was added.");
+                        ? Localization.Get("TheServiceConfigurationWasUpdatedAndTheFirewallRule")
+                        : Localization.Get("TheServiceConfigurationWasUpdatedAndTheFirewallRule2"));
                 await App.MainWindow.RefreshServiceStatusNowAsync();
             }
             else
             {
                 ShowServiceStatus(
                     InfoBarSeverity.Error,
-                    "Listen port change failed",
+                    Localization.Get("ListenPortChangeFailed"),
                     GetFriendlyHelperError(exitCode));
             }
         }
@@ -551,12 +565,12 @@ public sealed partial class ConnectionPage : Page
         {
             ShowServiceStatus(
                 InfoBarSeverity.Warning,
-                "Listen port change cancelled",
-                "The administrator prompt was cancelled.");
+                Localization.Get("ListenPortChangeCancelled"),
+                Localization.Get("TheAdministratorPromptWasCancelled"));
         }
         catch (Exception ex)
         {
-            ShowServiceStatus(InfoBarSeverity.Error, "Listen port change failed", ex.Message);
+            ShowServiceStatus(InfoBarSeverity.Error, Localization.Get("ListenPortChangeFailed"), ex.Message);
             App.Logger.Error($"Listen port change failed: {ex}");
         }
         finally
@@ -577,10 +591,10 @@ public sealed partial class ConnectionPage : Page
     {
         return action switch
         {
-            "start" => "Beszel Agent is starting.",
-            "stop" => "Beszel Agent is stopping.",
-            "restart" => "Beszel Agent was restarted.",
-            _ => "The service action completed.",
+            "start" => Localization.Get("BeszelAgentIsStarting"),
+            "stop" => Localization.Get("BeszelAgentIsStopping"),
+            "restart" => Localization.Get("BeszelAgentWasRestarted"),
+            _ => Localization.Get("TheServiceActionCompleted"),
         };
     }
 
@@ -588,13 +602,13 @@ public sealed partial class ConnectionPage : Page
     {
         return exitCode switch
         {
-            2 => "The service helper received an unknown command.",
-            3 => "The agent or configuration file could not be found.",
-            4 => "The Beszel Agent service configuration could not be opened.",
-            53 => "NSSM could not be found. Reinstall BeszelAgentManager or place nssm.exe next to the installed app.",
-            1056 => "Beszel Agent is already running.",
-            1062 => "Beszel Agent is not running.",
-            _ => $"The service helper returned error code {exitCode}.",
+            2 => Localization.Get("TheServiceHelperReceivedAnUnknownCommand"),
+            3 => Localization.Get("TheAgentOrConfigurationFileCouldNotBeFound"),
+            4 => Localization.Get("TheBeszelAgentServiceConfigurationCouldNotBeOpened"),
+            53 => Localization.Get("NSSMCouldNotBeFoundReinstallBeszelAgentManagerOrPlace"),
+            1056 => Localization.Get("BeszelAgentIsAlreadyRunning"),
+            1062 => Localization.Get("BeszelAgentIsNotRunning"),
+            _ => Localization.Get("TheServiceHelperReturnedErrorCode0", exitCode),
         };
     }
 

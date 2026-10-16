@@ -37,7 +37,7 @@ internal sealed class BackgroundBrokerClient
             UseShellExecute = true,
             Verb = "runas",
             WindowStyle = ProcessWindowStyle.Hidden,
-        }) ?? throw new InvalidOperationException("Could not start the elevated service editor.");
+        }) ?? throw new InvalidOperationException(Localization.Get("CouldNotStartTheElevatedServiceEditor"));
         await process.WaitForExitAsync();
         return process.ExitCode;
     }
@@ -77,7 +77,7 @@ internal sealed class BackgroundBrokerClient
         var response = await SendResponseAsync("manager.update.prepare");
         if (!response.Success) throw new InvalidOperationException(response.Message);
         return JsonSerializer.Deserialize(response.Message, AppJsonContext.Default.ManagerUpdateStage)
-            ?? throw new InvalidOperationException("Invalid signed update response.");
+            ?? throw new InvalidOperationException(Localization.Get("InvalidSignedUpdateResponse"));
     }
 
     public async Task CommitManagerUpdateAsync(string operationId)
@@ -110,7 +110,7 @@ internal sealed class BackgroundBrokerClient
         }
 
         return JsonSerializer.Deserialize(response.Message, AppJsonContext.Default.BrokerAgentStatus)
-            ?? throw new InvalidOperationException("The background service returned an invalid agent status.");
+            ?? throw new InvalidOperationException(Localization.Get("TheBackgroundServiceReturnedAnInvalidAgentStatus"));
     }
 
     private async Task<int> SendAsync(string action, Dictionary<string, string>? arguments = null)
@@ -154,13 +154,13 @@ internal sealed class BackgroundBrokerClient
                 await pipe.ConnectAsync(connectTimeout.Token);
                 if (!IsLocalSystemBroker(pipe))
                 {
-                    throw new UnauthorizedAccessException("The background broker identity could not be verified.");
+                    throw new UnauthorizedAccessException(Localization.Get("TheBackgroundBrokerIdentityCouldNotBeVerified"));
                 }
             }
             catch (Exception ex) when (ex is TimeoutException or OperationCanceledException or IOException)
             {
                 throw new InvalidOperationException(
-                    "The BeszelAgentManager background service is not available. Reinstall or restart the background service.",
+                    Localization.Get("TheBeszelAgentManagerBackgroundServiceIsNotAvailableReinstallOr"),
                     ex);
             }
 
@@ -172,17 +172,17 @@ internal sealed class BackgroundBrokerClient
             try
             {
                 payload = await reader.ReadLineAsync(operationToken)
-                    ?? throw new InvalidOperationException("The background service closed the broker connection without a response.");
+                    ?? throw new InvalidOperationException(Localization.Get("TheBackgroundServiceClosedTheBrokerConnectionWithoutA"));
             }
             catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
             {
-                throw new InvalidOperationException("The background service did not respond in time.");
+                throw new InvalidOperationException(Localization.Get("TheBackgroundServiceDidNotRespondInTime"));
             }
             var response = JsonSerializer.Deserialize(payload, AppJsonContext.Default.BrokerResponse)
-                ?? throw new InvalidOperationException("The background service returned an invalid broker response.");
+                ?? throw new InvalidOperationException(Localization.Get("TheBackgroundServiceReturnedAnInvalidBrokerResponse"));
             if (!string.Equals(response.RequestId, request.RequestId, StringComparison.Ordinal))
             {
-                throw new InvalidOperationException("The background service returned a mismatched broker response.");
+                throw new InvalidOperationException(Localization.Get("TheBackgroundServiceReturnedAMismatchedBrokerResponse"));
             }
 
             return response;
@@ -235,7 +235,7 @@ internal sealed class BackgroundBrokerClient
         var helperPath = Path.Combine(AppContext.BaseDirectory, "helper", "BeszelAgentManager.Helper.exe");
         return File.Exists(helperPath)
             ? helperPath
-            : throw new FileNotFoundException("The privileged helper is not present in the application folder.", helperPath);
+            : throw new FileNotFoundException(Localization.Get("ThePrivilegedHelperIsNotPresentInTheApplication"), helperPath);
     }
 }
 

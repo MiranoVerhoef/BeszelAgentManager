@@ -1,5 +1,7 @@
 # BeszelAgentManager 4
 
+[简体中文](README.zh-CN.md)
+
 BeszelAgentManager is a Windows desktop application for installing, configuring, updating, and monitoring the [Beszel](https://beszel.dev) agent.
 
 Version 4 is a native .NET 10 and WinUI 3 application. Routine administrative actions are performed by a secured LocalSystem background service, so starting, stopping, updating, and configuring the agent does not repeatedly show UAC prompts.
@@ -22,6 +24,14 @@ Version 4 is a native .NET 10 and WinUI 3 application. Routine administrative ac
 - Optional Windows Defender exclusion with explicit consent.
 - Third-party antivirus allowlist instructions covering application, data, and process paths.
 - Start hidden with Windows, close to tray, open the Hub URL, and display live service state.
+
+## Language
+
+English remains the default. To use Simplified Chinese, open **Extra → Language → Switch language**, choose **简体中文**, then choose **Restart now** in the confirmation dialog. Choose **English (original)** in the same place to restore the original English interface. Choosing **Later** saves the preference for the next launch. Selecting the already-saved language does not prompt for a restart.
+
+The choice is saved in `ui_language` and does not change agent environment variables, service identifiers, or update settings. The installer offers English and Simplified Chinese independently of the application language. Logs, upstream release notes, and raw external error details retain their original text.
+
+See [Localization](docs/localization.md) to maintain or add translations.
 
 ## Supported systems
 

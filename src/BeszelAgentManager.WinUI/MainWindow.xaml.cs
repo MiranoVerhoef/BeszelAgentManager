@@ -43,6 +43,7 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
+        ((FrameworkElement)Content).Language = Localization.Language;
 
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
@@ -52,9 +53,9 @@ public sealed partial class MainWindow : Window
         _trayIconService = new TrayIconService(
             ShowFromTray,
             OpenHubFromTray,
-            () => RunTrayServiceActionAsync("start", "Start service"),
-            () => RunTrayServiceActionAsync("stop", "Stop service"),
-            () => RunTrayServiceActionAsync("restart", "Restart service"),
+            () => RunTrayServiceActionAsync("start", Localization.Get("StartService")),
+            () => RunTrayServiceActionAsync("stop", Localization.Get("StopService")),
+            () => RunTrayServiceActionAsync("restart", Localization.Get("RestartService")),
             RunTrayAgentUpdateAsync,
             ExitFromTray);
         AppWindow.Closing += AppWindow_Closing;
@@ -236,7 +237,7 @@ public sealed partial class MainWindow : Window
         {
             if (string.IsNullOrWhiteSpace(_hubUrl))
             {
-                _trayIconService.ShowNotification("Hub URL not configured", "Configure a Hub URL in the Connection tab.", NotificationIcon.Warning);
+                _trayIconService.ShowNotification(Localization.Get("HubURLNotConfigured"), Localization.Get("ConfigureAHubURLInTheConnectionTab"), NotificationIcon.Warning);
                 return;
             }
 
@@ -253,29 +254,29 @@ public sealed partial class MainWindow : Window
             var exitCode = await App.Broker.RunServiceActionAsync(action);
             if (exitCode != 0)
             {
-                throw new InvalidOperationException($"The background service returned exit code {exitCode}.");
+                throw new InvalidOperationException(Localization.Get("TheBackgroundServiceReturnedExitCode0", exitCode));
             }
 
             await RefreshServiceStatusNowAsync();
             var message = action switch
             {
-                "start" => "Beszel Agent is running.",
-                "stop" => "Beszel Agent is stopped.",
-                "restart" => "Beszel Agent was restarted.",
-                _ => "The service action completed.",
+                "start" => Localization.Get("BeszelAgentIsRunning"),
+                "stop" => Localization.Get("BeszelAgentIsStopped"),
+                "restart" => Localization.Get("BeszelAgentWasRestarted"),
+                _ => Localization.Get("TheServiceActionCompleted"),
             };
             App.Logger.Info($"{displayName} completed successfully from tray");
-            _trayIconService.ShowNotification($"{displayName} completed", message);
+            _trayIconService.ShowNotification(Localization.Get("0Completed", displayName), message);
         }
         catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
         {
             App.Logger.Info($"{displayName} cancelled at UAC prompt from tray");
-            _trayIconService.ShowNotification($"{displayName} cancelled", "The administrator prompt was cancelled.", NotificationIcon.Warning);
+            _trayIconService.ShowNotification(Localization.Get("0Cancelled", displayName), Localization.Get("TheAdministratorPromptWasCancelled"), NotificationIcon.Warning);
         }
         catch (Exception ex)
         {
             App.Logger.Error($"{displayName} failed from tray: {ex}");
-            _trayIconService.ShowNotification($"{displayName} failed", ex.Message, NotificationIcon.Error);
+            _trayIconService.ShowNotification(Localization.Get("0Failed", displayName), ex.Message, NotificationIcon.Error);
         }
     }
 
@@ -287,7 +288,7 @@ public sealed partial class MainWindow : Window
             var status = await _systemStatusService.GetAgentStatusAsync(_shutdown.Token);
             if (!status.AgentExeExists)
             {
-                _trayIconService.ShowNotification("Beszel Agent is not installed", "Open BeszelAgentManager and install the agent first.", NotificationIcon.Warning);
+                _trayIconService.ShowNotification(Localization.Get("BeszelAgentIsNotInstalled"), Localization.Get("OpenBeszelAgentManagerAndInstallTheAgentFirst"), NotificationIcon.Warning);
                 return;
             }
 
@@ -297,30 +298,30 @@ public sealed partial class MainWindow : Window
                 && VersionComparer.IsSameOrOlder(status.AgentVersion, latest.Version))
             {
                 App.Logger.Info($"Tray agent update skipped: installed {status.AgentVersion}, latest {latest.Version}");
-                _trayIconService.ShowNotification("Beszel Agent is up to date", $"Installed version: {status.AgentVersion}");
+                _trayIconService.ShowNotification(Localization.Get("BeszelAgentIsUpToDate"), Localization.Get("InstalledVersion0", status.AgentVersion));
                 return;
             }
 
             var exitCode = await App.Broker.UpdateAgentAsync();
             if (exitCode != 0)
             {
-                throw new InvalidOperationException($"The background service returned exit code {exitCode}.");
+                throw new InvalidOperationException(Localization.Get("TheBackgroundServiceReturnedExitCode0", exitCode));
             }
 
             await RefreshServiceStatusNowAsync();
             var updated = await _systemStatusService.GetAgentStatusAsync(_shutdown.Token);
             App.Logger.Info($"Agent update completed successfully from tray: {updated.AgentVersion}");
-            _trayIconService.ShowNotification("Beszel Agent updated", $"Installed version: {updated.AgentVersion}");
+            _trayIconService.ShowNotification(Localization.Get("BeszelAgentUpdated"), Localization.Get("InstalledVersion0", updated.AgentVersion));
         }
         catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
         {
             App.Logger.Info("Agent update cancelled at UAC prompt from tray");
-            _trayIconService.ShowNotification("Agent update cancelled", "The administrator prompt was cancelled.", NotificationIcon.Warning);
+            _trayIconService.ShowNotification(Localization.Get("AgentUpdateCancelled"), Localization.Get("TheAdministratorPromptWasCancelled"), NotificationIcon.Warning);
         }
         catch (Exception ex)
         {
             App.Logger.Error($"Agent update failed from tray: {ex}");
-            _trayIconService.ShowNotification("Agent update failed", ex.Message, NotificationIcon.Error);
+            _trayIconService.ShowNotification(Localization.Get("AgentUpdateFailed"), ex.Message, NotificationIcon.Error);
         }
     }
 
@@ -415,7 +416,7 @@ public sealed partial class MainWindow : Window
                 NavFrame.Navigate(typeof(ExtraPage));
                 break;
             default:
-                throw new InvalidOperationException($"Unknown navigation item tag: {item.Tag}");
+                throw new InvalidOperationException(Localization.Get("UnknownNavigationItemTag0", item.Tag));
         }
     }
 
@@ -441,8 +442,8 @@ public sealed partial class MainWindow : Window
         try
         {
             var status = await _systemStatusService.GetAgentStatusAsync(_shutdown.Token);
-            HeaderServiceText.Text = $"Service: {status.ServiceState}";
-            HeaderAgentText.Text = $"Agent: {status.AgentVersion}";
+            HeaderServiceText.Text = Localization.Get("Service0", Localization.Status(status.ServiceState));
+            HeaderAgentText.Text = Localization.Get("Agent0", Localization.Status(status.AgentVersion));
             if (NavFrame.Content is ConnectionPage connectionPage)
             {
                 connectionPage.ApplyServiceStatus(status);
@@ -501,8 +502,8 @@ public sealed partial class MainWindow : Window
                 && !string.Equals(config.ManagerUpdateLastNotifiedVersion, release.Version, StringComparison.OrdinalIgnoreCase))
             {
                 _trayIconService.ShowNotification(
-                    "BeszelAgentManager update available",
-                    $"Version {release.Version} is available.");
+                    Localization.Get("BeszelAgentManagerUpdateAvailable"),
+                    Localization.Get("Version0IsAvailable", release.Version));
                 config.ManagerUpdateLastNotifiedVersion = release.Version;
             }
 
@@ -537,17 +538,17 @@ public sealed partial class MainWindow : Window
 
         if (!status.IsConfigured)
         {
-            HubStatusLink.Content = "Hub: Not configured";
+            HubStatusLink.Content = Localization.Get("HubNotConfigured");
         }
         else if (status.IsReachable)
         {
             HubStatusLink.Content = fallbackActive
-                ? $"Hub: Fallback reachable ({status.LatencyMilliseconds} ms)"
-                : $"Hub: Reachable ({status.LatencyMilliseconds} ms)";
+                ? Localization.Get("HubFallbackReachable0Ms", status.LatencyMilliseconds)
+                : Localization.Get("HubReachable0Ms", status.LatencyMilliseconds);
         }
         else
         {
-            HubStatusLink.Content = fallbackActive ? "Hub: Fallback unreachable" : "Hub: Unreachable";
+            HubStatusLink.Content = fallbackActive ? Localization.Get("HubFallbackUnreachable") : Localization.Get("HubUnreachable");
         }
 
         var hubState = HubStatusLink.Content?.ToString() ?? string.Empty;
@@ -561,7 +562,7 @@ public sealed partial class MainWindow : Window
     private async void DownloadManagerButton_Click(object sender, RoutedEventArgs e)
     {
         DownloadManagerButton.IsEnabled = false;
-        DownloadManagerButton.Content = "Checking...";
+        DownloadManagerButton.Content = Localization.Get("Checking");
         App.Logger.Info("Manager update check requested");
 
         try
@@ -573,8 +574,8 @@ public sealed partial class MainWindow : Window
             {
                 ShowGlobalStatus(
                     InfoBarSeverity.Warning,
-                    "No usable release found",
-                    $"GitHub did not return a manager release containing {AppInfo.InstallerAssetName}.");
+                    Localization.Get("NoUsableReleaseFound"),
+                    Localization.Get("GitHubDidNotReturnAManagerReleaseContaining0", AppInfo.InstallerAssetName));
                 return;
             }
 
@@ -582,18 +583,18 @@ public sealed partial class MainWindow : Window
             {
                 ShowGlobalStatus(
                     InfoBarSeverity.Success,
-                    "BeszelAgentManager is up to date",
-                    $"Installed: {AppInfo.ReleaseTag}\nLatest on GitHub: {release.Version} ({release.Tag})");
+                    Localization.Get("BeszelAgentManagerIsUpToDate"),
+                    Localization.Get("Installed0LatestOnGitHub12", AppInfo.ReleaseTag, release.Version, release.Tag));
                 return;
             }
 
             var dialog = new ContentDialog
             {
                 XamlRoot = NavView.XamlRoot,
-                Title = "Manager update available",
+                Title = Localization.Get("ManagerUpdateAvailable"),
                 Content = BuildUpdateAvailableContent(release),
-                PrimaryButtonText = "Update Manager",
-                CloseButtonText = "Cancel",
+                PrimaryButtonText = Localization.Get("UpdateManager"),
+                CloseButtonText = Localization.Get("Cancel"),
                 DefaultButton = ContentDialogButton.Primary,
             };
 
@@ -606,12 +607,12 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             App.Logger.Error($"Manager update check failed: {ex}");
-            ShowGlobalStatus(InfoBarSeverity.Warning, "Could not check for updates", "Please try again later. Technical details are available in the log.");
+            ShowGlobalStatus(InfoBarSeverity.Warning, Localization.Get("CouldNotCheckForUpdates"), Localization.Get("PleaseTryAgainLaterTechnicalDetailsAreAvailableIn"));
         }
         finally
         {
             DownloadManagerButton.IsEnabled = true;
-            DownloadManagerButton.Content = "Update Manager";
+            DownloadManagerButton.Content = Localization.Get("UpdateManager");
         }
     }
 
@@ -624,16 +625,16 @@ public sealed partial class MainWindow : Window
 
         var status = await _systemStatusService.GetAgentStatusAsync();
         var confirmationTitle = status.AgentExeExists
-            ? "Agent already installed"
-            : "Install Beszel Agent?";
+            ? Localization.Get("AgentAlreadyInstalled")
+            : Localization.Get("InstallBeszelAgent");
         var confirmationMessage = status.AgentExeExists
-            ? $"Beszel Agent {status.AgentVersion} is already installed. Do you really want to reinstall the latest version?"
-            : "This will download the latest stable Beszel Agent, install it to Program Files, configure the Windows service, and apply the current Connection settings.";
+            ? Localization.Get("BeszelAgent0IsAlreadyInstalledDoYouReally", status.AgentVersion)
+            : Localization.Get("ThisWillDownloadTheLatestStableBeszelAgentInstall");
 
         await RunAgentOperationAsync(
             InstallAgentButton,
-            "Installing...",
-            "Install agent",
+            Localization.Get("Installing"),
+            Localization.Get("InstallAgent"),
             confirmationTitle,
             confirmationMessage,
             async () =>
@@ -649,7 +650,7 @@ public sealed partial class MainWindow : Window
 
                 return exitCode;
             },
-            "Beszel Agent was installed and configured.",
+            Localization.Get("BeszelAgentWasInstalledAndConfigured"),
             afterSuccess: OfferDefenderExclusionAsync);
     }
 
@@ -666,13 +667,13 @@ public sealed partial class MainWindow : Window
         var dialog = new ContentDialog
         {
             XamlRoot = NavView.XamlRoot,
-            Title = "Background service required",
+            Title = Localization.Get("BackgroundServiceRequired"),
             Content = serviceStatus.IsInstalled
-                ? "The BeszelAgentManager background service is installed but not running. Repair it now, or open Extra for service controls."
-                : "The BeszelAgentManager background service is not installed. Install it now, or open Extra for service controls.",
-            PrimaryButtonText = "Install now",
-            SecondaryButtonText = "Open Extra",
-            CloseButtonText = "Cancel",
+                ? Localization.Get("TheBeszelAgentManagerBackgroundServiceIsInstalledButNotRunning")
+                : Localization.Get("TheBeszelAgentManagerBackgroundServiceIsNotInstalledInstallIt"),
+            PrimaryButtonText = Localization.Get("InstallNow"),
+            SecondaryButtonText = Localization.Get("OpenExtra"),
+            CloseButtonText = Localization.Get("Cancel"),
             DefaultButton = ContentDialogButton.Primary,
         };
 
@@ -691,7 +692,7 @@ public sealed partial class MainWindow : Window
         try
         {
             InstallAgentButton.IsEnabled = false;
-            InstallAgentButton.Content = "Installing service...";
+            InstallAgentButton.Content = Localization.Get("InstallingService");
             var exitCode = await serviceManager.InstallAsync();
             var refreshedStatus = await serviceManager.GetStatusAsync();
             if (exitCode == 0
@@ -700,17 +701,17 @@ public sealed partial class MainWindow : Window
             {
                 ShowGlobalStatus(
                     InfoBarSeverity.Success,
-                    "Background service installed",
-                    "Continuing with Beszel Agent installation.");
+                    Localization.Get("BackgroundServiceInstalled"),
+                    Localization.Get("ContinuingWithBeszelAgentInstallation"));
                 return true;
             }
 
             var helperError = BackgroundServiceManagementService.ReadLastHelperError();
             ShowGlobalStatus(
                 InfoBarSeverity.Error,
-                "Background service installation failed",
+                Localization.Get("BackgroundServiceInstallationFailed"),
                 string.IsNullOrWhiteSpace(helperError)
-                    ? $"The helper returned exit code {exitCode}. Open Extra to retry or inspect the service status."
+                    ? Localization.Get("TheHelperReturnedExitCode0OpenExtraTo", exitCode)
                     : helperError);
             NavigateToExtraPage();
             return false;
@@ -719,8 +720,8 @@ public sealed partial class MainWindow : Window
         {
             ShowGlobalStatus(
                 InfoBarSeverity.Warning,
-                "Background service installation cancelled",
-                "Install the background service from Extra before installing Beszel Agent.");
+                Localization.Get("BackgroundServiceInstallationCancelled"),
+                Localization.Get("InstallTheBackgroundServiceFromExtraBeforeInstallingBeszel"));
             return false;
         }
         catch (Exception ex)
@@ -728,7 +729,7 @@ public sealed partial class MainWindow : Window
             App.Logger.Error($"Background service pre-check failed: {ex}");
             ShowGlobalStatus(
                 InfoBarSeverity.Error,
-                "Background service installation failed",
+                Localization.Get("BackgroundServiceInstallationFailed"),
                 ex.Message);
             NavigateToExtraPage();
             return false;
@@ -736,7 +737,7 @@ public sealed partial class MainWindow : Window
         finally
         {
             InstallAgentButton.IsEnabled = true;
-            InstallAgentButton.Content = "Install agent";
+            InstallAgentButton.Content = Localization.Get("InstallAgent");
         }
     }
 
@@ -758,7 +759,7 @@ public sealed partial class MainWindow : Window
     private async void UpdateAgentButton_Click(object sender, RoutedEventArgs e)
     {
         UpdateAgentButton.IsEnabled = false;
-        UpdateAgentButton.Content = "Checking...";
+        UpdateAgentButton.Content = Localization.Get("Checking");
         App.Logger.Info("Agent update check requested");
         try
         {
@@ -767,8 +768,8 @@ public sealed partial class MainWindow : Window
             {
                 ShowGlobalStatus(
                     InfoBarSeverity.Warning,
-                    "Beszel Agent is not installed",
-                    "Use Install agent first to install and configure Beszel Agent.");
+                    Localization.Get("BeszelAgentIsNotInstalled"),
+                    Localization.Get("UseInstallAgentFirstToInstallAndConfigureBeszel"));
                 return;
             }
 
@@ -777,8 +778,8 @@ public sealed partial class MainWindow : Window
             {
                 ShowGlobalStatus(
                     InfoBarSeverity.Warning,
-                    "No agent versions found",
-                    "GitHub did not return any stable Beszel Agent releases with the Windows agent asset.");
+                    Localization.Get("NoAgentVersionsFound"),
+                    Localization.Get("GitHubDidNotReturnAnyStableBeszelAgentReleases"));
                 return;
             }
 
@@ -788,8 +789,8 @@ public sealed partial class MainWindow : Window
                 App.Logger.Info($"Agent update skipped: installed {status.AgentVersion}, latest {latest.Version}");
                 ShowGlobalStatus(
                     InfoBarSeverity.Success,
-                    "Beszel Agent is up to date",
-                    $"Installed: {status.AgentVersion}\nLatest on GitHub: {latest.Version} ({latest.Tag})");
+                    Localization.Get("BeszelAgentIsUpToDate"),
+                    Localization.Get("Installed0LatestOnGitHub12", status.AgentVersion, latest.Version, latest.Tag));
                 return;
             }
         }
@@ -798,23 +799,23 @@ public sealed partial class MainWindow : Window
             App.Logger.Error($"Agent update check failed: {ex}");
             ShowGlobalStatus(
                 InfoBarSeverity.Warning,
-                "Could not check agent version",
-                "Continuing with the update will let the background service install the latest stable agent.");
+                Localization.Get("CouldNotCheckAgentVersion"),
+                Localization.Get("ContinuingWithTheUpdateWillLetTheBackgroundService"));
         }
         finally
         {
             UpdateAgentButton.IsEnabled = true;
-            UpdateAgentButton.Content = "Update agent";
+            UpdateAgentButton.Content = Localization.Get("UpdateAgent");
         }
 
         await RunAgentOperationAsync(
             UpdateAgentButton,
-            "Updating...",
-            "Update agent",
-            "Update Beszel Agent?",
-            "This will download the latest stable Beszel Agent and restart the service.",
+            Localization.Get("Updating"),
+            Localization.Get("UpdateAgent"),
+            Localization.Get("UpdateBeszelAgent"),
+            Localization.Get("ThisWillDownloadTheLatestStableBeszelAgentAnd"),
             App.Broker.UpdateAgentAsync,
-            "Beszel Agent was updated.",
+            Localization.Get("BeszelAgentWasUpdated"),
             afterSuccess: LogInstalledAgentVersionAsync);
     }
 
@@ -826,8 +827,8 @@ public sealed partial class MainWindow : Window
             App.Logger.Info("Uninstall agent skipped: Beszel Agent is not installed");
             ShowGlobalStatus(
                 InfoBarSeverity.Informational,
-                "Beszel Agent is not installed",
-                "There is no installed agent executable or Windows service to remove.");
+                Localization.Get("BeszelAgentIsNotInstalled"),
+                Localization.Get("ThereIsNoInstalledAgentExecutableOrWindowsService"));
             return;
         }
 
@@ -840,14 +841,14 @@ public sealed partial class MainWindow : Window
 
         await RunAgentOperationAsync(
             UninstallAgentButton,
-            "Uninstalling...",
-            "Uninstall agent",
-            "Uninstall Beszel Agent?",
+            Localization.Get("Uninstalling"),
+            Localization.Get("UninstallAgent"),
+            Localization.Get("UninstallBeszelAgent"),
             string.Empty,
             () => App.Broker.UninstallAgentAsync(keepAgentLogs.Value),
             keepAgentLogs.Value
-                ? "Beszel Agent was uninstalled. Historical agent logs were kept."
-                : "Beszel Agent was uninstalled. Historical agent logs were removed.",
+                ? Localization.Get("BeszelAgentWasUninstalledHistoricalAgentLogsWereKept")
+                : Localization.Get("BeszelAgentWasUninstalledHistoricalAgentLogsWereRemoved"),
             skipConfirmation: true,
             afterSuccess: async () =>
             {
@@ -862,7 +863,7 @@ public sealed partial class MainWindow : Window
     private async void ManageAgentVersionButton_Click(object sender, RoutedEventArgs e)
     {
         ManageAgentVersionButton.IsEnabled = false;
-        ManageAgentVersionButton.Content = "Loading...";
+        ManageAgentVersionButton.Content = Localization.Get("Loading");
         App.Logger.Info("Opening agent version manager");
 
         try
@@ -872,8 +873,8 @@ public sealed partial class MainWindow : Window
             {
                 ShowGlobalStatus(
                     InfoBarSeverity.Warning,
-                    "No agent versions found",
-                    "GitHub did not return any stable Beszel Agent releases with the Windows agent asset.");
+                    Localization.Get("NoAgentVersionsFound"),
+                    Localization.Get("GitHubDidNotReturnAnyStableBeszelAgentReleases"));
                 return;
             }
 
@@ -898,17 +899,17 @@ public sealed partial class MainWindow : Window
             };
 
             var panel = new StackPanel { Spacing = 10 };
-            panel.Children.Add(new TextBlock { Text = "Select agent version:", TextWrapping = TextWrapping.Wrap });
+            panel.Children.Add(new TextBlock { Text = Localization.Get("SelectAgentVersion"), TextWrapping = TextWrapping.Wrap });
             panel.Children.Add(picker);
             panel.Children.Add(notes);
 
             var dialog = new ContentDialog
             {
                 XamlRoot = NavView.XamlRoot,
-                Title = "Manage Agent Version",
+                Title = Localization.Get("ManageAgentVersion"),
                 Content = panel,
-                PrimaryButtonText = "Install",
-                CloseButtonText = "Cancel",
+                PrimaryButtonText = Localization.Get("Install"),
+                CloseButtonText = Localization.Get("Cancel"),
                 DefaultButton = ContentDialogButton.Primary,
             };
 
@@ -921,31 +922,31 @@ public sealed partial class MainWindow : Window
             var selected = releases[picker.SelectedIndex];
             await RunAgentOperationAsync(
                 ManageAgentVersionButton,
-                "Installing...",
-                "Install agent version",
-                $"Install Beszel Agent {selected.Version}?",
-                "This will install the selected version and restart the service.",
+                Localization.Get("Installing"),
+                Localization.Get("InstallAgentVersion"),
+                Localization.Get("InstallBeszelAgent0", selected.Version),
+                Localization.Get("ThisWillInstallTheSelectedVersionAndRestartThe"),
                 () => App.Broker.InstallAgentVersionAsync(selected.Version),
-                $"Beszel Agent {selected.Version} was installed.",
+                Localization.Get("BeszelAgent0WasInstalled", selected.Version),
                 skipConfirmation: true,
                 afterSuccess: LogInstalledAgentVersionAsync);
         }
         catch (Exception ex)
         {
             App.Logger.Error($"Agent version manager failed: {ex}");
-            ShowGlobalStatus(InfoBarSeverity.Error, "Could not load agent versions", ex.Message);
+            ShowGlobalStatus(InfoBarSeverity.Error, Localization.Get("CouldNotLoadAgentVersions"), ex.Message);
         }
         finally
         {
             ManageAgentVersionButton.IsEnabled = true;
-            ManageAgentVersionButton.Content = "Manage Agent Version...";
+            ManageAgentVersionButton.Content = Localization.Get("ManageAgentVersion2");
         }
     }
 
     private async void ApplySettingsButton_Click(object sender, RoutedEventArgs e)
     {
         ApplySettingsButton.IsEnabled = false;
-        ApplySettingsButton.Content = "Applying...";
+        ApplySettingsButton.Content = Localization.Get("Applying");
         App.Logger.Info("Apply settings requested");
         try
         {
@@ -960,8 +961,8 @@ public sealed partial class MainWindow : Window
                 App.Logger.Warning("Apply settings blocked: EXIT_ON_DNS_ERROR conflicts with WebSocket offline backoff");
                 ShowGlobalStatus(
                     InfoBarSeverity.Error,
-                    "Conflicting retry settings",
-                    "EXIT_ON_DNS_ERROR cannot be enabled together with WebSocket offline backoff. Remove EXIT_ON_DNS_ERROR under Environment or disable offline backoff under Extra.");
+                    Localization.Get("ConflictingRetrySettings"),
+                    Localization.Get("EXITONDNSERRORCannotBeEnabledTogetherWith"));
                 return;
             }
 
@@ -976,8 +977,8 @@ public sealed partial class MainWindow : Window
                 App.Logger.Info("Apply settings skipped: no pending changes detected");
                 ShowGlobalStatus(
                     InfoBarSeverity.Informational,
-                    "No changes to apply",
-                    "The current settings and automatic update schedule are already applied.");
+                    Localization.Get("NoChangesToApply"),
+                    Localization.Get("TheCurrentSettingsAndAutomaticUpdateScheduleAreAlready"));
                 return;
             }
 
@@ -1000,7 +1001,7 @@ public sealed partial class MainWindow : Window
                 var exitCode = await App.Broker.ApplyManagerTasksAsync();
                 if (exitCode != 0)
                 {
-                    throw new InvalidOperationException($"The automatic update schedule could not be updated (helper exit code {exitCode}).");
+                    throw new InvalidOperationException(Localization.Get("TheAutomaticUpdateScheduleCouldNotBeUpdatedHelper", exitCode));
                 }
 
                 config.LastAppliedManagerTasksFingerprint = currentManagerTasksFingerprint;
@@ -1010,12 +1011,12 @@ public sealed partial class MainWindow : Window
             App.Logger.Info("Settings applied successfully");
             ShowGlobalStatus(
                 InfoBarSeverity.Success,
-                "Settings applied",
+                Localization.Get("SettingsApplied"),
                 serviceChangesPending
                     ? managerTaskChangesPending
-                        ? "The Beszel Agent service configuration and automatic update schedule were updated."
-                        : "The configuration was saved and the Beszel Agent service was restarted."
-                    : "The automatic update schedule was updated. The Beszel Agent service was not restarted.");
+                        ? Localization.Get("TheBeszelAgentServiceConfigurationAndAutomaticUpdateSchedule")
+                        : Localization.Get("TheConfigurationWasSavedAndTheBeszelAgentService")
+                    : Localization.Get("TheAutomaticUpdateScheduleWasUpdatedTheBeszelAgent"));
         }
         catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
         {
@@ -1024,12 +1025,12 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             App.Logger.Error($"Apply settings failed: {ex}");
-            ShowGlobalStatus(InfoBarSeverity.Error, "Apply settings failed", ex.Message);
+            ShowGlobalStatus(InfoBarSeverity.Error, Localization.Get("ApplySettingsFailed"), ex.Message);
         }
         finally
         {
             ApplySettingsButton.IsEnabled = true;
-            ApplySettingsButton.Content = "Apply settings";
+            ApplySettingsButton.Content = Localization.Get("ApplySettings");
         }
     }
 
@@ -1055,8 +1056,8 @@ public sealed partial class MainWindow : Window
                     Text = confirmationMessage,
                     TextWrapping = TextWrapping.Wrap,
                 },
-                PrimaryButtonText = "Continue",
-                CloseButtonText = "Cancel",
+                PrimaryButtonText = Localization.Get("Continue"),
+                CloseButtonText = Localization.Get("Cancel"),
                 DefaultButton = ContentDialogButton.Primary,
             };
             if (await confirm.ShowAsync() != ContentDialogResult.Primary)
@@ -1071,8 +1072,8 @@ public sealed partial class MainWindow : Window
         App.Logger.Info($"{operationName} requested");
         ShowGlobalStatus(
             InfoBarSeverity.Informational,
-            $"{operationName} in progress",
-            "The background service is completing the operation. This can take a moment while files are downloaded or services are updated.");
+            Localization.Get("0InProgress", operationName),
+            Localization.Get("TheBackgroundServiceIsCompletingTheOperationThisCan"));
 
         try
         {
@@ -1098,7 +1099,7 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             App.Logger.Error($"{operationName} failed: {ex}");
-            ShowGlobalStatus(InfoBarSeverity.Error, $"{operationName} failed", ex.Message);
+            ShowGlobalStatus(InfoBarSeverity.Error, Localization.Get("0Failed", operationName), ex.Message);
         }
         finally
         {
@@ -1117,7 +1118,7 @@ public sealed partial class MainWindow : Window
                 if (!string.IsNullOrWhiteSpace(detail))
                 {
                     return detail.Length > 1200
-                        ? $"{detail[..1200]}\n\n(truncated)"
+                        ? Localization.Get("0Truncated", detail[..1200])
                         : detail;
                 }
             }
@@ -1128,12 +1129,12 @@ public sealed partial class MainWindow : Window
 
         return exitCode switch
         {
-            3 => "The agent or configuration file could not be found.",
-            4 => "The background service could not apply the Beszel Agent service configuration.",
-            55 => "EXIT_ON_DNS_ERROR cannot be enabled together with WebSocket offline backoff. Choose one retry strategy.",
-            57 => "The configuration was rejected by the security policy. Remove unsupported or reserved environment variables and try again.",
-            53 => "NSSM could not be found. Reinstall BeszelAgentManager or place nssm.exe next to the installed app.",
-            _ => $"The background service returned exit code {exitCode}.",
+            3 => Localization.Get("TheAgentOrConfigurationFileCouldNotBeFound"),
+            4 => Localization.Get("TheBackgroundServiceCouldNotApplyTheBeszelAgent"),
+            55 => Localization.Get("EXITONDNSERRORCannotBeEnabledTogetherWith2"),
+            57 => Localization.Get("TheConfigurationWasRejectedByTheSecurityPolicyRemove"),
+            53 => Localization.Get("NSSMCouldNotBeFoundReinstallBeszelAgentManagerOrPlace"),
+            _ => Localization.Get("TheBackgroundServiceReturnedExitCode0", exitCode),
         };
     }
 
@@ -1157,19 +1158,19 @@ public sealed partial class MainWindow : Window
     {
         var keepLogsCheckBox = new CheckBox
         {
-            Content = "Keep historical agent logging",
+            Content = Localization.Get("KeepHistoricalAgentLogging"),
             IsChecked = true,
         };
 
         var panel = new StackPanel { Spacing = 12 };
         panel.Children.Add(new TextBlock
         {
-            Text = "This will stop and remove the Beszel Agent service, scheduled agent tasks, firewall rule, agent files, legacy agent folder, and temporary agent files.\n\nManager settings and manager logs are kept.",
+            Text = Localization.Get("ThisWillStopAndRemoveTheBeszelAgentService"),
             TextWrapping = TextWrapping.Wrap,
         });
         panel.Children.Add(new TextBlock
         {
-            Text = $"Installed version: {installedVersion}",
+            Text = Localization.Get("InstalledVersion0", installedVersion),
             TextWrapping = TextWrapping.Wrap,
         });
         panel.Children.Add(keepLogsCheckBox);
@@ -1177,10 +1178,10 @@ public sealed partial class MainWindow : Window
         var dialog = new ContentDialog
         {
             XamlRoot = NavView.XamlRoot,
-            Title = "Uninstall Beszel Agent?",
+            Title = Localization.Get("UninstallBeszelAgent"),
             Content = panel,
-            PrimaryButtonText = "Uninstall",
-            CloseButtonText = "Cancel",
+            PrimaryButtonText = Localization.Get("Uninstall"),
+            CloseButtonText = Localization.Get("Cancel"),
             DefaultButton = ContentDialogButton.Primary,
         };
 
@@ -1206,14 +1207,14 @@ public sealed partial class MainWindow : Window
         var dialog = new ContentDialog
         {
             XamlRoot = NavView.XamlRoot,
-            Title = "Optional Microsoft Defender exclusion",
+            Title = Localization.Get("OptionalMicrosoftDefenderExclusion"),
             Content = new TextBlock
             {
-                Text = "Add an exclusion only for the BeszelAgentManager installation folder? This is optional and should only be enabled if Defender interferes with the application.",
+                Text = Localization.Get("AddAnExclusionOnlyForTheBeszelAgentManagerInstallationFolder"),
                 TextWrapping = TextWrapping.Wrap,
             },
-            PrimaryButtonText = "Add exclusion",
-            CloseButtonText = "Not now",
+            PrimaryButtonText = Localization.Get("AddExclusion"),
+            CloseButtonText = Localization.Get("NotNow"),
             DefaultButton = ContentDialogButton.Close,
         };
         var add = await dialog.ShowAsync() == ContentDialogResult.Primary;
@@ -1223,7 +1224,7 @@ public sealed partial class MainWindow : Window
             var exitCode = await App.Broker.SetDefenderExclusionAsync(true);
             if (exitCode != 0)
             {
-                throw new InvalidOperationException($"The background service could not add the Defender exclusion (code {exitCode}).");
+                throw new InvalidOperationException(Localization.Get("TheBackgroundServiceCouldNotAddTheDefenderExclusion", exitCode));
             }
 
             config.DefenderExclusionEnabled = true;
@@ -1247,15 +1248,15 @@ public sealed partial class MainWindow : Window
     {
         return exitCode switch
         {
-            3 => "The agent or configuration file could not be found.",
-            20 => "Could not find a usable Beszel Agent release on GitHub.",
-            21 => "The downloaded archive did not contain beszel-agent.exe.",
-            22 => "The agent could not be downloaded or installed. Check the log and antivirus quarantine.",
-            24 => "The Beszel Agent archive checksum is missing or does not match. Installation was blocked.",
-            23 => "One or more agent folders could not be removed. Stop the service and close any open agent logs or folders, then try again.",
-            53 => "NSSM could not be found. Reinstall BeszelAgentManager or place nssm.exe next to the installed app.",
-            56 => "The background service blocked a version downgrade. Install older versions manually with administrator approval.",
-            _ => $"The background service returned error code {exitCode}.",
+            3 => Localization.Get("TheAgentOrConfigurationFileCouldNotBeFound"),
+            20 => Localization.Get("CouldNotFindAUsableBeszelAgentReleaseOn"),
+            21 => Localization.Get("TheDownloadedArchiveDidNotContainBeszelAgentExe"),
+            22 => Localization.Get("TheAgentCouldNotBeDownloadedOrInstalledCheck"),
+            24 => Localization.Get("TheBeszelAgentArchiveChecksumIsMissingOrDoes"),
+            23 => Localization.Get("OneOrMoreAgentFoldersCouldNotBeRemoved"),
+            53 => Localization.Get("NSSMCouldNotBeFoundReinstallBeszelAgentManagerOrPlace"),
+            56 => Localization.Get("TheBackgroundServiceBlockedAVersionDowngradeInstallOlder"),
+            _ => Localization.Get("TheBackgroundServiceReturnedErrorCode0", exitCode),
         };
     }
 
@@ -1263,7 +1264,7 @@ public sealed partial class MainWindow : Window
     {
         if (string.IsNullOrWhiteSpace(body))
         {
-            return "(No release notes.)";
+            return Localization.Get("NoReleaseNotes");
         }
 
         var lines = body.Replace("\r\n", "\n").Split('\n')
@@ -1277,7 +1278,7 @@ public sealed partial class MainWindow : Window
 
         if (lines.Count > 18)
         {
-            lines = lines.Take(18).Append("...").Append("(truncated)").ToList();
+            lines = lines.Take(18).Append("...").Append(Localization.Get("Truncated")).ToList();
         }
 
         return string.Join(Environment.NewLine, lines);
@@ -1292,7 +1293,7 @@ public sealed partial class MainWindow : Window
             var releases = await _managerUpdateService.FetchReleasesAsync(config.ManagerUpdateIncludePrereleases);
             if (releases.Count == 0)
             {
-                ShowGlobalStatus(InfoBarSeverity.Warning, "No manager versions found", "No usable installer releases were returned by GitHub.");
+                ShowGlobalStatus(InfoBarSeverity.Warning, Localization.Get("NoManagerVersionsFound"), Localization.Get("NoUsableInstallerReleasesWereReturnedByGitHub"));
                 return;
             }
 
@@ -1316,10 +1317,10 @@ public sealed partial class MainWindow : Window
             };
 
             var versionSection = new StackPanel { Spacing = 10 };
-            versionSection.Children.Add(new TextBlock { Text = "Open an installer release", FontSize = 17, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
+            versionSection.Children.Add(new TextBlock { Text = Localization.Get("OpenAnInstallerRelease"), FontSize = 17, FontWeight = Microsoft.UI.Text.FontWeights.SemiBold });
             versionSection.Children.Add(new TextBlock
             {
-                Text = "Verified updates install through the background service. Other versions can be downloaded from the official release page and installed manually.",
+                Text = Localization.Get("VerifiedUpdatesInstallThroughTheBackgroundServiceOtherVersions"),
                 Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
                 TextWrapping = TextWrapping.Wrap,
             });
@@ -1346,10 +1347,10 @@ public sealed partial class MainWindow : Window
             var dialog = new ContentDialog
             {
                 XamlRoot = NavView.XamlRoot,
-                Title = "Manage Manager Version",
+                Title = Localization.Get("ManageManagerVersion"),
                 Content = panel,
-                PrimaryButtonText = "Continue",
-                CloseButtonText = "Cancel",
+                PrimaryButtonText = Localization.Get("Continue"),
+                CloseButtonText = Localization.Get("Cancel"),
                 DefaultButton = ContentDialogButton.Primary,
             };
             var result = await dialog.ShowAsync();
@@ -1368,21 +1369,21 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             App.Logger.Error($"Manager version manager failed: {ex}");
-            ShowGlobalStatus(InfoBarSeverity.Warning, "Could not load manager versions", "Please try again later. Technical details are available in the log.");
+            ShowGlobalStatus(InfoBarSeverity.Warning, Localization.Get("CouldNotLoadManagerVersions"), Localization.Get("PleaseTryAgainLaterTechnicalDetailsAreAvailableIn"));
         }
     }
 
     public async Task ShowManagerUpdateSettingsAsync()
     {
         var config = await _configService.LoadAsync();
-        var notify = new CheckBox { Content = "Notify me when a manager update is available", IsChecked = config.ManagerUpdateNotifyEnabled };
-        var badge = new CheckBox { Content = "Show update availability in the tray status", IsChecked = config.ManagerUpdateTrayBadgeEnabled };
-        var prereleases = new CheckBox { Content = "Include release candidates and other prereleases", IsChecked = config.ManagerUpdateIncludePrereleases };
+        var notify = new CheckBox { Content = Localization.Get("NotifyMeWhenAManagerUpdateIsAvailable"), IsChecked = config.ManagerUpdateNotifyEnabled };
+        var badge = new CheckBox { Content = Localization.Get("ShowUpdateAvailabilityInTheTrayStatus"), IsChecked = config.ManagerUpdateTrayBadgeEnabled };
+        var prereleases = new CheckBox { Content = Localization.Get("IncludeReleaseCandidatesAndOtherPrereleases"), IsChecked = config.ManagerUpdateIncludePrereleases };
         var skipVersion = new TextBox
         {
-            Header = "Skip notifications for version (optional)",
+            Header = Localization.Get("SkipNotificationsForVersionOptional"),
             Text = config.ManagerUpdateSkipVersion,
-            PlaceholderText = "Example: 4.0.1",
+            PlaceholderText = Localization.Get("Example401"),
         };
         var interval = new NumberBox
         {
@@ -1393,13 +1394,13 @@ public sealed partial class MainWindow : Window
             Width = 100,
         };
         var intervalRow = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 8 };
-        intervalRow.Children.Add(new TextBlock { Text = "Check every", VerticalAlignment = VerticalAlignment.Center });
+        intervalRow.Children.Add(new TextBlock { Text = Localization.Get("CheckEvery"), VerticalAlignment = VerticalAlignment.Center });
         intervalRow.Children.Add(interval);
-        intervalRow.Children.Add(new TextBlock { Text = "hour(s)", VerticalAlignment = VerticalAlignment.Center });
+        intervalRow.Children.Add(new TextBlock { Text = Localization.Get("CheckIntervalHours"), VerticalAlignment = VerticalAlignment.Center });
         var panel = new StackPanel { Spacing = 10, Width = 520 };
         panel.Children.Add(new TextBlock
         {
-            Text = "Control automatic GitHub checks and update notifications. Updates are installed only when you explicitly choose a version or approve Update Manager.",
+            Text = Localization.Get("ControlAutomaticGitHubChecksAndUpdateNotificationsUpdatesAre"),
             TextWrapping = TextWrapping.Wrap,
             Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
         });
@@ -1412,10 +1413,10 @@ public sealed partial class MainWindow : Window
         var dialog = new ContentDialog
         {
             XamlRoot = NavView.XamlRoot,
-            Title = "Manager update settings",
+            Title = Localization.Get("ManagerUpdateSettings"),
             Content = panel,
-            PrimaryButtonText = "Save settings",
-            CloseButtonText = "Cancel",
+            PrimaryButtonText = Localization.Get("SaveSettings"),
+            CloseButtonText = Localization.Get("Cancel"),
             DefaultButton = ContentDialogButton.Primary,
         };
         if (await dialog.ShowAsync() != ContentDialogResult.Primary)
@@ -1433,13 +1434,13 @@ public sealed partial class MainWindow : Window
         config.ManagerUpdateLastCheckAt = string.Empty;
         await _configService.SaveAsync(config);
         App.Logger.Info("Manager update settings saved");
-        ShowGlobalStatus(InfoBarSeverity.Success, "Manager update settings saved", "The new update preferences are active.");
+        ShowGlobalStatus(InfoBarSeverity.Success, Localization.Get("ManagerUpdateSettingsSaved"), Localization.Get("TheNewUpdatePreferencesAreActive"));
         _ = CheckManagerUpdateInBackgroundAsync();
     }
 
     private static string FullReleaseNotes(string? body)
     {
-        return string.IsNullOrWhiteSpace(body) ? "(No release notes.)" : body.Trim();
+        return string.IsNullOrWhiteSpace(body) ? Localization.Get("NoReleaseNotes") : body.Trim();
     }
 
     private static bool IsManagerUpdateAvailable(ManagerRelease release, bool includePrereleases)
@@ -1466,7 +1467,7 @@ public sealed partial class MainWindow : Window
             return;
         }
         if (!await EnsureBackgroundServiceAvailableAsync()) return;
-        ShowGlobalStatus(InfoBarSeverity.Informational, "Verifying signed update", "Downloading and verifying the latest official release for this installation. The application will remain open until you confirm installation.");
+        ShowGlobalStatus(InfoBarSeverity.Informational, Localization.Get("VerifyingSignedUpdate"), Localization.Get("DownloadingAndVerifyingTheLatestOfficialReleaseForThis"));
         ManagerUpdateStage staged;
         try
         {
@@ -1475,20 +1476,20 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             App.Logger.Error($"Signed manager update verification failed: {ex}");
-            ShowGlobalStatus(InfoBarSeverity.Error, "Update could not be verified", "Installation was not started. Please try again later. Technical details are available in the log.");
+            ShowGlobalStatus(InfoBarSeverity.Error, Localization.Get("UpdateCouldNotBeVerified"), Localization.Get("InstallationWasNotStartedPleaseTryAgainLaterTechnical"));
             return;
         }
         var confirm = new ContentDialog
         {
             XamlRoot = NavView.XamlRoot,
-            Title = "Hashes verified",
+            Title = Localization.Get("HashesVerified"),
             Content = new TextBlock
             {
-                Text = $"BeszelAgentManager {staged.Tag} is ready to install.",
+                Text = Localization.Get("BeszelAgentManager0IsReadyToInstall", staged.Tag),
                 TextWrapping = TextWrapping.Wrap,
             },
-            PrimaryButtonText = "Begin update",
-            CloseButtonText = "Cancel",
+            PrimaryButtonText = Localization.Get("BeginUpdate"),
+            CloseButtonText = Localization.Get("Cancel"),
             DefaultButton = ContentDialogButton.Primary,
         };
         if (await confirm.ShowAsync() != ContentDialogResult.Primary)
@@ -1503,7 +1504,7 @@ public sealed partial class MainWindow : Window
         catch (Exception ex)
         {
             App.Logger.Error($"Signed manager update commit failed: {ex}");
-            ShowGlobalStatus(InfoBarSeverity.Error, "Update could not be started", "The manager will remain open. Check the log before trying again.");
+            ShowGlobalStatus(InfoBarSeverity.Error, Localization.Get("UpdateCouldNotBeStarted"), Localization.Get("TheManagerWillRemainOpenCheckTheLogBefore"));
             return;
         }
         App.Logger.Info($"Signed manager update accepted for {staged.Tag}; completion pending installer verification.");
@@ -1515,14 +1516,14 @@ public sealed partial class MainWindow : Window
         var dialog = new ContentDialog
         {
             XamlRoot = NavView.XamlRoot,
-            Title = $"Download BeszelAgentManager {release.Version}",
+            Title = Localization.Get("DownloadBeszelAgentManager0", release.Version),
             Content = new TextBlock
             {
-                Text = $"This version needs to be installed manually. Open the official release page, download {AppInfo.InstallerAssetName}, and run it to update. Windows will ask for administrator approval.",
+                Text = Localization.Get("ThisVersionNeedsToBeInstalledManuallyOpenThe", AppInfo.InstallerAssetName),
                 TextWrapping = TextWrapping.Wrap,
             },
-            PrimaryButtonText = "Open release page",
-            CloseButtonText = "Cancel",
+            PrimaryButtonText = Localization.Get("OpenReleasePage"),
+            CloseButtonText = Localization.Get("Cancel"),
             DefaultButton = ContentDialogButton.Close,
         };
         if (await dialog.ShowAsync() == ContentDialogResult.Primary)
@@ -1569,7 +1570,7 @@ public sealed partial class MainWindow : Window
                 Text = message,
                 TextWrapping = TextWrapping.Wrap,
             },
-            CloseButtonText = "OK",
+            CloseButtonText = Localization.Get("OK"),
         };
         await dialog.ShowAsync();
     }
@@ -1614,14 +1615,14 @@ public sealed partial class MainWindow : Window
         var panel = new StackPanel { Spacing = 10 };
         panel.Children.Add(new TextBlock
         {
-            Text = $"Installed: {AppInfo.ReleaseTag}\nAvailable: {release.Version} ({release.Tag})",
+            Text = Localization.Get("Installed0Available12", AppInfo.ReleaseTag, release.Version, release.Tag),
             TextWrapping = TextWrapping.Wrap,
         });
 
         if (!string.IsNullOrWhiteSpace(release.Body))
         {
             var notes = release.Body.Length > 1500
-                ? $"{release.Body[..1500]}\n\n(truncated)"
+                ? Localization.Get("0Truncated", release.Body[..1500])
                 : release.Body;
             panel.Children.Add(new TextBlock
             {

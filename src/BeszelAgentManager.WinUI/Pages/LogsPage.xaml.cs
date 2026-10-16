@@ -38,8 +38,8 @@ public sealed partial class LogsPage : Page
         DebugLoggingCheckBox.IsChecked = config.DebugLogging;
         _loadingConfig = false;
         App.Logger.Debug("Logging page opened");
-        ManagerLogFolderText.Text = $"Manager log folder: {ManagerPaths.ManagerLogDir}";
-        ManagerLogFileText.Text = $"Current file: {ManagerPaths.ManagerLogPath}";
+        ManagerLogFolderText.Text = Localization.Get("ManagerLogFolder0", ManagerPaths.ManagerLogDir);
+        ManagerLogFileText.Text = Localization.Get("CurrentFile0", ManagerPaths.ManagerLogPath);
         LoadLogFiles();
         await RefreshLogAsync();
         _refreshTimer.Start();
@@ -94,8 +94,8 @@ public sealed partial class LogsPage : Page
         App.Logger.Info($"Manager debug logging {(enabled ? "enabled" : "disabled")}");
         App.MainWindow.ShowActionStatus(
             InfoBarSeverity.Informational,
-            enabled ? "Debug logging enabled" : "Debug logging disabled",
-            enabled ? "Manager debug entries will now be written to the log." : "Manager debug entries will be hidden from the log.");
+            enabled ? Localization.Get("DebugLoggingEnabled") : Localization.Get("DebugLoggingDisabled"),
+            enabled ? Localization.Get("ManagerDebugEntriesWillNowBeWrittenToThe") : Localization.Get("ManagerDebugEntriesWillBeHiddenFromTheLog"));
         await RefreshLogAsync();
     }
 
@@ -109,7 +109,7 @@ public sealed partial class LogsPage : Page
             App.Logger.Info($"Support bundle created: {path}");
             App.MainWindow.ShowActionStatus(
                 InfoBarSeverity.Success,
-                "Support bundle exported",
+                Localization.Get("SupportBundleExported"),
                 path);
             OpenFolder(Path.GetDirectoryName(path) ?? ManagerPaths.DataDir);
         }
@@ -118,7 +118,7 @@ public sealed partial class LogsPage : Page
             App.Logger.Error($"Support bundle export failed: {ex}");
             App.MainWindow.ShowActionStatus(
                 InfoBarSeverity.Error,
-                "Support bundle export failed",
+                Localization.Get("SupportBundleExportFailed"),
                 ex.Message);
         }
         finally
@@ -138,15 +138,15 @@ public sealed partial class LogsPage : Page
             App.Logger.Info("Manual manager log rotation completed");
             App.MainWindow.ShowActionStatus(
                 InfoBarSeverity.Success,
-                "Manager log rotated",
-                "The current manager log was archived and a fresh log was started.");
+                Localization.Get("ManagerLogRotated"),
+                Localization.Get("TheCurrentManagerLogWasArchivedAndAFresh"));
         }
         catch (Exception ex)
         {
             App.Logger.Error($"Manual manager log rotation failed: {ex}");
             App.MainWindow.ShowActionStatus(
                 InfoBarSeverity.Error,
-                "Manager log rotation failed",
+                Localization.Get("ManagerLogRotationFailed"),
                 ex.Message);
         }
 
@@ -168,7 +168,7 @@ public sealed partial class LogsPage : Page
 
         if (LogSelector.Items.Count == 0)
         {
-            SetLogText("(No manager logs found yet.)");
+            SetLogText(Localization.Get("NoManagerLogsFoundYet"));
             _loadingLogFiles = false;
             return;
         }
@@ -191,7 +191,7 @@ public sealed partial class LogsPage : Page
         {
             var selected = LogSelector.SelectedItem as LogFileItem;
             var path = selected?.Path ?? ManagerPaths.ManagerLogPath;
-            ManagerLogFileText.Text = $"Current file: {path}";
+            ManagerLogFileText.Text = Localization.Get("CurrentFile0", path);
             var text = await _logReaderService.ReadTailFilteredAsync(path, SelectedTypeFilter());
             SetLogText(text);
             QueueScrollToBottom();
@@ -217,7 +217,7 @@ public sealed partial class LogsPage : Page
     private string SelectedTypeFilter()
     {
         return TypeFilterComboBox.SelectedItem is ComboBoxItem item
-            ? item.Content?.ToString() ?? "All"
+            ? item.Tag?.ToString() ?? "All"
             : "All";
     }
 

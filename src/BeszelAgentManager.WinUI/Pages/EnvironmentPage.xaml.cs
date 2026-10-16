@@ -10,41 +10,41 @@ public sealed partial class EnvironmentPage : Page
 {
     private static readonly IReadOnlyList<EnvDefinition> Definitions =
     [
-        new("ALL_PROXY", "all_proxy", "SOCKS5 or SOCKS5H proxy for the outbound Hub WebSocket, for example socks5h://proxy.example.com:1080."),
-        new("CA_CERT_FILE", "ca_cert_file", "Absolute local path to a PEM certificate file used to trust a private or self-signed Hub certificate."),
-        new("DOCKER_HOST", "docker_host", "Points the agent at a specific Docker daemon endpoint."),
-        new("DOCKER_IMAGE_CHECK", "docker_image_check", "Set to false to disable container image update checks and registry requests. Defaults to true."),
-        new("DOCKER_TIMEOUT", "docker_timeout", "Docker API timeout in Go duration format, for example 5s or 2100ms."),
-        new("EXCLUDE_CONTAINERS", "exclude_containers", "Comma-separated container names or patterns to hide from monitoring."),
-        new("EXCLUDE_SMART", "exclude_smart", "Disk names or patterns to skip during S.M.A.R.T. collection."),
-        new("EXTRA_FILESYSTEMS", "extra_filesystems", "Additional filesystem paths the agent should collect usage for."),
-        new("FILESYSTEM", "filesystem", "Overrides the root filesystem path used for disk statistics."),
-        new("EXIT_ON_DNS_ERROR", "exit_on_dns_error", "Exits the agent when Hub DNS lookup fails. Do not combine with manager WebSocket offline backoff."),
-        new("INTEL_GPU_DEVICE", "intel_gpu_device", "Device path used by intel_gpu_top for Intel GPU metrics."),
-        new("NVML", "nvml", "Enables NVIDIA NVML GPU monitoring when set to true."),
-        new("LHM", "lhm", "Enables LibreHardwareMonitor sensor collection on Windows."),
-        new("LOG_LEVEL", "log_level", "Controls agent verbosity, for example info, warn, or debug."),
-        new("MEM_CALC", "mem_calc", "Changes how memory usage is calculated."),
-        new("NETWORK", "network", "Changes network collection mode."),
-        new("NICS", "nics", "Limits network monitoring to specific interface names."),
-        new("PACKAGE_UPDATES_INTERVAL", "package_updates_interval", "Linux only. Package update check interval, for example 1h (default). Set to 0 to disable checks."),
-        new("SENSORS", "sensors", "Selects which hardware sensors the agent reads."),
-        new("SENSORS_TIMEOUT", "sensors_timeout", "Maximum time allowed for sensor collection, for example 5s."),
-        new("PRIMARY_SENSOR", "primary_sensor", "Selects the primary temperature sensor shown in Beszel."),
-        new("SYS_SENSORS", "sys_sensors", "Path override for system sensor data."),
-        new("SERVICE_PATTERNS", "service_patterns", "Service names or patterns to monitor."),
-        new("SMART_DEVICES", "smart_devices", "Specific S.M.A.R.T. devices, optionally as device:type entries such as /dev/sda:sat."),
-        new("SMART_DEVICES_SEPARATOR", "smart_devices_separator", "Separator used between SMART_DEVICES entries. Defaults to a comma."),
-        new("SMART_INTERVAL", "smart_interval", "How often S.M.A.R.T. data is refreshed, for example 1h."),
-        new("SYSTEM_NAME", "system_name", "Overrides the system name reported by the agent."),
-        new("ZFS_INTERVAL", "zfs_interval", "ZFS pool detail refresh interval (scrub, vdevs, datasets), for example 1h. Not applicable to Windows."),
-        new("SKIP_GPU", "skip_gpu", "Set to true to skip GPU metrics, including GPU temperature and fan sensors."),
-        new("GPU_COLLECTOR", "gpu_collector", "Ordered collectors such as nvtop, nvml, intel_sysfs, intel_gpu_top, amd_sysfs, or rocm-smi."),
-        new("DISABLE_SSH", "disable_ssh", "Disables the agent SSH server when set to true."),
-        new("DISK_USAGE_CACHE", "disk_usage_cache", "Caches disk usage results for a duration, for example 10m."),
-        new("SKIP_SYSTEMD", "skip_systemd", "Linux only. Set to true to skip systemd integration."),
-        new("SKIP_SYSTEMD_LOGS", "skip_systemd_logs", "Linux only. Set to true to disable systemd journal log collection."),
-        new("SKIP_WIFI", "skip_wifi", "Set to true to skip Wi-Fi signal collection. Windows uses the native WLAN API."),
+        new("ALL_PROXY", "all_proxy", Localization.Get("SOCKS5OrSOCKS5HProxyForTheOutboundHubWebSocket")),
+        new("CA_CERT_FILE", "ca_cert_file", Localization.Get("AbsoluteLocalPathToAPEMCertificateFileUsed")),
+        new("DOCKER_HOST", "docker_host", Localization.Get("PointsTheAgentAtASpecificDockerDaemonEndpoint")),
+        new("DOCKER_IMAGE_CHECK", "docker_image_check", Localization.Get("SetToFalseToDisableContainerImageUpdateChecks")),
+        new("DOCKER_TIMEOUT", "docker_timeout", Localization.Get("DockerAPITimeoutInGoDurationFormatForExample")),
+        new("EXCLUDE_CONTAINERS", "exclude_containers", Localization.Get("CommaSeparatedContainerNamesOrPatternsToHideFrom")),
+        new("EXCLUDE_SMART", "exclude_smart", Localization.Get("DiskNamesOrPatternsToSkipDuringSM")),
+        new("EXTRA_FILESYSTEMS", "extra_filesystems", Localization.Get("AdditionalFilesystemPathsTheAgentShouldCollectUsageFor")),
+        new("FILESYSTEM", "filesystem", Localization.Get("OverridesTheRootFilesystemPathUsedForDiskStatistics")),
+        new("EXIT_ON_DNS_ERROR", "exit_on_dns_error", Localization.Get("ExitsTheAgentWhenHubDNSLookupFailsDo")),
+        new("INTEL_GPU_DEVICE", "intel_gpu_device", Localization.Get("DevicePathUsedByIntelGpuTopForIntel")),
+        new("NVML", "nvml", Localization.Get("EnablesNVIDIANVMLGPUMonitoringWhenSetToTrue")),
+        new("LHM", "lhm", Localization.Get("EnablesLibreHardwareMonitorSensorCollectionOnWindows")),
+        new("LOG_LEVEL", "log_level", Localization.Get("ControlsAgentVerbosityForExampleInfoWarnOrDebug")),
+        new("MEM_CALC", "mem_calc", Localization.Get("ChangesHowMemoryUsageIsCalculated")),
+        new("NETWORK", "network", Localization.Get("ChangesNetworkCollectionMode")),
+        new("NICS", "nics", Localization.Get("LimitsNetworkMonitoringToSpecificInterfaceNames")),
+        new("PACKAGE_UPDATES_INTERVAL", "package_updates_interval", Localization.Get("LinuxOnlyPackageUpdateCheckIntervalForExample1h")),
+        new("SENSORS", "sensors", Localization.Get("SelectsWhichHardwareSensorsTheAgentReads")),
+        new("SENSORS_TIMEOUT", "sensors_timeout", Localization.Get("MaximumTimeAllowedForSensorCollectionForExample5s")),
+        new("PRIMARY_SENSOR", "primary_sensor", Localization.Get("SelectsThePrimaryTemperatureSensorShownInBeszel")),
+        new("SYS_SENSORS", "sys_sensors", Localization.Get("PathOverrideForSystemSensorData")),
+        new("SERVICE_PATTERNS", "service_patterns", Localization.Get("ServiceNamesOrPatternsToMonitor")),
+        new("SMART_DEVICES", "smart_devices", Localization.Get("SpecificSMARTDevicesOptionallyAs")),
+        new("SMART_DEVICES_SEPARATOR", "smart_devices_separator", Localization.Get("SeparatorUsedBetweenSMARTDEVICESEntriesDefaultsToA")),
+        new("SMART_INTERVAL", "smart_interval", Localization.Get("HowOftenSMARTDataIs")),
+        new("SYSTEM_NAME", "system_name", Localization.Get("OverridesTheSystemNameReportedByTheAgent")),
+        new("ZFS_INTERVAL", "zfs_interval", Localization.Get("ZFSPoolDetailRefreshIntervalScrubVdevsDatasetsFor")),
+        new("SKIP_GPU", "skip_gpu", Localization.Get("SetToTrueToSkipGPUMetricsIncludingGPU")),
+        new("GPU_COLLECTOR", "gpu_collector", Localization.Get("OrderedCollectorsSuchAsNvtopNvmlIntelSysfsIntel")),
+        new("DISABLE_SSH", "disable_ssh", Localization.Get("DisablesTheAgentSSHServerWhenSetToTrue")),
+        new("DISK_USAGE_CACHE", "disk_usage_cache", Localization.Get("CachesDiskUsageResultsForADurationForExample")),
+        new("SKIP_SYSTEMD", "skip_systemd", Localization.Get("LinuxOnlySetToTrueToSkipSystemdIntegration")),
+        new("SKIP_SYSTEMD_LOGS", "skip_systemd_logs", Localization.Get("LinuxOnlySetToTrueToDisableSystemdJournal")),
+        new("SKIP_WIFI", "skip_wifi", Localization.Get("SetToTrueToSkipWiFiSignalCollection")),
     ];
 
     private readonly ConfigService _configService = new();
@@ -77,8 +77,8 @@ public sealed partial class EnvironmentPage : Page
         {
             App.MainWindow.ShowActionStatus(
                 InfoBarSeverity.Informational,
-                "Environment already active",
-                $"{name} is already listed.");
+                Localization.Get("EnvironmentAlreadyActive"),
+                Localization.Get("0IsAlreadyListed", name));
             return;
         }
 
@@ -101,8 +101,8 @@ public sealed partial class EnvironmentPage : Page
             EnvironmentListView.Items.Add(new TextBlock
             {
                 Text = string.IsNullOrEmpty(searchText)
-                    ? "No environment variables are active."
-                    : "No active environment variables match your search.",
+                    ? Localization.Get("NoEnvironmentVariablesAreActive")
+                    : Localization.Get("NoActiveEnvironmentVariablesMatchYourSearch"),
                 Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
             });
             return;
@@ -143,7 +143,7 @@ public sealed partial class EnvironmentPage : Page
         });
         labelPanel.Children.Add(new TextBlock
         {
-            Text = definition?.Description ?? "Custom environment variable.",
+            Text = definition?.Description ?? Localization.Get("CustomEnvironmentVariable"),
             Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
             TextWrapping = TextWrapping.Wrap,
             FontSize = 12,
@@ -159,14 +159,14 @@ public sealed partial class EnvironmentPage : Page
         };
         var editButton = new Button
         {
-            Content = "Edit",
+            Content = Localization.Get("Edit"),
             MinHeight = 28,
             Padding = new Thickness(10, 3, 10, 3),
             VerticalAlignment = VerticalAlignment.Center,
         };
         var removeButton = new Button
         {
-            Content = "Remove",
+            Content = Localization.Get("Remove"),
             MinHeight = 28,
             Padding = new Thickness(10, 3, 10, 3),
             VerticalAlignment = VerticalAlignment.Center,
@@ -195,7 +195,7 @@ public sealed partial class EnvironmentPage : Page
         if (textBox.IsReadOnly)
         {
             textBox.IsReadOnly = false;
-            editButton.Content = "Save";
+            editButton.Content = Localization.Get("Save");
             textBox.Focus(FocusState.Programmatic);
             textBox.SelectionStart = textBox.Text.Length;
             return;
@@ -204,7 +204,7 @@ public sealed partial class EnvironmentPage : Page
         var before = GetEnvironmentValue(state);
         SetEnvironmentValue(state, textBox.Text.Trim());
         textBox.IsReadOnly = true;
-        editButton.Content = "Edit";
+        editButton.Content = Localization.Get("Edit");
         await SaveAndReportAsync(IsSensitiveEnvironmentName(state.Name)
             ? $"Environment variable {state.Name} changed (value redacted)"
             : $"Environment variable {state.Name}: {Format(before)} -> {Format(textBox.Text.Trim())}");
@@ -251,8 +251,8 @@ public sealed partial class EnvironmentPage : Page
         App.Logger.Info(logMessage);
         App.MainWindow.ShowActionStatus(
             InfoBarSeverity.Informational,
-            "Environment saved",
-            "Apply settings when you are ready to restart the service with these environment changes.");
+            Localization.Get("EnvironmentSaved"),
+            Localization.Get("ApplySettingsWhenYouAreReadyToRestartThe2"));
     }
 
     private static string Format(string value)
@@ -273,7 +273,7 @@ public sealed partial class EnvironmentPage : Page
         var searchBox = new TextBox
         {
             MinHeight = 32,
-            PlaceholderText = "Search name or description",
+            PlaceholderText = Localization.Get("SearchNameOrDescription"),
         };
 
         void RenderOptions()
@@ -307,7 +307,7 @@ public sealed partial class EnvironmentPage : Page
                 optionsPanel.Children.Add(new TextBlock
                 {
                     Padding = new Thickness(10, 8, 10, 8),
-                    Text = "No environment variables match your search.",
+                    Text = Localization.Get("NoEnvironmentVariablesMatchYourSearch"),
                     Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
                 });
             }

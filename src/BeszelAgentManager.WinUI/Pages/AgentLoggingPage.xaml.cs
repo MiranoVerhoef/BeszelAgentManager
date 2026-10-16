@@ -53,23 +53,23 @@ public sealed partial class AgentLoggingPage : Page
         App.Logger.Info("Manual agent log rotation requested");
         App.MainWindow.ShowActionStatus(
             InfoBarSeverity.Informational,
-            "Rotating agent log",
-            "The background service is rotating the agent log.");
+            Localization.Get("RotatingAgentLog"),
+            Localization.Get("TheBackgroundServiceIsRotatingTheAgentLog"));
         try
         {
             var exitCode = await App.Broker.RotateAgentLogsAsync();
             if (exitCode != 0)
             {
                 throw new InvalidOperationException(exitCode == 24
-                    ? "The agent log could not be rotated. Close any program holding the log file and try again."
-                    : $"The background service returned error code {exitCode}.");
+                    ? Localization.Get("TheAgentLogCouldNotBeRotatedCloseAny")
+                    : Localization.Get("TheBackgroundServiceReturnedErrorCode0", exitCode));
             }
 
             App.Logger.Info("Manual agent log rotation completed");
             App.MainWindow.ShowActionStatus(
                 InfoBarSeverity.Success,
-                "Agent log rotated",
-                "The current agent log was archived and a fresh log was started.");
+                Localization.Get("AgentLogRotated"),
+                Localization.Get("TheCurrentAgentLogWasArchivedAndAFresh"));
             LoadLogFiles();
             await RefreshAsync();
         }
@@ -78,15 +78,15 @@ public sealed partial class AgentLoggingPage : Page
             App.Logger.Info("Manual agent log rotation cancelled at UAC prompt");
             App.MainWindow.ShowActionStatus(
                 InfoBarSeverity.Warning,
-                "Agent log rotation cancelled",
-                "The administrator prompt was cancelled.");
+                Localization.Get("AgentLogRotationCancelled"),
+                Localization.Get("TheAdministratorPromptWasCancelled"));
         }
         catch (Exception ex)
         {
             App.Logger.Error($"Manual agent log rotation failed: {ex}");
             App.MainWindow.ShowActionStatus(
                 InfoBarSeverity.Error,
-                "Agent log rotation failed",
+                Localization.Get("AgentLogRotationFailed"),
                 ex.Message);
         }
         finally
@@ -125,13 +125,13 @@ public sealed partial class AgentLoggingPage : Page
 
         if (LogSelector.Items.Count == 0)
         {
-            SetLogText("(No agent logs found yet.)");
+            SetLogText(Localization.Get("NoAgentLogsFoundYet"));
             _loadingLogFiles = false;
             return;
         }
 
         var selected = files.FirstOrDefault(file => string.Equals(file.Path, selectedPath, StringComparison.OrdinalIgnoreCase))
-            ?? files.FirstOrDefault(file => file.Label.Equals("Current (beszel-agent.log)", StringComparison.OrdinalIgnoreCase))
+            ?? files.FirstOrDefault(file => string.Equals(file.Path, ManagerPaths.AgentLogPath, StringComparison.OrdinalIgnoreCase))
             ?? files[0];
         LogSelector.SelectedItem = selected;
         _loadingLogFiles = false;
@@ -149,7 +149,7 @@ public sealed partial class AgentLoggingPage : Page
         {
             var selected = LogSelector.SelectedItem as LogFileItem;
             var path = selected?.Path ?? ManagerPaths.AgentLogPath;
-            LogPathText.Text = $"Current capture file: {path}";
+            LogPathText.Text = Localization.Get("CurrentCaptureFile0", path);
             var filter = SelectedTypeFilter();
             var text = string.Equals(path, ManagerPaths.AgentLogPath, StringComparison.OrdinalIgnoreCase)
                 ? ReadCurrentAgentLogTail(path, filter)
@@ -159,7 +159,7 @@ public sealed partial class AgentLoggingPage : Page
                 text = text[^10_000..];
             }
             SetLogText(string.IsNullOrWhiteSpace(text)
-                ? $"No log content loaded from: {path}"
+                ? Localization.Get("NoLogContentLoadedFrom0", path)
                 : text);
             QueueScrollToBottom();
             UpdateKnownFileState(path);
@@ -184,7 +184,7 @@ public sealed partial class AgentLoggingPage : Page
     {
         if (!File.Exists(path))
         {
-            return $"Log file not found: {path}";
+            return Localization.Get("LogFileNotFound0", path);
         }
 
         try
@@ -206,12 +206,12 @@ public sealed partial class AgentLoggingPage : Page
             }
 
             return lines.Count == 0
-                ? $"No {typeFilter.ToLowerInvariant()} entries in selected log."
+                ? Localization.Get("No0EntriesInSelectedLog", Localization.LogFilter(typeFilter))
                 : string.Join(Environment.NewLine, lines);
         }
         catch (Exception ex)
         {
-            return $"Could not read log file: {path}{Environment.NewLine}{ex.Message}";
+            return Localization.Get("CouldNotReadLogFile012", path, Environment.NewLine, ex.Message);
         }
     }
 
@@ -259,7 +259,7 @@ public sealed partial class AgentLoggingPage : Page
     private string SelectedTypeFilter()
     {
         return TypeFilterComboBox.SelectedItem is ComboBoxItem item
-            ? item.Content?.ToString() ?? "All"
+            ? item.Tag?.ToString() ?? "All"
             : "All";
     }
 

@@ -2,6 +2,7 @@
 <Page
     x:Class="BeszelAgentManager.WinUI.Pages.EnvironmentPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:l="using:BeszelAgentManager.WinUI.Services"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -14,7 +15,7 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <TextBlock Margin="2,0" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Only the supported variables listed under Add environment can be configured. Added variables are always enabled." />
+        <TextBlock Margin="2,0" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{l:Localize Key=OnlyTheSupportedVariablesListedUnderAddEnvironmentCan}" />
 
         <Border Grid.Row="1" Padding="10,8" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="6">
             <Grid ColumnSpacing="8">
@@ -24,7 +25,7 @@
                     <ColumnDefinition Width="88" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="Add environment" />
+                <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="{l:Localize Key=AddEnvironment}" />
                 <Button
                     x:Name="SelectEnvironmentButton"
                     Grid.Column="1"
@@ -48,13 +49,13 @@
                             Glyph="&#xE70D;" />
                     </Grid>
                 </Button>
-                <Button Grid.Column="2" MinHeight="28" Padding="10,3" Content="Add" Click="AddEnvironmentButton_Click" />
+                <Button Grid.Column="2" MinHeight="28" Padding="10,3" Content="{l:Localize Key=Add}" Click="AddEnvironmentButton_Click" />
                 <TextBox
                     x:Name="EnvironmentSearchBox"
                     Grid.Column="3"
                     MinHeight="28"
                     VerticalContentAlignment="Center"
-                    PlaceholderText="Search name or description"
+                    PlaceholderText="{l:Localize Key=SearchNameOrDescription}"
                     TextChanged="EnvironmentSearchBox_TextChanged" />
             </Grid>
         </Border>

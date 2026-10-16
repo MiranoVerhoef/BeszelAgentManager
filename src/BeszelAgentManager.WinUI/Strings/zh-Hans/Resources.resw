@@ -1,0 +1,1392 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <data name="0Cancelled" xml:space="preserve">
+    <value>已取消{0}</value>
+  </data>
+  <data name="0Completed" xml:space="preserve">
+    <value>{0}已完成</value>
+  </data>
+  <data name="0Failed" xml:space="preserve">
+    <value>{0}失败</value>
+  </data>
+  <data name="0InProgress" xml:space="preserve">
+    <value>正在{0}</value>
+  </data>
+  <data name="0IsAlreadyListed" xml:space="preserve">
+    <value>{0} 已在列表中。</value>
+  </data>
+  <data name="0NotRequired" xml:space="preserve">
+    <value>无需{0}</value>
+  </data>
+  <data name="0Saved" xml:space="preserve">
+    <value>{0}已保存</value>
+  </data>
+  <data name="0Truncated" xml:space="preserve">
+    <value>{0}
+
+（内容已截断）</value>
+  </data>
+  <data name="About" xml:space="preserve">
+    <value>关于</value>
+  </data>
+  <data name="AboutBeszel" xml:space="preserve">
+    <value>关于 Beszel</value>
+  </data>
+  <data name="AbsoluteLocalPathToAPEMCertificateFileUsed" xml:space="preserve">
+    <value>用于信任私有或自签名 Hub 证书的 PEM 证书文件绝对路径。</value>
+  </data>
+  <data name="Add" xml:space="preserve">
+    <value>添加</value>
+  </data>
+  <data name="AddAnExclusionOnlyForTheBeszelAgentManagerInstallationFolder" xml:space="preserve">
+    <value>将 BeszelAgentManager 安装目录添加到 Microsoft Defender 排除项？此项为可选设置，仅在 Defender 干扰应用运行时启用。</value>
+  </data>
+  <data name="AddDefenderExclusion" xml:space="preserve">
+    <value>添加 Defender 排除项</value>
+  </data>
+  <data name="AddDefenderExclusion2" xml:space="preserve">
+    <value>添加 Defender 排除项？</value>
+  </data>
+  <data name="AddEnvironment" xml:space="preserve">
+    <value>添加环境变量</value>
+  </data>
+  <data name="AddExclusion" xml:space="preserve">
+    <value>添加排除项</value>
+  </data>
+  <data name="AdditionalFilesystemPathsTheAgentShouldCollectUsageFor" xml:space="preserve">
+    <value>需要额外采集使用情况的文件系统路径。</value>
+  </data>
+  <data name="Agent0" xml:space="preserve">
+    <value>代理版本：{0}</value>
+  </data>
+  <data name="AgentAlreadyInstalled" xml:space="preserve">
+    <value>代理已安装</value>
+  </data>
+  <data name="AgentChecking" xml:space="preserve">
+    <value>代理版本：正在检查…</value>
+  </data>
+  <data name="AgentFingerprint" xml:space="preserve">
+    <value>代理指纹</value>
+  </data>
+  <data name="AgentFingerprint2" xml:space="preserve">
+    <value>代理指纹</value>
+  </data>
+  <data name="AgentLogFolderCProgramDataBeszelAgentManagerServiceDataAgentLogs" xml:space="preserve">
+    <value>代理日志目录：C:\ProgramData\BeszelAgentManager.ServiceData\agent_logs</value>
+  </data>
+  <data name="AgentLogging" xml:space="preserve">
+    <value>代理日志</value>
+  </data>
+  <data name="AgentLogRotated" xml:space="preserve">
+    <value>代理日志已轮转</value>
+  </data>
+  <data name="AgentLogRotationCancelled" xml:space="preserve">
+    <value>已取消代理日志轮转</value>
+  </data>
+  <data name="AgentLogRotationFailed" xml:space="preserve">
+    <value>代理日志轮转失败</value>
+  </data>
+  <data name="AgentUpdateCancelled" xml:space="preserve">
+    <value>已取消代理更新</value>
+  </data>
+  <data name="AgentUpdateFailed" xml:space="preserve">
+    <value>代理更新失败</value>
+  </data>
+  <data name="AGitHubTokenIsConfiguredLeaveTheMaskedValue" xml:space="preserve">
+    <value>已配置 GitHub 令牌。保留掩码值可继续使用现有令牌，也可以输入新令牌。选择“清除”可移除已保存的令牌。</value>
+  </data>
+  <data name="All" xml:space="preserve">
+    <value>全部</value>
+  </data>
+  <data name="AntivirusExclusions" xml:space="preserve">
+    <value>杀毒软件排除项</value>
+  </data>
+  <data name="ApplicationFolders" xml:space="preserve">
+    <value>应用目录</value>
+  </data>
+  <data name="Applying" xml:space="preserve">
+    <value>正在应用…</value>
+  </data>
+  <data name="ApplySettings" xml:space="preserve">
+    <value>应用设置</value>
+  </data>
+  <data name="ApplySettingsFailed" xml:space="preserve">
+    <value>应用设置失败</value>
+  </data>
+  <data name="ApplySettingsWhenYouAreReadyToRestartThe" xml:space="preserve">
+    <value>准备好重启 Beszel 代理服务并使此更改生效时，请选择“应用设置”。</value>
+  </data>
+  <data name="ApplySettingsWhenYouAreReadyToRestartThe2" xml:space="preserve">
+    <value>准备好使用这些环境变量重启服务时，请选择“应用设置”。</value>
+  </data>
+  <data name="ApproveTheAdministratorPromptToEditTheBeszelAgent" xml:space="preserve">
+    <value>请允许管理员权限请求，以编辑 Beszel 代理服务。</value>
+  </data>
+  <data name="AutomaticUpdateInterval" xml:space="preserve">
+    <value>自动更新间隔</value>
+  </data>
+  <data name="AutomaticUpdates" xml:space="preserve">
+    <value>自动更新</value>
+  </data>
+  <data name="AutomaticUpdateSetting" xml:space="preserve">
+    <value>自动更新设置</value>
+  </data>
+  <data name="BackgroundService" xml:space="preserve">
+    <value>后台服务</value>
+  </data>
+  <data name="BackgroundServiceCheckFailed" xml:space="preserve">
+    <value>后台服务检查失败</value>
+  </data>
+  <data name="BackgroundServiceFound" xml:space="preserve">
+    <value>已找到后台服务</value>
+  </data>
+  <data name="BackgroundServiceInstallationCancelled" xml:space="preserve">
+    <value>已取消后台服务安装</value>
+  </data>
+  <data name="BackgroundServiceInstallationFailed" xml:space="preserve">
+    <value>后台服务安装失败</value>
+  </data>
+  <data name="BackgroundServiceInstalled" xml:space="preserve">
+    <value>后台服务已安装</value>
+  </data>
+  <data name="BackgroundServiceNotInstalled" xml:space="preserve">
+    <value>后台服务未安装</value>
+  </data>
+  <data name="BackgroundServiceRequired" xml:space="preserve">
+    <value>需要后台服务</value>
+  </data>
+  <data name="BackgroundServiceUninstalled" xml:space="preserve">
+    <value>后台服务已卸载</value>
+  </data>
+  <data name="BackgroundServiceUninstallFailed" xml:space="preserve">
+    <value>后台服务卸载失败</value>
+  </data>
+  <data name="BeginUpdate" xml:space="preserve">
+    <value>开始更新</value>
+  </data>
+  <data name="BeszelAgent0IsAlreadyInstalledDoYouReally" xml:space="preserve">
+    <value>已安装 Beszel 代理 {0}。确定要重新安装最新版本吗？</value>
+  </data>
+  <data name="BeszelAgent0WasInstalled" xml:space="preserve">
+    <value>已安装 Beszel 代理 {0}。</value>
+  </data>
+  <data name="BeszelAgentInstallerManager" xml:space="preserve">
+    <value>Beszel 代理安装与管理工具</value>
+  </data>
+  <data name="BeszelAgentIsAlreadyRunning" xml:space="preserve">
+    <value>Beszel 代理已在运行。</value>
+  </data>
+  <data name="BeszelAgentIsNotInstalled" xml:space="preserve">
+    <value>Beszel 代理未安装</value>
+  </data>
+  <data name="BeszelAgentIsNotRunning" xml:space="preserve">
+    <value>Beszel 代理未运行。</value>
+  </data>
+  <data name="BeszelAgentIsRunning" xml:space="preserve">
+    <value>Beszel 代理正在运行。</value>
+  </data>
+  <data name="BeszelAgentIsStarting" xml:space="preserve">
+    <value>Beszel 代理正在启动。</value>
+  </data>
+  <data name="BeszelAgentIsStopped" xml:space="preserve">
+    <value>Beszel 代理已停止。</value>
+  </data>
+  <data name="BeszelAgentIsStopping" xml:space="preserve">
+    <value>Beszel 代理正在停止。</value>
+  </data>
+  <data name="BeszelAgentIsUpToDate" xml:space="preserve">
+    <value>Beszel 代理已是最新版本</value>
+  </data>
+  <data name="BeszelAgentManager0" xml:space="preserve">
+    <value>BeszelAgentManager（{0}）</value>
+  </data>
+  <data name="BeszelAgentManager0IsReadyToInstall" xml:space="preserve">
+    <value>BeszelAgentManager {0} 已准备好安装。</value>
+  </data>
+  <data name="BeszelAgentManager0UpdateAvailable" xml:space="preserve">
+    <value>BeszelAgentManager（{0}）- 有可用更新</value>
+  </data>
+  <data name="BeszelAgentManagerIsUpToDate" xml:space="preserve">
+    <value>BeszelAgentManager 已是最新版本</value>
+  </data>
+  <data name="BeszelAgentManagerSetupExeOrBeszelAgentManagerSetupLiteExeOnlyWhileInstalling" xml:space="preserve">
+    <value>BeszelAgentManagerSetup.exe 或 BeszelAgentManagerSetup-Lite.exe（仅在安装或更新时）</value>
+  </data>
+  <data name="BeszelAgentManagerUpdateAvailable" xml:space="preserve">
+    <value>BeszelAgentManager 有可用更新</value>
+  </data>
+  <data name="BeszelAgentUpdated" xml:space="preserve">
+    <value>Beszel 代理已更新</value>
+  </data>
+  <data name="BeszelAgentWasInstalledAndConfigured" xml:space="preserve">
+    <value>Beszel 代理已安装并配置完成。</value>
+  </data>
+  <data name="BeszelAgentWasRestarted" xml:space="preserve">
+    <value>Beszel 代理已重启。</value>
+  </data>
+  <data name="BeszelAgentWasUninstalledHistoricalAgentLogsWereKept" xml:space="preserve">
+    <value>Beszel 代理已卸载，历史代理日志已保留。</value>
+  </data>
+  <data name="BeszelAgentWasUninstalledHistoricalAgentLogsWereRemoved" xml:space="preserve">
+    <value>Beszel 代理已卸载，历史代理日志已移除。</value>
+  </data>
+  <data name="BeszelAgentWasUpdated" xml:space="preserve">
+    <value>Beszel 代理已更新。</value>
+  </data>
+  <data name="CachesDiskUsageResultsForADurationForExample" xml:space="preserve">
+    <value>缓存磁盘使用情况，时长例如 10m。</value>
+  </data>
+  <data name="Cancel" xml:space="preserve">
+    <value>取消</value>
+  </data>
+  <data name="Change" xml:space="preserve">
+    <value>修改</value>
+  </data>
+  <data name="ChangesHowMemoryUsageIsCalculated" xml:space="preserve">
+    <value>更改内存使用量的计算方式。</value>
+  </data>
+  <data name="ChangesNetworkCollectionMode" xml:space="preserve">
+    <value>更改网络数据采集模式。</value>
+  </data>
+  <data name="Check" xml:space="preserve">
+    <value>检查</value>
+  </data>
+  <data name="CheckEvery" xml:space="preserve">
+    <value>检查间隔</value>
+  </data>
+  <data name="Checking" xml:space="preserve">
+    <value>正在检查…</value>
+  </data>
+  <data name="ChooseApplySettingsToUpdateTheAutomaticUpdateSchedule" xml:space="preserve">
+    <value>选择“应用设置”以更新自动更新计划。Beszel 代理服务不会重启。</value>
+  </data>
+  <data name="ChooseApplySettingsToUpdateTheBackgroundService" xml:space="preserve">
+    <value>选择“应用设置”以更新后台服务配置。</value>
+  </data>
+  <data name="ChooseApplySettingsToUpdateTheBackgroundServiceSchedule" xml:space="preserve">
+    <value>选择“应用设置”以更新后台服务计划。</value>
+  </data>
+  <data name="ChooseInstallAgentToInstallAndConfigureBeszelAgent" xml:space="preserve">
+    <value>选择“安装代理”，使用这些设置安装并配置 Beszel 代理。</value>
+  </data>
+  <data name="ChooseInstallToRepairTheBackgroundService" xml:space="preserve">
+    <value>选择“安装”以修复后台服务。</value>
+  </data>
+  <data name="Clear" xml:space="preserve">
+    <value>清除</value>
+  </data>
+  <data name="Close" xml:space="preserve">
+    <value>关闭</value>
+  </data>
+  <data name="CommaSeparatedContainerNamesOrPatternsToHideFrom" xml:space="preserve">
+    <value>不需要监控的容器名称或匹配模式，以逗号分隔。</value>
+  </data>
+  <data name="ConfigureAHubURLInTheConnectionTab" xml:space="preserve">
+    <value>请在“连接”页面配置 Hub 地址。</value>
+  </data>
+  <data name="ConflictingRetrySettings" xml:space="preserve">
+    <value>重试设置冲突</value>
+  </data>
+  <data name="Connection" xml:space="preserve">
+    <value>连接</value>
+  </data>
+  <data name="ConnectionOption" xml:space="preserve">
+    <value>连接选项</value>
+  </data>
+  <data name="Continue" xml:space="preserve">
+    <value>继续</value>
+  </data>
+  <data name="ContinuingWithBeszelAgentInstallation" xml:space="preserve">
+    <value>继续安装 Beszel 代理。</value>
+  </data>
+  <data name="ContinuingWithTheUpdateWillLetTheBackgroundService" xml:space="preserve">
+    <value>继续更新后，后台服务将安装最新稳定版代理。</value>
+  </data>
+  <data name="ControlAutomaticGitHubChecksAndUpdateNotificationsUpdatesAre" xml:space="preserve">
+    <value>设置自动检查 GitHub 更新和更新通知。仅在您明确选择版本或批准“更新管理器”时才会安装更新。</value>
+  </data>
+  <data name="ControlsAgentVerbosityForExampleInfoWarnOrDebug" xml:space="preserve">
+    <value>设置代理日志级别，例如 info、warn 或 debug。</value>
+  </data>
+  <data name="Copy" xml:space="preserve">
+    <value>复制</value>
+  </data>
+  <data name="CopyInstructions" xml:space="preserve">
+    <value>复制说明</value>
+  </data>
+  <data name="CouldNotCheckAgentVersion" xml:space="preserve">
+    <value>无法检查代理版本</value>
+  </data>
+  <data name="CouldNotCheckForUpdates" xml:space="preserve">
+    <value>无法检查更新</value>
+  </data>
+  <data name="CouldNotFindAUsableBeszelAgentReleaseOn" xml:space="preserve">
+    <value>未能在 GitHub 上找到可用的 Beszel 代理版本。</value>
+  </data>
+  <data name="CouldNotLoadAgentVersions" xml:space="preserve">
+    <value>无法加载代理版本</value>
+  </data>
+  <data name="CouldNotLoadManagerVersions" xml:space="preserve">
+    <value>无法加载管理器版本</value>
+  </data>
+  <data name="CouldNotMigrate0EnterKEYTOKENValuesDirectly" xml:space="preserve">
+    <value>无法迁移 {0}。请直接输入 KEY/TOKEN，并在应用设置前保留或重新注册指纹。</value>
+  </data>
+  <data name="CouldNotOpenServiceEditor" xml:space="preserve">
+    <value>无法打开服务编辑器</value>
+  </data>
+  <data name="CouldNotQueryTheWindowsServiceManager" xml:space="preserve">
+    <value>无法查询 Windows 服务管理器。</value>
+  </data>
+  <data name="CouldNotReadLogFile012" xml:space="preserve">
+    <value>无法读取日志文件：{0}{1}{2}</value>
+  </data>
+  <data name="CouldNotSaveSettings" xml:space="preserve">
+    <value>无法保存设置</value>
+  </data>
+  <data name="CouldNotStartTheBackgroundServiceHelper" xml:space="preserve">
+    <value>无法启动后台服务辅助程序。</value>
+  </data>
+  <data name="CouldNotStartTheElevatedServiceEditor" xml:space="preserve">
+    <value>无法以管理员权限启动服务编辑器。</value>
+  </data>
+  <data name="CouldNotVerifyTheUpdateResultCheckTheInstalled" xml:space="preserve">
+    <value>无法确认更新结果。请在“更多”页面检查已安装版本和后台服务。</value>
+  </data>
+  <data name="CurrentBeszelAgentLog" xml:space="preserve">
+    <value>当前日志（beszel-agent.log）</value>
+  </data>
+  <data name="CurrentCaptureFile0" xml:space="preserve">
+    <value>当前采集文件：{0}</value>
+  </data>
+  <data name="CurrentCaptureFileCProgramDataBeszelAgentManagerServiceDataAgentLogs" xml:space="preserve">
+    <value>当前采集文件：C:\ProgramData\BeszelAgentManager.ServiceData\agent_logs\beszel-agent.log</value>
+  </data>
+  <data name="CurrentFile0" xml:space="preserve">
+    <value>当前文件：{0}</value>
+  </data>
+  <data name="CurrentFileCProgramDataBeszelAgentManagerManagerLog" xml:space="preserve">
+    <value>当前文件：C:\ProgramData\BeszelAgentManager\manager.log</value>
+  </data>
+  <data name="CurrentManagerLog" xml:space="preserve">
+    <value>当前日志（manager.log）</value>
+  </data>
+  <data name="CurrentState0" xml:space="preserve">
+    <value>当前状态：{0}。</value>
+  </data>
+  <data name="CustomEnvironmentVariable" xml:space="preserve">
+    <value>自定义环境变量。</value>
+  </data>
+  <data name="DataLogsAndUpdateStaging" xml:space="preserve">
+    <value>数据、日志和更新暂存目录</value>
+  </data>
+  <data name="Debug" xml:space="preserve">
+    <value>调试</value>
+  </data>
+  <data name="DebugLoggingDisabled" xml:space="preserve">
+    <value>已禁用调试日志</value>
+  </data>
+  <data name="DebugLoggingEnabled" xml:space="preserve">
+    <value>已启用调试日志</value>
+  </data>
+  <data name="DefenderExclusionAdded" xml:space="preserve">
+    <value>已添加 Defender 排除项</value>
+  </data>
+  <data name="DefenderExclusionRemoved" xml:space="preserve">
+    <value>已移除 Defender 排除项</value>
+  </data>
+  <data name="DefenderExclusionUpdateFailed" xml:space="preserve">
+    <value>Defender 排除项更新失败</value>
+  </data>
+  <data name="DevicePathUsedByIntelGpuTopForIntel" xml:space="preserve">
+    <value>供 intel_gpu_top 采集 Intel GPU 指标的设备路径。</value>
+  </data>
+  <data name="Disable" xml:space="preserve">
+    <value>禁用</value>
+  </data>
+  <data name="DisablesTheAgentSSHServerWhenSetToTrue" xml:space="preserve">
+    <value>设为 true 时禁用代理的 SSH 服务端。</value>
+  </data>
+  <data name="DisablingListenPort" xml:space="preserve">
+    <value>正在禁用监听端口</value>
+  </data>
+  <data name="DiskNamesOrPatternsToSkipDuringSM" xml:space="preserve">
+    <value>采集 S.M.A.R.T. 数据时跳过的磁盘名称或匹配模式。</value>
+  </data>
+  <data name="DockerAPITimeoutInGoDurationFormatForExample" xml:space="preserve">
+    <value>Docker API 超时时间，使用 Go 时长格式，例如 5s 或 2100ms。</value>
+  </data>
+  <data name="DownloadBeszelAgentManager0" xml:space="preserve">
+    <value>下载 BeszelAgentManager {0}</value>
+  </data>
+  <data name="DownloadingAndVerifyingTheLatestOfficialReleaseForThis" xml:space="preserve">
+    <value>正在为当前安装下载并验证最新官方版本。确认安装前，应用会保持打开。</value>
+  </data>
+  <data name="Edit" xml:space="preserve">
+    <value>编辑</value>
+  </data>
+  <data name="EditService" xml:space="preserve">
+    <value>编辑服务…</value>
+  </data>
+  <data name="Enable" xml:space="preserve">
+    <value>启用</value>
+  </data>
+  <data name="EnableAutomaticUpdates" xml:space="preserve">
+    <value>启用自动更新</value>
+  </data>
+  <data name="EnableManagerDebugLogging" xml:space="preserve">
+    <value>启用管理器调试日志</value>
+  </data>
+  <data name="EnablePeriodicRestart" xml:space="preserve">
+    <value>启用定期重启</value>
+  </data>
+  <data name="EnablesLibreHardwareMonitorSensorCollectionOnWindows" xml:space="preserve">
+    <value>在 Windows 上启用 LibreHardwareMonitor 传感器采集。</value>
+  </data>
+  <data name="EnablesNVIDIANVMLGPUMonitoringWhenSetToTrue" xml:space="preserve">
+    <value>设为 true 时启用 NVIDIA NVML GPU 监控。</value>
+  </data>
+  <data name="EnablingListenPort" xml:space="preserve">
+    <value>正在启用监听端口</value>
+  </data>
+  <data name="EnterAGitHubTokenToAvoidAPIRateLimiting" xml:space="preserve">
+    <value>输入 GitHub 令牌以避免 API 请求频率限制。</value>
+  </data>
+  <data name="EnterAHubURLIPFallbackBeforeEnablingThis" xml:space="preserve">
+    <value>启用此选项前，请先输入 Hub 备用 IP 地址。</value>
+  </data>
+  <data name="EnterATokenOrChooseClear" xml:space="preserve">
+    <value>请输入令牌或选择“清除”。</value>
+  </data>
+  <data name="EnterAWholeNumberFrom1To10080Minutes" xml:space="preserve">
+    <value>请输入 1 到 10080 之间的整数，单位为分钟。</value>
+  </data>
+  <data name="EnterAWholeNumberFrom1To168Hours" xml:space="preserve">
+    <value>请输入 1 到 168 之间的整数，单位为小时。</value>
+  </data>
+  <data name="EnterAWholeNumberFrom1To720Hours" xml:space="preserve">
+    <value>请输入 1 到 720 之间的整数，单位为小时。720 小时为 30 天。</value>
+  </data>
+  <data name="EnvironmentAlreadyActive" xml:space="preserve">
+    <value>环境变量已启用</value>
+  </data>
+  <data name="EnvironmentSaved" xml:space="preserve">
+    <value>环境变量已保存</value>
+  </data>
+  <data name="EnvironmentTables" xml:space="preserve">
+    <value>环境变量</value>
+  </data>
+  <data name="Error" xml:space="preserve">
+    <value>错误</value>
+  </data>
+  <data name="Errors" xml:space="preserve">
+    <value>错误</value>
+  </data>
+  <data name="Every" xml:space="preserve">
+    <value>每</value>
+  </data>
+  <data name="Example401" xml:space="preserve">
+    <value>例如：4.0.1</value>
+  </data>
+  <data name="ExecutablesAndProcesses" xml:space="preserve">
+    <value>可执行文件和进程</value>
+  </data>
+  <data name="Exit" xml:space="preserve">
+    <value>退出</value>
+  </data>
+  <data name="EXITONDNSERRORCannotBeEnabledTogetherWith" xml:space="preserve">
+    <value>EXIT_ON_DNS_ERROR 不能与 WebSocket 离线退避同时启用。请在“环境变量”页面移除 EXIT_ON_DNS_ERROR，或在“更多”页面禁用离线退避。</value>
+  </data>
+  <data name="EXITONDNSERRORCannotBeEnabledTogetherWith2" xml:space="preserve">
+    <value>EXIT_ON_DNS_ERROR 不能与 WebSocket 离线退避同时启用。请选择一种重试策略。</value>
+  </data>
+  <data name="ExitsTheAgentWhenHubDNSLookupFailsDo" xml:space="preserve">
+    <value>Hub DNS 解析失败时退出代理。请勿与管理器的 WebSocket 离线退避同时使用。</value>
+  </data>
+  <data name="ExportSupportBundle" xml:space="preserve">
+    <value>导出支持包</value>
+  </data>
+  <data name="Extra" xml:space="preserve">
+    <value>更多</value>
+  </data>
+  <data name="FallbackDisabled" xml:space="preserve">
+    <value>备用地址已禁用</value>
+  </data>
+  <data name="FallbackEnabled" xml:space="preserve">
+    <value>备用地址已启用</value>
+  </data>
+  <data name="FallbackURLMissing" xml:space="preserve">
+    <value>缺少备用地址</value>
+  </data>
+  <data name="File" xml:space="preserve">
+    <value>文件：</value>
+  </data>
+  <data name="FingerprintCopied" xml:space="preserve">
+    <value>指纹已复制</value>
+  </data>
+  <data name="FingerprintReset" xml:space="preserve">
+    <value>指纹已重置</value>
+  </data>
+  <data name="FingerprintResetFailed" xml:space="preserve">
+    <value>指纹重置失败</value>
+  </data>
+  <data name="FingerprintViewFailed" xml:space="preserve">
+    <value>指纹查看失败</value>
+  </data>
+  <data name="FingerprintViewFailed0" xml:space="preserve">
+    <value>指纹查看失败：{0}</value>
+  </data>
+  <data name="GitHubAPIRequestsWillUseTheSavedToken" xml:space="preserve">
+    <value>GitHub API 请求将使用已保存的令牌。</value>
+  </data>
+  <data name="GitHubAuth" xml:space="preserve">
+    <value>GitHub 认证…</value>
+  </data>
+  <data name="GitHubAuthentication" xml:space="preserve">
+    <value>GitHub 认证</value>
+  </data>
+  <data name="GitHubAuthentication2" xml:space="preserve">
+    <value>GitHub 认证</value>
+  </data>
+  <data name="GitHubAuthFailed" xml:space="preserve">
+    <value>GitHub 认证失败</value>
+  </data>
+  <data name="GitHubDidNotReturnAManagerReleaseContaining0" xml:space="preserve">
+    <value>GitHub 未返回包含 {0} 的管理器版本。</value>
+  </data>
+  <data name="GitHubDidNotReturnAnyStableBeszelAgentReleases" xml:space="preserve">
+    <value>GitHub 未返回包含 Windows 代理文件的 Beszel 代理稳定版本。</value>
+  </data>
+  <data name="GitHubToken" xml:space="preserve">
+    <value>GitHub 令牌</value>
+  </data>
+  <data name="GitHubTokenCleared" xml:space="preserve">
+    <value>GitHub 令牌已清除</value>
+  </data>
+  <data name="GITHUBTOKENIsSetInTheEnvironmentAndWill" xml:space="preserve">
+    <value>已设置 GITHUB_TOKEN 环境变量，它会覆盖已保存的令牌。</value>
+  </data>
+  <data name="GitHubTokenNotChanged" xml:space="preserve">
+    <value>GitHub 令牌未更改</value>
+  </data>
+  <data name="GitHubTokenSaved" xml:space="preserve">
+    <value>GitHub 令牌已保存</value>
+  </data>
+  <data name="GitHubTokenUnchanged" xml:space="preserve">
+    <value>GitHub 令牌保持不变</value>
+  </data>
+  <data name="HashesVerified" xml:space="preserve">
+    <value>哈希校验通过</value>
+  </data>
+  <data name="Hours" xml:space="preserve">
+    <value>小时</value>
+  </data>
+  <data name="CheckIntervalHours" xml:space="preserve">
+    <value>小时</value>
+  </data>
+  <data name="Hours2" xml:space="preserve">
+    <value>小时</value>
+  </data>
+  <data name="HowOftenSMARTDataIs" xml:space="preserve">
+    <value>S.M.A.R.T. 数据刷新间隔，例如 1h。</value>
+  </data>
+  <data name="HubFallbackReachable0Ms" xml:space="preserve">
+    <value>Hub：备用地址可连接（{0} 毫秒）</value>
+  </data>
+  <data name="HubFallbackUnreachable" xml:space="preserve">
+    <value>Hub：备用地址无法连接</value>
+  </data>
+  <data name="HubNotChecked" xml:space="preserve">
+    <value>Hub：尚未检查</value>
+  </data>
+  <data name="HubNotConfigured" xml:space="preserve">
+    <value>Hub：未配置</value>
+  </data>
+  <data name="HubReachable0Ms" xml:space="preserve">
+    <value>Hub：可连接（{0} 毫秒）</value>
+  </data>
+  <data name="HubUnreachable" xml:space="preserve">
+    <value>Hub：无法连接</value>
+  </data>
+  <data name="HubURL" xml:space="preserve">
+    <value>Hub 地址</value>
+  </data>
+  <data name="HubURL2" xml:space="preserve">
+    <value>Hub 地址：</value>
+  </data>
+  <data name="HubURLIPFallback" xml:space="preserve">
+    <value>Hub 备用 IP 地址</value>
+  </data>
+  <data name="HubURLIPFallback2" xml:space="preserve">
+    <value>Hub 备用 IP 地址：</value>
+  </data>
+  <data name="HubURLIPFallbackState" xml:space="preserve">
+    <value>Hub 备用 IP 地址状态</value>
+  </data>
+  <data name="HubURLNotConfigured" xml:space="preserve">
+    <value>未配置 Hub 地址</value>
+  </data>
+  <data name="IncludeReleaseCandidatesAndOtherPrereleases" xml:space="preserve">
+    <value>包含候选版本及其他预发布版本</value>
+  </data>
+  <data name="Info" xml:space="preserve">
+    <value>信息</value>
+  </data>
+  <data name="InspectTheBackgroundServiceLog" xml:space="preserve">
+    <value>请查看后台服务日志。</value>
+  </data>
+  <data name="Install" xml:space="preserve">
+    <value>安装</value>
+  </data>
+  <data name="InstallAgent" xml:space="preserve">
+    <value>安装代理</value>
+  </data>
+  <data name="InstallAgentVersion" xml:space="preserve">
+    <value>安装代理版本</value>
+  </data>
+  <data name="InstallationWasNotStartedPleaseTryAgainLaterTechnical" xml:space="preserve">
+    <value>未开始安装。请稍后重试，技术详情见日志。</value>
+  </data>
+  <data name="InstallBeszelAgent" xml:space="preserve">
+    <value>安装 Beszel 代理？</value>
+  </data>
+  <data name="InstallBeszelAgent0" xml:space="preserve">
+    <value>安装 Beszel 代理 {0}？</value>
+  </data>
+  <data name="Installed0Available12" xml:space="preserve">
+    <value>已安装：{0}
+可用版本：{1}（{2}）</value>
+  </data>
+  <data name="Installed0LatestOnGitHub12" xml:space="preserve">
+    <value>已安装：{0}
+GitHub 最新版本：{1}（{2}）</value>
+  </data>
+  <data name="InstalledVersion0" xml:space="preserve">
+    <value>已安装版本：{0}</value>
+  </data>
+  <data name="Installing" xml:space="preserve">
+    <value>正在安装…</value>
+  </data>
+  <data name="InstallingService" xml:space="preserve">
+    <value>正在安装服务…</value>
+  </data>
+  <data name="InstallNow" xml:space="preserve">
+    <value>立即安装</value>
+  </data>
+  <data name="InstallTheBackgroundServiceFromExtraBeforeInstallingBeszel" xml:space="preserve">
+    <value>请先在“更多”页面安装后台服务，再安装 Beszel 代理。</value>
+  </data>
+  <data name="InstructionsCopied" xml:space="preserve">
+    <value>说明已复制</value>
+  </data>
+  <data name="InvalidRestartInterval" xml:space="preserve">
+    <value>重启间隔无效</value>
+  </data>
+  <data name="InvalidSignedUpdateResponse" xml:space="preserve">
+    <value>签名更新响应无效。</value>
+  </data>
+  <data name="InvalidUpdateInterval" xml:space="preserve">
+    <value>更新间隔无效</value>
+  </data>
+  <data name="KeepHistoricalAgentLogging" xml:space="preserve">
+    <value>保留历史代理日志</value>
+  </data>
+  <data name="LegacyAgentSettingsMigrated" xml:space="preserve">
+    <value>旧版代理设置已迁移</value>
+  </data>
+  <data name="LegacyAgentSettingsNeedAttention" xml:space="preserve">
+    <value>旧版代理设置需要处理</value>
+  </data>
+  <data name="LimitsNetworkMonitoringToSpecificInterfaceNames" xml:space="preserve">
+    <value>仅监控指定名称的网络接口。</value>
+  </data>
+  <data name="LinuxOnlyPackageUpdateCheckIntervalForExample1h" xml:space="preserve">
+    <value>仅限 Linux。软件包更新检查间隔，例如 1h（默认）。设为 0 可禁用检查。</value>
+  </data>
+  <data name="LinuxOnlySetToTrueToDisableSystemdJournal" xml:space="preserve">
+    <value>仅限 Linux。设为 true 可禁用 systemd journal 日志采集。</value>
+  </data>
+  <data name="LinuxOnlySetToTrueToSkipSystemdIntegration" xml:space="preserve">
+    <value>仅限 Linux。设为 true 可跳过 systemd 集成。</value>
+  </data>
+  <data name="ListenPort" xml:space="preserve">
+    <value>监听端口</value>
+  </data>
+  <data name="ListenPort2" xml:space="preserve">
+    <value>监听端口：</value>
+  </data>
+  <data name="ListenPortChangeCancelled" xml:space="preserve">
+    <value>已取消监听端口更改</value>
+  </data>
+  <data name="ListenPortChangeFailed" xml:space="preserve">
+    <value>监听端口更改失败</value>
+  </data>
+  <data name="ListenPortDisabled" xml:space="preserve">
+    <value>监听端口已禁用</value>
+  </data>
+  <data name="ListenPortEnabled" xml:space="preserve">
+    <value>监听端口已启用</value>
+  </data>
+  <data name="ListenPortState" xml:space="preserve">
+    <value>监听端口状态</value>
+  </data>
+  <data name="ListenPortStateSaved" xml:space="preserve">
+    <value>监听端口状态已保存</value>
+  </data>
+  <data name="Loading" xml:space="preserve">
+    <value>正在加载…</value>
+  </data>
+  <data name="LogFileIsEmpty0" xml:space="preserve">
+    <value>日志文件为空：{0}</value>
+  </data>
+  <data name="LogFileNotFound0" xml:space="preserve">
+    <value>找不到日志文件：{0}</value>
+  </data>
+  <data name="Logging" xml:space="preserve">
+    <value>管理器日志</value>
+  </data>
+  <data name="ManageAgentVersion" xml:space="preserve">
+    <value>管理代理版本</value>
+  </data>
+  <data name="ManageAgentVersion2" xml:space="preserve">
+    <value>管理代理版本…</value>
+  </data>
+  <data name="ManageManagerVersion" xml:space="preserve">
+    <value>管理管理器版本</value>
+  </data>
+  <data name="ManageManagerVersion2" xml:space="preserve">
+    <value>管理管理器版本…</value>
+  </data>
+  <data name="ManageOptionalDefenderExclusionOrViewThirdPartyAV" xml:space="preserve">
+    <value>管理可选的 Defender 排除项，或查看第三方杀毒软件所需的路径。</value>
+  </data>
+  <data name="ManagerDebugEntriesWillBeHiddenFromTheLog" xml:space="preserve">
+    <value>日志将不再记录管理器调试信息。</value>
+  </data>
+  <data name="ManagerDebugEntriesWillNowBeWrittenToThe" xml:space="preserve">
+    <value>日志将开始记录管理器调试信息。</value>
+  </data>
+  <data name="ManagerLogFolder0" xml:space="preserve">
+    <value>管理器日志目录：{0}</value>
+  </data>
+  <data name="ManagerLogFolderCProgramDataBeszelAgentManager" xml:space="preserve">
+    <value>管理器日志目录：C:\ProgramData\BeszelAgentManager</value>
+  </data>
+  <data name="ManagerLogRotated" xml:space="preserve">
+    <value>管理器日志已轮转</value>
+  </data>
+  <data name="ManagerLogRotationFailed" xml:space="preserve">
+    <value>管理器日志轮转失败</value>
+  </data>
+  <data name="ManagerSettings" xml:space="preserve">
+    <value>管理器设置</value>
+  </data>
+  <data name="ManagerSettingsAndAgentDataWereKept" xml:space="preserve">
+    <value>管理器设置和代理数据已保留。</value>
+  </data>
+  <data name="ManagerStartupSetting" xml:space="preserve">
+    <value>管理器启动设置</value>
+  </data>
+  <data name="ManagerUpdateAvailable" xml:space="preserve">
+    <value>管理器有可用更新</value>
+  </data>
+  <data name="ManagerUpdateCompleted" xml:space="preserve">
+    <value>管理器更新完成</value>
+  </data>
+  <data name="ManagerUpdateNeedsAttention" xml:space="preserve">
+    <value>管理器更新需要处理</value>
+  </data>
+  <data name="ManagerUpdateSettings" xml:space="preserve">
+    <value>管理器更新设置</value>
+  </data>
+  <data name="ManagerUpdateSettingsSaved" xml:space="preserve">
+    <value>管理器更新设置已保存</value>
+  </data>
+  <data name="MaximumTimeAllowedForSensorCollectionForExample5s" xml:space="preserve">
+    <value>传感器采集的最长耗时，例如 5s。</value>
+  </data>
+  <data name="Migrated0WithoutExposingTheirFilePathsToThe" xml:space="preserve">
+    <value>已迁移 {0}，未向特权服务暴露其文件路径。</value>
+  </data>
+  <data name="Minutes" xml:space="preserve">
+    <value>分钟</value>
+  </data>
+  <data name="No0EntriesInSelectedLog" xml:space="preserve">
+    <value>所选日志中没有 {0} 类型的条目。</value>
+  </data>
+  <data name="NoActiveEnvironmentVariablesMatchYourSearch" xml:space="preserve">
+    <value>没有符合搜索条件的已启用环境变量。</value>
+  </data>
+  <data name="NoAgentLogsFoundYet" xml:space="preserve">
+    <value>（尚未找到代理日志。）</value>
+  </data>
+  <data name="NoAgentVersionsFound" xml:space="preserve">
+    <value>未找到代理版本</value>
+  </data>
+  <data name="NoChangesToApply" xml:space="preserve">
+    <value>没有待应用的更改</value>
+  </data>
+  <data name="NoEnvironmentVariablesAreActive" xml:space="preserve">
+    <value>尚未启用任何环境变量。</value>
+  </data>
+  <data name="NoEnvironmentVariablesMatchYourSearch" xml:space="preserve">
+    <value>没有符合搜索条件的环境变量。</value>
+  </data>
+  <data name="NoLogContentLoadedFrom0" xml:space="preserve">
+    <value>未从以下文件加载到日志内容：{0}</value>
+  </data>
+  <data name="NoManagerLogsFoundYet" xml:space="preserve">
+    <value>（尚未找到管理器日志。）</value>
+  </data>
+  <data name="NoManagerVersionsFound" xml:space="preserve">
+    <value>未找到管理器版本</value>
+  </data>
+  <data name="NoReleaseNotes" xml:space="preserve">
+    <value>（没有发行说明。）</value>
+  </data>
+  <data name="NotifyMeWhenAManagerUpdateIsAvailable" xml:space="preserve">
+    <value>有可用的管理器更新时通知我</value>
+  </data>
+  <data name="NotNow" xml:space="preserve">
+    <value>暂不添加</value>
+  </data>
+  <data name="NoUsableInstallerReleasesWereReturnedByGitHub" xml:space="preserve">
+    <value>GitHub 未返回可用的安装包版本。</value>
+  </data>
+  <data name="NoUsableReleaseFound" xml:space="preserve">
+    <value>未找到可用版本</value>
+  </data>
+  <data name="NSSMCouldNotBeFoundReinstallBeszelAgentManagerOrPlace" xml:space="preserve">
+    <value>找不到 NSSM。请重新安装 BeszelAgentManager，或将 nssm.exe 放到已安装应用所在目录。</value>
+  </data>
+  <data name="OneOrMoreAgentFoldersCouldNotBeRemoved" xml:space="preserve">
+    <value>无法移除一个或多个代理目录。请停止服务并关闭已打开的代理日志或目录，然后重试。</value>
+  </data>
+  <data name="OnlyTheSupportedVariablesListedUnderAddEnvironmentCan" xml:space="preserve">
+    <value>只能配置“添加环境变量”中列出的受支持变量。添加的变量始终启用。</value>
+  </data>
+  <data name="OpenAnInstallerRelease" xml:space="preserve">
+    <value>打开安装包版本</value>
+  </data>
+  <data name="OpenBeszelAgentManager" xml:space="preserve">
+    <value>打开 BeszelAgentManager</value>
+  </data>
+  <data name="OpenBeszelAgentManagerAndInstallTheAgentFirst" xml:space="preserve">
+    <value>请先打开 BeszelAgentManager 并安装代理。</value>
+  </data>
+  <data name="OpenBeszelAgentManagerReleases" xml:space="preserve">
+    <value>打开 BeszelAgentManager 发行页面</value>
+  </data>
+  <data name="OpenExtra" xml:space="preserve">
+    <value>打开“更多”</value>
+  </data>
+  <data name="OpenFolder" xml:space="preserve">
+    <value>打开目录</value>
+  </data>
+  <data name="OpenHubURL" xml:space="preserve">
+    <value>打开 Hub 地址</value>
+  </data>
+  <data name="OpeningServiceEditor" xml:space="preserve">
+    <value>正在打开服务编辑器</value>
+  </data>
+  <data name="OpenReleasePage" xml:space="preserve">
+    <value>打开发行页面</value>
+  </data>
+  <data name="OptionalMicrosoftDefenderExclusion" xml:space="preserve">
+    <value>可选的 Microsoft Defender 排除项</value>
+  </data>
+  <data name="OrderedCollectorsSuchAsNvtopNvmlIntelSysfsIntel" xml:space="preserve">
+    <value>按顺序指定采集器，例如 nvtop、nvml、intel_sysfs、intel_gpu_top、amd_sysfs 或 rocm-smi。</value>
+  </data>
+  <data name="OverridesTheRootFilesystemPathUsedForDiskStatistics" xml:space="preserve">
+    <value>覆盖磁盘统计所用的根文件系统路径。</value>
+  </data>
+  <data name="OverridesTheSystemNameReportedByTheAgent" xml:space="preserve">
+    <value>覆盖代理上报的系统名称。</value>
+  </data>
+  <data name="PathOverrideForSystemSensorData" xml:space="preserve">
+    <value>覆盖系统传感器数据路径。</value>
+  </data>
+  <data name="PauseAfter12FailuresRetryAfter125" xml:space="preserve">
+    <value>连续失败 12 次后暂停，依次在 1、2、5、10、30、60 分钟后重试。网络变化时立即重试。</value>
+  </data>
+  <data name="PendingChanges" xml:space="preserve">
+    <value>有待应用的更改</value>
+  </data>
+  <data name="PeriodicRestartSaved" xml:space="preserve">
+    <value>定期重启设置已保存</value>
+  </data>
+  <data name="PeriodicServiceRestart" xml:space="preserve">
+    <value>定期重启服务</value>
+  </data>
+  <data name="PleaseTryAgainLaterTechnicalDetailsAreAvailableIn" xml:space="preserve">
+    <value>请稍后重试，技术详情见日志。</value>
+  </data>
+  <data name="PointsTheAgentAtASpecificDockerDaemonEndpoint" xml:space="preserve">
+    <value>指定代理连接的 Docker 守护进程端点。</value>
+  </data>
+  <data name="PrivilegedActionsAndSchedulesWillStopWorkingUntilThe" xml:space="preserve">
+    <value>重新安装此服务之前，特权操作和计划任务将无法使用。管理器设置和代理数据会保留。</value>
+  </data>
+  <data name="PublicKey" xml:space="preserve">
+    <value>公钥</value>
+  </data>
+  <data name="PublicKey2" xml:space="preserve">
+    <value>公钥：</value>
+  </data>
+  <data name="ReduceRetriesWhileHubIsUnreachable" xml:space="preserve">
+    <value>Hub 无法连接时减少重试</value>
+  </data>
+  <data name="Refresh" xml:space="preserve">
+    <value>刷新</value>
+  </data>
+  <data name="Remove" xml:space="preserve">
+    <value>移除</value>
+  </data>
+  <data name="RemoveDefenderExclusion" xml:space="preserve">
+    <value>移除 Defender 排除项</value>
+  </data>
+  <data name="RemoveDefenderExclusion2" xml:space="preserve">
+    <value>移除 Defender 排除项？</value>
+  </data>
+  <data name="RemoveExclusion" xml:space="preserve">
+    <value>移除排除项</value>
+  </data>
+  <data name="RemoveEXITONDNSERRORUnderEnvironmentBeforeEnabling" xml:space="preserve">
+    <value>启用 WebSocket 离线退避前，请先在“环境变量”页面移除 EXIT_ON_DNS_ERROR。</value>
+  </data>
+  <data name="RepairRemoveOrVerifyPrivilegedBackgroundService" xml:space="preserve">
+    <value>修复、移除或检查特权后台服务。</value>
+  </data>
+  <data name="Reset" xml:space="preserve">
+    <value>重置</value>
+  </data>
+  <data name="ResetFingerprint" xml:space="preserve">
+    <value>重置指纹</value>
+  </data>
+  <data name="RestartBeszelAgentAutomaticallyOnAFixedInterval" xml:space="preserve">
+    <value>按固定间隔自动重启 Beszel 代理。</value>
+  </data>
+  <data name="RestartService" xml:space="preserve">
+    <value>重启服务</value>
+  </data>
+  <data name="RotateNow" xml:space="preserve">
+    <value>立即轮转</value>
+  </data>
+  <data name="RotatingAgentLog" xml:space="preserve">
+    <value>正在轮转代理日志</value>
+  </data>
+  <data name="Save" xml:space="preserve">
+    <value>保存</value>
+  </data>
+  <data name="SavedGitHubAuthenticationHasBeenRemoved" xml:space="preserve">
+    <value>已移除保存的 GitHub 认证信息。</value>
+  </data>
+  <data name="SaveSettings" xml:space="preserve">
+    <value>保存设置</value>
+  </data>
+  <data name="SearchNameOrDescription" xml:space="preserve">
+    <value>搜索名称或说明</value>
+  </data>
+  <data name="SelectAgentVersion" xml:space="preserve">
+    <value>选择代理版本：</value>
+  </data>
+  <data name="SelectsThePrimaryTemperatureSensorShownInBeszel" xml:space="preserve">
+    <value>选择 Beszel 中显示的主温度传感器。</value>
+  </data>
+  <data name="SelectsWhichHardwareSensorsTheAgentReads" xml:space="preserve">
+    <value>选择代理读取的硬件传感器。</value>
+  </data>
+  <data name="SeparatorUsedBetweenSMARTDEVICESEntriesDefaultsToA" xml:space="preserve">
+    <value>SMART_DEVICES 条目之间的分隔符，默认为逗号。</value>
+  </data>
+  <data name="Service0" xml:space="preserve">
+    <value>服务：{0}</value>
+  </data>
+  <data name="ServiceChecking" xml:space="preserve">
+    <value>服务：正在检查…</value>
+  </data>
+  <data name="ServiceControl" xml:space="preserve">
+    <value>服务控制</value>
+  </data>
+  <data name="ServiceEditorCancelled" xml:space="preserve">
+    <value>已取消服务编辑</value>
+  </data>
+  <data name="ServiceEditorOpened" xml:space="preserve">
+    <value>服务编辑器已打开</value>
+  </data>
+  <data name="ServiceNamesOrPatternsToMonitor" xml:space="preserve">
+    <value>需要监控的服务名称或匹配模式。</value>
+  </data>
+  <data name="SettingsApplied" xml:space="preserve">
+    <value>设置已应用</value>
+  </data>
+  <data name="SetToFalseToDisableContainerImageUpdateChecks" xml:space="preserve">
+    <value>设为 false 可禁用容器镜像更新检查和镜像仓库请求，默认为 true。</value>
+  </data>
+  <data name="SetToTrueToSkipGPUMetricsIncludingGPU" xml:space="preserve">
+    <value>设为 true 可跳过 GPU 指标，包括 GPU 温度和风扇传感器。</value>
+  </data>
+  <data name="SetToTrueToSkipWiFiSignalCollection" xml:space="preserve">
+    <value>设为 true 可跳过 Wi-Fi 信号采集。Windows 使用原生 WLAN API。</value>
+  </data>
+  <data name="ShowUpdateAvailabilityInTheTrayStatus" xml:space="preserve">
+    <value>在托盘状态中显示可用更新</value>
+  </data>
+  <data name="ShowWindowWhenStartingWithWindows" xml:space="preserve">
+    <value>随 Windows 启动时显示窗口</value>
+  </data>
+  <data name="SkipNotificationsForVersionOptional" xml:space="preserve">
+    <value>不再通知此版本（可选）</value>
+  </data>
+  <data name="SOCKS5OrSOCKS5HProxyForTheOutboundHubWebSocket" xml:space="preserve">
+    <value>Hub 出站 WebSocket 使用的 SOCKS5 或 SOCKS5H 代理，例如 socks5h://proxy.example.com:1080。</value>
+  </data>
+  <data name="SpecificSMARTDevicesOptionallyAs" xml:space="preserve">
+    <value>指定 S.M.A.R.T. 设备，可使用 device:type 格式，例如 /dev/sda:sat。</value>
+  </data>
+  <data name="StartBeszelAgentManagerWithWindows" xml:space="preserve">
+    <value>随 Windows 启动 BeszelAgentManager</value>
+  </data>
+  <data name="StartService" xml:space="preserve">
+    <value>启动服务</value>
+  </data>
+  <data name="Status0" xml:space="preserve">
+    <value>状态：{0}</value>
+  </data>
+  <data name="StatusCheckFailed" xml:space="preserve">
+    <value>状态：检查失败</value>
+  </data>
+  <data name="StopService" xml:space="preserve">
+    <value>停止服务</value>
+  </data>
+  <data name="StoreADPAPIEncryptedTokenToAvoidAPIRate" xml:space="preserve">
+    <value>保存经 DPAPI 加密的令牌，以避免 API 请求频率限制。GITHUB_TOKEN 会覆盖此令牌。</value>
+  </data>
+  <data name="SupportBundleExported" xml:space="preserve">
+    <value>支持包已导出</value>
+  </data>
+  <data name="SupportBundleExportFailed" xml:space="preserve">
+    <value>支持包导出失败</value>
+  </data>
+  <data name="Task" xml:space="preserve">
+    <value>任务</value>
+  </data>
+  <data name="TheActionIsUnavailableWhileTheServiceStateIs" xml:space="preserve">
+    <value>服务处于“{0}”状态时无法执行此操作。</value>
+  </data>
+  <data name="TheAdministratorPromptWasCancelled" xml:space="preserve">
+    <value>已取消管理员权限请求。</value>
+  </data>
+  <data name="TheAgentCouldNotBeDownloadedOrInstalledCheck" xml:space="preserve">
+    <value>无法下载或安装代理。请检查日志和杀毒软件隔离区。</value>
+  </data>
+  <data name="TheAgentFingerprintWasCopiedToTheClipboard" xml:space="preserve">
+    <value>代理指纹已复制到剪贴板。</value>
+  </data>
+  <data name="TheAgentFingerprintWasResetAndTheServiceWas" xml:space="preserve">
+    <value>代理指纹已重置，服务已启动。</value>
+  </data>
+  <data name="TheAgentLogCouldNotBeRotatedCloseAny" xml:space="preserve">
+    <value>无法轮转代理日志。请关闭占用日志文件的程序后重试。</value>
+  </data>
+  <data name="TheAgentOrConfigurationFileCouldNotBeFound" xml:space="preserve">
+    <value>找不到代理或配置文件。</value>
+  </data>
+  <data name="TheAntivirusAllowlistInstructionsWereCopiedToTheClipboard" xml:space="preserve">
+    <value>杀毒软件允许列表说明已复制到剪贴板。</value>
+  </data>
+  <data name="TheAutomaticUpdateScheduleCouldNotBeUpdatedHelper" xml:space="preserve">
+    <value>无法更新自动更新计划（辅助程序退出代码：{0}）。</value>
+  </data>
+  <data name="TheAutomaticUpdateScheduleWasUpdatedTheBeszelAgent" xml:space="preserve">
+    <value>自动更新计划已更新，Beszel 代理服务未重启。</value>
+  </data>
+  <data name="TheBackgroundBrokerIdentityCouldNotBeVerified" xml:space="preserve">
+    <value>无法验证后台服务代理的身份。</value>
+  </data>
+  <data name="TheBackgroundServiceBlockedAVersionDowngradeInstallOlder" xml:space="preserve">
+    <value>后台服务已阻止版本降级。如需安装旧版本，请手动安装并授予管理员权限。</value>
+  </data>
+  <data name="TheBackgroundServiceClosedTheBrokerConnectionWithoutA" xml:space="preserve">
+    <value>后台服务关闭了连接，未返回响应。</value>
+  </data>
+  <data name="TheBackgroundServiceCouldNotAddTheDefenderExclusion" xml:space="preserve">
+    <value>后台服务无法添加 Defender 排除项（代码：{0}）。</value>
+  </data>
+  <data name="TheBackgroundServiceCouldNotApplyTheBeszelAgent" xml:space="preserve">
+    <value>后台服务无法应用 Beszel 代理服务配置。</value>
+  </data>
+  <data name="TheBackgroundServiceDidNotRespondInTime" xml:space="preserve">
+    <value>后台服务未及时响应。</value>
+  </data>
+  <data name="TheBackgroundServiceHelperIsMissingReinstallBeszelAgentManager" xml:space="preserve">
+    <value>后台服务辅助程序缺失。请重新安装 BeszelAgentManager。</value>
+  </data>
+  <data name="TheBackgroundServiceIsApplyingTheServiceAndFirewall" xml:space="preserve">
+    <value>后台服务正在应用服务和防火墙配置。</value>
+  </data>
+  <data name="TheBackgroundServiceIsCompletingTheOperationThisCan" xml:space="preserve">
+    <value>后台服务正在执行操作。下载文件或更新服务可能需要一些时间。</value>
+  </data>
+  <data name="TheBackgroundServiceIsCompletingTheRequestedAction" xml:space="preserve">
+    <value>后台服务正在执行请求的操作。</value>
+  </data>
+  <data name="TheBackgroundServiceIsRotatingTheAgentLog" xml:space="preserve">
+    <value>后台服务正在轮转代理日志。</value>
+  </data>
+  <data name="TheBackgroundServiceReturnedAMismatchedBrokerResponse" xml:space="preserve">
+    <value>后台服务返回的响应与请求不匹配。</value>
+  </data>
+  <data name="TheBackgroundServiceReturnedAnInvalidAgentStatus" xml:space="preserve">
+    <value>后台服务返回的代理状态无效。</value>
+  </data>
+  <data name="TheBackgroundServiceReturnedAnInvalidBrokerResponse" xml:space="preserve">
+    <value>后台服务返回的响应无效。</value>
+  </data>
+  <data name="TheBackgroundServiceReturnedCode0" xml:space="preserve">
+    <value>后台服务返回代码 {0}。</value>
+  </data>
+  <data name="TheBackgroundServiceReturnedErrorCode0" xml:space="preserve">
+    <value>后台服务返回错误代码 {0}。</value>
+  </data>
+  <data name="TheBackgroundServiceReturnedExitCode0" xml:space="preserve">
+    <value>后台服务返回退出代码 {0}。</value>
+  </data>
+  <data name="TheBeszelAgentArchiveChecksumIsMissingOrDoes" xml:space="preserve">
+    <value>Beszel 代理压缩包的校验和缺失或不匹配，已阻止安装。</value>
+  </data>
+  <data name="TheBeszelAgentManagerBackgroundServiceIsInstalledButNotRunning" xml:space="preserve">
+    <value>BeszelAgentManager 后台服务已安装但未运行。请立即修复，或在“更多”页面管理服务。</value>
+  </data>
+  <data name="TheBeszelAgentManagerBackgroundServiceIsNotAvailableReinstallOr" xml:space="preserve">
+    <value>BeszelAgentManager 后台服务不可用。请重新安装或重启后台服务。</value>
+  </data>
+  <data name="TheBeszelAgentManagerBackgroundServiceIsNotInstalledInstallIt" xml:space="preserve">
+    <value>BeszelAgentManager 后台服务未安装。请立即安装，或在“更多”页面管理服务。</value>
+  </data>
+  <data name="TheBeszelAgentServiceConfigurationAndAutomaticUpdateSchedule" xml:space="preserve">
+    <value>Beszel 代理服务配置和自动更新计划已更新。</value>
+  </data>
+  <data name="TheBeszelAgentServiceConfigurationCouldNotBeOpened" xml:space="preserve">
+    <value>无法打开 Beszel 代理服务配置。</value>
+  </data>
+  <data name="TheBeszelAgentServiceIsAlreadyRunning" xml:space="preserve">
+    <value>Beszel 代理服务已在运行。</value>
+  </data>
+  <data name="TheBeszelAgentServiceIsAlreadyStopped" xml:space="preserve">
+    <value>Beszel 代理服务已停止。</value>
+  </data>
+  <data name="TheBeszelAgentServiceIsNotInstalled" xml:space="preserve">
+    <value>Beszel 代理服务未安装。</value>
+  </data>
+  <data name="TheConfigurationWasRejectedByTheSecurityPolicyRemove" xml:space="preserve">
+    <value>安全策略拒绝了此配置。请移除不受支持或保留的环境变量后重试。</value>
+  </data>
+  <data name="TheConfigurationWasSavedAndTheBeszelAgentService" xml:space="preserve">
+    <value>配置已保存，Beszel 代理服务已重启。</value>
+  </data>
+  <data name="TheConfiguredTokenWasKept" xml:space="preserve">
+    <value>已保留现有令牌。</value>
+  </data>
+  <data name="TheCurrentAgentLogWasArchivedAndAFresh" xml:space="preserve">
+    <value>当前代理日志已归档，并开始记录新的日志。</value>
+  </data>
+  <data name="TheCurrentManagerLogWasArchivedAndAFresh" xml:space="preserve">
+    <value>当前管理器日志已归档，并开始记录新的日志。</value>
+  </data>
+  <data name="TheCurrentSettingsAndAutomaticUpdateScheduleAreAlready" xml:space="preserve">
+    <value>当前设置和自动更新计划均已应用。</value>
+  </data>
+  <data name="TheDownloadedArchiveDidNotContainBeszelAgentExe" xml:space="preserve">
+    <value>下载的压缩包中不包含 beszel-agent.exe。</value>
+  </data>
+  <data name="TheElevatedHelperReturnedExitCode0" xml:space="preserve">
+    <value>管理员辅助程序返回退出代码 {0}。</value>
+  </data>
+  <data name="TheHelperReturnedExitCode0OpenExtraTo" xml:space="preserve">
+    <value>辅助程序返回退出代码 {0}。请打开“更多”页面重试或检查服务状态。</value>
+  </data>
+  <data name="TheManagerWillRemainOpenCheckTheLogBefore" xml:space="preserve">
+    <value>管理器将保持打开。请先检查日志再重试。</value>
+  </data>
+  <data name="TheMicrosoftDefenderPreferenceWasUpdatedWithoutAUAC" xml:space="preserve">
+    <value>Microsoft Defender 设置已更新，无需弹出 UAC 提示。</value>
+  </data>
+  <data name="TheNewUpdatePreferencesAreActive" xml:space="preserve">
+    <value>新的更新偏好已生效。</value>
+  </data>
+  <data name="ThePrivilegedBackgroundServiceIsInstalledAndRunning" xml:space="preserve">
+    <value>特权后台服务已安装并正在运行。</value>
+  </data>
+  <data name="ThePrivilegedHelperIsNotPresentInTheApplication" xml:space="preserve">
+    <value>应用目录中缺少特权辅助程序。</value>
+  </data>
+  <data name="ThereIsNoInstalledAgentExecutableOrWindowsService" xml:space="preserve">
+    <value>未安装代理可执行文件或 Windows 服务，无需移除。</value>
+  </data>
+  <data name="TheSavedTokenWasRemovedGITHUBTOKENRemainsActive" xml:space="preserve">
+    <value>已移除保存的令牌。环境变量中的 GITHUB_TOKEN 仍然有效。</value>
+  </data>
+  <data name="TheServiceActionCompleted" xml:space="preserve">
+    <value>服务操作已完成。</value>
+  </data>
+  <data name="TheServiceConfigurationWasUpdatedAndTheFirewallRule" xml:space="preserve">
+    <value>服务配置已更新，防火墙规则已移除。</value>
+  </data>
+  <data name="TheServiceConfigurationWasUpdatedAndTheFirewallRule2" xml:space="preserve">
+    <value>服务配置已更新，防火墙规则已添加。</value>
+  </data>
+  <data name="TheServiceHelperReceivedAnUnknownCommand" xml:space="preserve">
+    <value>服务辅助程序收到未知命令。</value>
+  </data>
+  <data name="TheServiceHelperReturnedErrorCode0" xml:space="preserve">
+    <value>服务辅助程序返回错误代码 {0}。</value>
+  </data>
+  <data name="ThirdPartyAntivirusAllowlistInstructions" xml:space="preserve">
+    <value>第三方杀毒软件允许列表说明</value>
+  </data>
+  <data name="ThirdPartyAVPaths" xml:space="preserve">
+    <value>第三方杀毒软件路径…</value>
+  </data>
+  <data name="ThisExcludesOnlyTheBeszelAgentManagerInstallationDirectoryFromMicrosoft" xml:space="preserve">
+    <value>此操作仅将 BeszelAgentManager 安装目录从 Microsoft Defender 扫描中排除。仅在 Defender 干扰应用运行时启用。</value>
+  </data>
+  <data name="ThisResetsTheBeszelAgentFingerprintAndRestartsThe" xml:space="preserve">
+    <value>此操作会重置 Beszel 代理指纹并重启服务，可能需要在 Hub 中重新注册此设备。</value>
+  </data>
+  <data name="ThisRestoresNormalMicrosoftDefenderScanningForTheBeszelAgentManager" xml:space="preserve">
+    <value>此操作会恢复 Microsoft Defender 对 BeszelAgentManager 安装目录的正常扫描。</value>
+  </data>
+  <data name="ThisSettingWasSaved" xml:space="preserve">
+    <value>此设置已保存。</value>
+  </data>
+  <data name="ThisVersionNeedsToBeInstalledManuallyOpenThe" xml:space="preserve">
+    <value>此版本需要手动安装。请打开官方发行页面，下载并运行 {0} 以更新。Windows 将请求管理员权限。</value>
+  </data>
+  <data name="ThisWillDownloadTheLatestStableBeszelAgentAnd" xml:space="preserve">
+    <value>此操作会下载最新稳定版 Beszel 代理并重启服务。</value>
+  </data>
+  <data name="ThisWillDownloadTheLatestStableBeszelAgentInstall" xml:space="preserve">
+    <value>此操作会下载最新稳定版 Beszel 代理，将其安装到 Program Files，配置 Windows 服务，并应用当前“连接”设置。</value>
+  </data>
+  <data name="ThisWillInstallTheSelectedVersionAndRestartThe" xml:space="preserve">
+    <value>此操作会安装所选版本并重启服务。</value>
+  </data>
+  <data name="ThisWillStopAndRemoveTheBeszelAgentService" xml:space="preserve">
+    <value>此操作会停止并移除 Beszel 代理服务、代理计划任务、防火墙规则、代理文件、旧版代理目录和代理临时文件。
+
+管理器设置和管理器日志会保留。</value>
+  </data>
+  <data name="Token" xml:space="preserve">
+    <value>令牌</value>
+  </data>
+  <data name="Token2" xml:space="preserve">
+    <value>令牌：</value>
+  </data>
+  <data name="Truncated" xml:space="preserve">
+    <value>（内容已截断）</value>
+  </data>
+  <data name="Type" xml:space="preserve">
+    <value>类型：</value>
+  </data>
+  <data name="Uninstall" xml:space="preserve">
+    <value>卸载</value>
+  </data>
+  <data name="UninstallAgent" xml:space="preserve">
+    <value>卸载代理</value>
+  </data>
+  <data name="UninstallBackgroundService" xml:space="preserve">
+    <value>卸载后台服务？</value>
+  </data>
+  <data name="UninstallBeszelAgent" xml:space="preserve">
+    <value>卸载 Beszel 代理？</value>
+  </data>
+  <data name="Uninstalling" xml:space="preserve">
+    <value>正在卸载…</value>
+  </data>
+  <data name="UnknownNavigationItemTag0" xml:space="preserve">
+    <value>未知的导航项标记：{0}</value>
+  </data>
+  <data name="UpdateAgent" xml:space="preserve">
+    <value>更新代理</value>
+  </data>
+  <data name="UpdateBeszelAgent" xml:space="preserve">
+    <value>更新 Beszel 代理？</value>
+  </data>
+  <data name="UpdateCouldNotBeStarted" xml:space="preserve">
+    <value>无法开始更新</value>
+  </data>
+  <data name="UpdateCouldNotBeVerified" xml:space="preserve">
+    <value>无法验证更新</value>
+  </data>
+  <data name="UpdateManager" xml:space="preserve">
+    <value>更新管理器</value>
+  </data>
+  <data name="UpdateSettings" xml:space="preserve">
+    <value>更新设置…</value>
+  </data>
+  <data name="Updating" xml:space="preserve">
+    <value>正在更新…</value>
+  </data>
+  <data name="UseInstallAgentFirstToInstallAndConfigureBeszel" xml:space="preserve">
+    <value>请先使用“安装代理”安装并配置 Beszel 代理。</value>
+  </data>
+  <data name="VerifiedUpdatesInstallThroughTheBackgroundServiceOtherVersions" xml:space="preserve">
+    <value>已验证的更新通过后台服务安装。其他版本可从官方发行页面下载并手动安装。</value>
+  </data>
+  <data name="VerifyingSignedUpdate" xml:space="preserve">
+    <value>正在验证签名更新</value>
+  </data>
+  <data name="Version0IsAvailable" xml:space="preserve">
+    <value>版本 {0} 已发布。</value>
+  </data>
+  <data name="View" xml:space="preserve">
+    <value>查看</value>
+  </data>
+  <data name="ViewOrResetTheFingerprintAfterCloningAVM" xml:space="preserve">
+    <value>克隆虚拟机或重新注册此设备后，可查看或重置指纹。</value>
+  </data>
+  <data name="Warning" xml:space="preserve">
+    <value>警告</value>
+  </data>
+  <data name="Warnings" xml:space="preserve">
+    <value>警告</value>
+  </data>
+  <data name="WebSocketBackoffSaved" xml:space="preserve">
+    <value>WebSocket 退避设置已保存</value>
+  </data>
+  <data name="WebSocketOfflineBackoff" xml:space="preserve">
+    <value>WebSocket 离线退避</value>
+  </data>
+  <data name="YouCanNowEditTheBeszelAgentServiceSettings" xml:space="preserve">
+    <value>现在可以编辑 Beszel 代理服务设置。</value>
+  </data>
+  <data name="ZFSPoolDetailRefreshIntervalScrubVdevsDatasetsFor" xml:space="preserve">
+    <value>ZFS 存储池详情（scrub、vdev、数据集）刷新间隔，例如 1h。不适用于 Windows。</value>
+  </data>
+  <data name="LanguageSaved" xml:space="preserve"><value>语言已保存</value></data>
+  <data name="RestartForLanguageChange" xml:space="preserve"><value>是否立即重启 BeszelAgentManager，使新语言生效？</value></data>
+  <data name="RestartNow" xml:space="preserve"><value>立即重启</value></data>
+  <data name="Later" xml:space="preserve"><value>稍后</value></data>
+  <data name="ManagerRestartFailed" xml:space="preserve"><value>管理器重启失败</value></data>
+  <data name="LanguageSavedRestartManually" xml:space="preserve"><value>语言设置已保存，请手动重启管理器。</value></data>
+  <data name="Language" xml:space="preserve"><value>语言</value></data>
+  <data name="SwitchLanguage" xml:space="preserve"><value>切换语言</value></data>
+  <data name="StateRunning" xml:space="preserve"><value>正在运行</value></data>
+  <data name="StateStopped" xml:space="preserve"><value>已停止</value></data>
+  <data name="StateStarting" xml:space="preserve"><value>正在启动</value></data>
+  <data name="StateStopping" xml:space="preserve"><value>正在停止</value></data>
+  <data name="StateContinuing" xml:space="preserve"><value>正在恢复</value></data>
+  <data name="StatePausing" xml:space="preserve"><value>正在暂停</value></data>
+  <data name="StatePaused" xml:space="preserve"><value>已暂停</value></data>
+  <data name="StateUnknown" xml:space="preserve"><value>未知</value></data>
+  <data name="StateNotInstalled" xml:space="preserve"><value>未安装</value></data>
+  <data name="OK" xml:space="preserve"><value>确定</value></data>
+</root>

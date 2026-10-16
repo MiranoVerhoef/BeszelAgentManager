@@ -254,6 +254,7 @@ internal sealed class ConfigService
             .ToList();
         return new AgentConfig
         {
+            UiLanguage = config.UiLanguage == "zh-Hans" ? "zh-Hans" : "en-US",
             Key = config.Key ?? string.Empty,
             Token = config.Token ?? string.Empty,
             HubUrl = config.HubUrl ?? string.Empty,

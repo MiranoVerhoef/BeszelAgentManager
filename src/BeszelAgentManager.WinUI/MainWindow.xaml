@@ -2,6 +2,7 @@
 <Window
     x:Class="BeszelAgentManager.WinUI.MainWindow"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:l="using:BeszelAgentManager.WinUI.Services"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:local="using:BeszelAgentManager.WinUI"
@@ -67,12 +68,12 @@
             </Grid.ColumnDefinitions>
             <StackPanel VerticalAlignment="Center" Orientation="Horizontal" Spacing="10">
                 <TextBlock FontSize="18" FontWeight="SemiBold" Text="BeszelAgentManager" />
-                <TextBlock VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Beszel agent installer &amp; manager" />
+                <TextBlock VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{l:Localize Key=BeszelAgentInstallerManager}" />
             </StackPanel>
             <StackPanel Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal" Spacing="8">
-                <TextBlock x:Name="HeaderServiceText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Service: Checking..." />
+                <TextBlock x:Name="HeaderServiceText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{l:Localize Key=ServiceChecking}" />
                 <TextBlock Foreground="{ThemeResource TextFillColorTertiaryBrush}" Text="|" />
-                <TextBlock x:Name="HeaderAgentText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="Agent: Checking..." />
+                <TextBlock x:Name="HeaderAgentText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" Text="{l:Localize Key=AgentChecking}" />
             </StackPanel>
             <Button
                 x:Name="VersionBadgeButton"
@@ -83,11 +84,11 @@
                 Margin="14,0,0,0"
                 HorizontalAlignment="Right"
                 VerticalAlignment="Center"
-                AutomationProperties.Name="Open BeszelAgentManager releases"
+                AutomationProperties.Name="{l:Localize Key=OpenBeszelAgentManagerReleases}"
                 CornerRadius="6"
                 Click="VersionBadgeButton_Click"
                 Style="{StaticResource AccentButtonStyle}"
-                ToolTipService.ToolTip="Open BeszelAgentManager releases">
+                ToolTipService.ToolTip="{l:Localize Key=OpenBeszelAgentManagerReleases}">
                 <TextBlock
                     x:Name="VersionBadgeText"
                     HorizontalAlignment="Center"
@@ -106,11 +107,11 @@
             PaneDisplayMode="Top"
             SelectionChanged="NavView_SelectionChanged">
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="Connection" IsSelected="True" Tag="connection" />
-                <NavigationViewItem Content="Environment Tables" Tag="environment" />
-                <NavigationViewItem Content="Logging" Tag="logging" />
-                <NavigationViewItem Content="Agent Logging" Tag="agentLogging" />
-                <NavigationViewItem Content="Extra" Tag="extra" />
+                <NavigationViewItem Content="{l:Localize Key=Connection}" IsSelected="True" Tag="connection" />
+                <NavigationViewItem Content="{l:Localize Key=EnvironmentTables}" Tag="environment" />
+                <NavigationViewItem Content="{l:Localize Key=Logging}" Tag="logging" />
+                <NavigationViewItem Content="{l:Localize Key=AgentLogging}" Tag="agentLogging" />
+                <NavigationViewItem Content="{l:Localize Key=Extra}" Tag="extra" />
             </NavigationView.MenuItems>
             <Frame x:Name="NavFrame" />
         </NavigationView>
@@ -137,11 +138,11 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <Button x:Name="InstallAgentButton" Content="Install agent" HorizontalAlignment="Stretch" Click="InstallAgentButton_Click" />
-                <Button x:Name="UpdateAgentButton" Grid.Column="1" Content="Update agent" HorizontalAlignment="Stretch" Click="UpdateAgentButton_Click" />
-                <Button x:Name="DownloadManagerButton" Grid.Column="2" Content="Update Manager" HorizontalAlignment="Stretch" Click="DownloadManagerButton_Click" />
-                <Button x:Name="ApplySettingsButton" Grid.Column="3" Content="Apply settings" HorizontalAlignment="Stretch" Click="ApplySettingsButton_Click" />
-                <Button x:Name="UninstallAgentButton" Grid.Column="4" Content="Uninstall agent" HorizontalAlignment="Stretch" Click="UninstallAgentButton_Click" />
+                <Button x:Name="InstallAgentButton" Content="{l:Localize Key=InstallAgent}" HorizontalAlignment="Stretch" Click="InstallAgentButton_Click" />
+                <Button x:Name="UpdateAgentButton" Grid.Column="1" Content="{l:Localize Key=UpdateAgent}" HorizontalAlignment="Stretch" Click="UpdateAgentButton_Click" />
+                <Button x:Name="DownloadManagerButton" Grid.Column="2" Content="{l:Localize Key=UpdateManager}" HorizontalAlignment="Stretch" Click="DownloadManagerButton_Click" />
+                <Button x:Name="ApplySettingsButton" Grid.Column="3" Content="{l:Localize Key=ApplySettings}" HorizontalAlignment="Stretch" Click="ApplySettingsButton_Click" />
+                <Button x:Name="UninstallAgentButton" Grid.Column="4" Content="{l:Localize Key=UninstallAgent}" HorizontalAlignment="Stretch" Click="UninstallAgentButton_Click" />
             </Grid>
             <Grid Grid.Row="1" ColumnSpacing="10">
                 <Grid.ColumnDefinitions>
@@ -151,8 +152,8 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <Button x:Name="ManageAgentVersionButton" Grid.Column="1" Content="Manage Agent Version..." HorizontalAlignment="Stretch" Click="ManageAgentVersionButton_Click" />
-                <Button Grid.Column="2" Content="Manage Manager Version..." HorizontalAlignment="Stretch" Click="ManageManagerVersionButton_Click" />
+                <Button x:Name="ManageAgentVersionButton" Grid.Column="1" Content="{l:Localize Key=ManageAgentVersion2}" HorizontalAlignment="Stretch" Click="ManageAgentVersionButton_Click" />
+                <Button Grid.Column="2" Content="{l:Localize Key=ManageManagerVersion2}" HorizontalAlignment="Stretch" Click="ManageManagerVersionButton_Click" />
             </Grid>
         </Grid>
 
@@ -162,9 +163,9 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <HyperlinkButton x:Name="HubStatusLink" Padding="0" Content="Hub: Not checked" Click="HubStatusLink_Click" />
-            <HyperlinkButton Grid.Column="1" Padding="0" Content="About" Click="AboutLink_Click" />
-            <HyperlinkButton Grid.Column="2" Padding="0" Content="About Beszel" Click="AboutBeszelLink_Click" />
+            <HyperlinkButton x:Name="HubStatusLink" Padding="0" Content="{l:Localize Key=HubNotChecked}" Click="HubStatusLink_Click" />
+            <HyperlinkButton Grid.Column="1" Padding="0" Content="{l:Localize Key=About}" Click="AboutLink_Click" />
+            <HyperlinkButton Grid.Column="2" Padding="0" Content="{l:Localize Key=AboutBeszel}" Click="AboutBeszelLink_Click" />
         </Grid>
     </Grid>
 </Window>

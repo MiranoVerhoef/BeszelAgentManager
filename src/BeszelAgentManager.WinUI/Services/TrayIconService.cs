@@ -30,19 +30,19 @@ internal sealed class TrayIconService : IDisposable
         var menu = new MenuFlyout { AreOpenCloseAnimationsEnabled = false };
         var openItem = new MenuFlyoutItem
         {
-            Text = "Open BeszelAgentManager",
+            Text = Localization.Get("OpenBeszelAgentManager"),
             Width = 220,
             Command = openCommand,
             Icon = new SymbolIcon(Symbol.OpenFile),
         };
-        var startItem = new MenuFlyoutItem { Text = "Start service", Command = startCommand, Icon = new SymbolIcon(Symbol.Play) };
-        var openHubItem = new MenuFlyoutItem { Text = "Open hub URL", Command = openHubCommand, Icon = new SymbolIcon(Symbol.Globe) };
-        var stopItem = new MenuFlyoutItem { Text = "Stop service", Command = stopCommand, Icon = new SymbolIcon(Symbol.Stop) };
-        var restartItem = new MenuFlyoutItem { Text = "Restart service", Command = restartCommand, Icon = new SymbolIcon(Symbol.Refresh) };
-        var updateItem = new MenuFlyoutItem { Text = "Update agent", Command = updateCommand, Icon = new SymbolIcon(Symbol.Download) };
+        var startItem = new MenuFlyoutItem { Text = Localization.Get("StartService"), Command = startCommand, Icon = new SymbolIcon(Symbol.Play) };
+        var openHubItem = new MenuFlyoutItem { Text = Localization.Get("OpenHubURL"), Command = openHubCommand, Icon = new SymbolIcon(Symbol.Globe) };
+        var stopItem = new MenuFlyoutItem { Text = Localization.Get("StopService"), Command = stopCommand, Icon = new SymbolIcon(Symbol.Stop) };
+        var restartItem = new MenuFlyoutItem { Text = Localization.Get("RestartService"), Command = restartCommand, Icon = new SymbolIcon(Symbol.Refresh) };
+        var updateItem = new MenuFlyoutItem { Text = Localization.Get("UpdateAgent"), Command = updateCommand, Icon = new SymbolIcon(Symbol.Download) };
         var exitItem = new MenuFlyoutItem
         {
-            Text = "Exit",
+            Text = Localization.Get("Exit"),
             Command = exitCommand,
             Icon = new SymbolIcon(Symbol.Cancel),
         };
@@ -78,8 +78,8 @@ internal sealed class TrayIconService : IDisposable
     public void SetStatus(string serviceState, bool managerUpdateAvailable)
     {
         _taskbarIcon.ToolTipText = managerUpdateAvailable
-            ? $"BeszelAgentManager ({serviceState}) - Update available"
-            : $"BeszelAgentManager ({serviceState})";
+            ? Localization.Get("BeszelAgentManager0UpdateAvailable", Localization.Status(serviceState))
+            : Localization.Get("BeszelAgentManager0", Localization.Status(serviceState));
     }
 
     public void Dispose()

@@ -1,0 +1,1392 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype">
+    <value>text/microsoft-resx</value>
+  </resheader>
+  <resheader name="version">
+    <value>2.0</value>
+  </resheader>
+  <data name="0Cancelled" xml:space="preserve">
+    <value>{0} cancelled</value>
+  </data>
+  <data name="0Completed" xml:space="preserve">
+    <value>{0} completed</value>
+  </data>
+  <data name="0Failed" xml:space="preserve">
+    <value>{0} failed</value>
+  </data>
+  <data name="0InProgress" xml:space="preserve">
+    <value>{0} in progress</value>
+  </data>
+  <data name="0IsAlreadyListed" xml:space="preserve">
+    <value>{0} is already listed.</value>
+  </data>
+  <data name="0NotRequired" xml:space="preserve">
+    <value>{0} not required</value>
+  </data>
+  <data name="0Saved" xml:space="preserve">
+    <value>{0} saved</value>
+  </data>
+  <data name="0Truncated" xml:space="preserve">
+    <value>{0}
+
+(truncated)</value>
+  </data>
+  <data name="About" xml:space="preserve">
+    <value>About</value>
+  </data>
+  <data name="AboutBeszel" xml:space="preserve">
+    <value>About Beszel</value>
+  </data>
+  <data name="AbsoluteLocalPathToAPEMCertificateFileUsed" xml:space="preserve">
+    <value>Absolute local path to a PEM certificate file used to trust a private or self-signed Hub certificate.</value>
+  </data>
+  <data name="Add" xml:space="preserve">
+    <value>Add</value>
+  </data>
+  <data name="AddAnExclusionOnlyForTheBeszelAgentManagerInstallationFolder" xml:space="preserve">
+    <value>Add an exclusion only for the BeszelAgentManager installation folder? This is optional and should only be enabled if Defender interferes with the application.</value>
+  </data>
+  <data name="AddDefenderExclusion" xml:space="preserve">
+    <value>Add Defender exclusion</value>
+  </data>
+  <data name="AddDefenderExclusion2" xml:space="preserve">
+    <value>Add Defender exclusion?</value>
+  </data>
+  <data name="AddEnvironment" xml:space="preserve">
+    <value>Add environment</value>
+  </data>
+  <data name="AddExclusion" xml:space="preserve">
+    <value>Add exclusion</value>
+  </data>
+  <data name="AdditionalFilesystemPathsTheAgentShouldCollectUsageFor" xml:space="preserve">
+    <value>Additional filesystem paths the agent should collect usage for.</value>
+  </data>
+  <data name="Agent0" xml:space="preserve">
+    <value>Agent: {0}</value>
+  </data>
+  <data name="AgentAlreadyInstalled" xml:space="preserve">
+    <value>Agent already installed</value>
+  </data>
+  <data name="AgentChecking" xml:space="preserve">
+    <value>Agent: Checking...</value>
+  </data>
+  <data name="AgentFingerprint" xml:space="preserve">
+    <value>Agent Fingerprint</value>
+  </data>
+  <data name="AgentFingerprint2" xml:space="preserve">
+    <value>Agent fingerprint</value>
+  </data>
+  <data name="AgentLogFolderCProgramDataBeszelAgentManagerServiceDataAgentLogs" xml:space="preserve">
+    <value>Agent log folder: C:\ProgramData\BeszelAgentManager.ServiceData\agent_logs</value>
+  </data>
+  <data name="AgentLogging" xml:space="preserve">
+    <value>Agent Logging</value>
+  </data>
+  <data name="AgentLogRotated" xml:space="preserve">
+    <value>Agent log rotated</value>
+  </data>
+  <data name="AgentLogRotationCancelled" xml:space="preserve">
+    <value>Agent log rotation cancelled</value>
+  </data>
+  <data name="AgentLogRotationFailed" xml:space="preserve">
+    <value>Agent log rotation failed</value>
+  </data>
+  <data name="AgentUpdateCancelled" xml:space="preserve">
+    <value>Agent update cancelled</value>
+  </data>
+  <data name="AgentUpdateFailed" xml:space="preserve">
+    <value>Agent update failed</value>
+  </data>
+  <data name="AGitHubTokenIsConfiguredLeaveTheMaskedValue" xml:space="preserve">
+    <value>A GitHub token is configured. Leave the masked value unchanged to keep it, or enter a new token. Choose Clear to remove the saved token.</value>
+  </data>
+  <data name="All" xml:space="preserve">
+    <value>All</value>
+  </data>
+  <data name="AntivirusExclusions" xml:space="preserve">
+    <value>Antivirus exclusions</value>
+  </data>
+  <data name="ApplicationFolders" xml:space="preserve">
+    <value>Application folders</value>
+  </data>
+  <data name="Applying" xml:space="preserve">
+    <value>Applying...</value>
+  </data>
+  <data name="ApplySettings" xml:space="preserve">
+    <value>Apply settings</value>
+  </data>
+  <data name="ApplySettingsFailed" xml:space="preserve">
+    <value>Apply settings failed</value>
+  </data>
+  <data name="ApplySettingsWhenYouAreReadyToRestartThe" xml:space="preserve">
+    <value>Apply settings when you are ready to restart the Beszel Agent service with this change.</value>
+  </data>
+  <data name="ApplySettingsWhenYouAreReadyToRestartThe2" xml:space="preserve">
+    <value>Apply settings when you are ready to restart the service with these environment changes.</value>
+  </data>
+  <data name="ApproveTheAdministratorPromptToEditTheBeszelAgent" xml:space="preserve">
+    <value>Approve the administrator prompt to edit the Beszel Agent service.</value>
+  </data>
+  <data name="AutomaticUpdateInterval" xml:space="preserve">
+    <value>Automatic update interval</value>
+  </data>
+  <data name="AutomaticUpdates" xml:space="preserve">
+    <value>Automatic updates</value>
+  </data>
+  <data name="AutomaticUpdateSetting" xml:space="preserve">
+    <value>Automatic update setting</value>
+  </data>
+  <data name="BackgroundService" xml:space="preserve">
+    <value>Background service</value>
+  </data>
+  <data name="BackgroundServiceCheckFailed" xml:space="preserve">
+    <value>Background service check failed</value>
+  </data>
+  <data name="BackgroundServiceFound" xml:space="preserve">
+    <value>Background service found</value>
+  </data>
+  <data name="BackgroundServiceInstallationCancelled" xml:space="preserve">
+    <value>Background service installation cancelled</value>
+  </data>
+  <data name="BackgroundServiceInstallationFailed" xml:space="preserve">
+    <value>Background service installation failed</value>
+  </data>
+  <data name="BackgroundServiceInstalled" xml:space="preserve">
+    <value>Background service installed</value>
+  </data>
+  <data name="BackgroundServiceNotInstalled" xml:space="preserve">
+    <value>Background service not installed</value>
+  </data>
+  <data name="BackgroundServiceRequired" xml:space="preserve">
+    <value>Background service required</value>
+  </data>
+  <data name="BackgroundServiceUninstalled" xml:space="preserve">
+    <value>Background service uninstalled</value>
+  </data>
+  <data name="BackgroundServiceUninstallFailed" xml:space="preserve">
+    <value>Background service uninstall failed</value>
+  </data>
+  <data name="BeginUpdate" xml:space="preserve">
+    <value>Begin update</value>
+  </data>
+  <data name="BeszelAgent0IsAlreadyInstalledDoYouReally" xml:space="preserve">
+    <value>Beszel Agent {0} is already installed. Do you really want to reinstall the latest version?</value>
+  </data>
+  <data name="BeszelAgent0WasInstalled" xml:space="preserve">
+    <value>Beszel Agent {0} was installed.</value>
+  </data>
+  <data name="BeszelAgentInstallerManager" xml:space="preserve">
+    <value>Beszel agent installer &amp; manager</value>
+  </data>
+  <data name="BeszelAgentIsAlreadyRunning" xml:space="preserve">
+    <value>Beszel Agent is already running.</value>
+  </data>
+  <data name="BeszelAgentIsNotInstalled" xml:space="preserve">
+    <value>Beszel Agent is not installed</value>
+  </data>
+  <data name="BeszelAgentIsNotRunning" xml:space="preserve">
+    <value>Beszel Agent is not running.</value>
+  </data>
+  <data name="BeszelAgentIsRunning" xml:space="preserve">
+    <value>Beszel Agent is running.</value>
+  </data>
+  <data name="BeszelAgentIsStarting" xml:space="preserve">
+    <value>Beszel Agent is starting.</value>
+  </data>
+  <data name="BeszelAgentIsStopped" xml:space="preserve">
+    <value>Beszel Agent is stopped.</value>
+  </data>
+  <data name="BeszelAgentIsStopping" xml:space="preserve">
+    <value>Beszel Agent is stopping.</value>
+  </data>
+  <data name="BeszelAgentIsUpToDate" xml:space="preserve">
+    <value>Beszel Agent is up to date</value>
+  </data>
+  <data name="BeszelAgentManager0" xml:space="preserve">
+    <value>BeszelAgentManager ({0})</value>
+  </data>
+  <data name="BeszelAgentManager0IsReadyToInstall" xml:space="preserve">
+    <value>BeszelAgentManager {0} is ready to install.</value>
+  </data>
+  <data name="BeszelAgentManager0UpdateAvailable" xml:space="preserve">
+    <value>BeszelAgentManager ({0}) - Update available</value>
+  </data>
+  <data name="BeszelAgentManagerIsUpToDate" xml:space="preserve">
+    <value>BeszelAgentManager is up to date</value>
+  </data>
+  <data name="BeszelAgentManagerSetupExeOrBeszelAgentManagerSetupLiteExeOnlyWhileInstalling" xml:space="preserve">
+    <value>BeszelAgentManagerSetup.exe or BeszelAgentManagerSetup-Lite.exe (only while installing or updating)</value>
+  </data>
+  <data name="BeszelAgentManagerUpdateAvailable" xml:space="preserve">
+    <value>BeszelAgentManager update available</value>
+  </data>
+  <data name="BeszelAgentUpdated" xml:space="preserve">
+    <value>Beszel Agent updated</value>
+  </data>
+  <data name="BeszelAgentWasInstalledAndConfigured" xml:space="preserve">
+    <value>Beszel Agent was installed and configured.</value>
+  </data>
+  <data name="BeszelAgentWasRestarted" xml:space="preserve">
+    <value>Beszel Agent was restarted.</value>
+  </data>
+  <data name="BeszelAgentWasUninstalledHistoricalAgentLogsWereKept" xml:space="preserve">
+    <value>Beszel Agent was uninstalled. Historical agent logs were kept.</value>
+  </data>
+  <data name="BeszelAgentWasUninstalledHistoricalAgentLogsWereRemoved" xml:space="preserve">
+    <value>Beszel Agent was uninstalled. Historical agent logs were removed.</value>
+  </data>
+  <data name="BeszelAgentWasUpdated" xml:space="preserve">
+    <value>Beszel Agent was updated.</value>
+  </data>
+  <data name="CachesDiskUsageResultsForADurationForExample" xml:space="preserve">
+    <value>Caches disk usage results for a duration, for example 10m.</value>
+  </data>
+  <data name="Cancel" xml:space="preserve">
+    <value>Cancel</value>
+  </data>
+  <data name="Change" xml:space="preserve">
+    <value>Change</value>
+  </data>
+  <data name="ChangesHowMemoryUsageIsCalculated" xml:space="preserve">
+    <value>Changes how memory usage is calculated.</value>
+  </data>
+  <data name="ChangesNetworkCollectionMode" xml:space="preserve">
+    <value>Changes network collection mode.</value>
+  </data>
+  <data name="Check" xml:space="preserve">
+    <value>Check</value>
+  </data>
+  <data name="CheckEvery" xml:space="preserve">
+    <value>Check every</value>
+  </data>
+  <data name="Checking" xml:space="preserve">
+    <value>Checking...</value>
+  </data>
+  <data name="ChooseApplySettingsToUpdateTheAutomaticUpdateSchedule" xml:space="preserve">
+    <value>Choose Apply settings to update the automatic update schedule. The Beszel Agent service will not be restarted.</value>
+  </data>
+  <data name="ChooseApplySettingsToUpdateTheBackgroundService" xml:space="preserve">
+    <value>Choose Apply settings to update the background service.</value>
+  </data>
+  <data name="ChooseApplySettingsToUpdateTheBackgroundServiceSchedule" xml:space="preserve">
+    <value>Choose Apply settings to update the background-service schedule.</value>
+  </data>
+  <data name="ChooseInstallAgentToInstallAndConfigureBeszelAgent" xml:space="preserve">
+    <value>Choose Install agent to install and configure Beszel Agent with these settings.</value>
+  </data>
+  <data name="ChooseInstallToRepairTheBackgroundService" xml:space="preserve">
+    <value>Choose Install to repair the background service.</value>
+  </data>
+  <data name="Clear" xml:space="preserve">
+    <value>Clear</value>
+  </data>
+  <data name="Close" xml:space="preserve">
+    <value>Close</value>
+  </data>
+  <data name="CommaSeparatedContainerNamesOrPatternsToHideFrom" xml:space="preserve">
+    <value>Comma-separated container names or patterns to hide from monitoring.</value>
+  </data>
+  <data name="ConfigureAHubURLInTheConnectionTab" xml:space="preserve">
+    <value>Configure a Hub URL in the Connection tab.</value>
+  </data>
+  <data name="ConflictingRetrySettings" xml:space="preserve">
+    <value>Conflicting retry settings</value>
+  </data>
+  <data name="Connection" xml:space="preserve">
+    <value>Connection</value>
+  </data>
+  <data name="ConnectionOption" xml:space="preserve">
+    <value>Connection option</value>
+  </data>
+  <data name="Continue" xml:space="preserve">
+    <value>Continue</value>
+  </data>
+  <data name="ContinuingWithBeszelAgentInstallation" xml:space="preserve">
+    <value>Continuing with Beszel Agent installation.</value>
+  </data>
+  <data name="ContinuingWithTheUpdateWillLetTheBackgroundService" xml:space="preserve">
+    <value>Continuing with the update will let the background service install the latest stable agent.</value>
+  </data>
+  <data name="ControlAutomaticGitHubChecksAndUpdateNotificationsUpdatesAre" xml:space="preserve">
+    <value>Control automatic GitHub checks and update notifications. Updates are installed only when you explicitly choose a version or approve Update Manager.</value>
+  </data>
+  <data name="ControlsAgentVerbosityForExampleInfoWarnOrDebug" xml:space="preserve">
+    <value>Controls agent verbosity, for example info, warn, or debug.</value>
+  </data>
+  <data name="Copy" xml:space="preserve">
+    <value>Copy</value>
+  </data>
+  <data name="CopyInstructions" xml:space="preserve">
+    <value>Copy instructions</value>
+  </data>
+  <data name="CouldNotCheckAgentVersion" xml:space="preserve">
+    <value>Could not check agent version</value>
+  </data>
+  <data name="CouldNotCheckForUpdates" xml:space="preserve">
+    <value>Could not check for updates</value>
+  </data>
+  <data name="CouldNotFindAUsableBeszelAgentReleaseOn" xml:space="preserve">
+    <value>Could not find a usable Beszel Agent release on GitHub.</value>
+  </data>
+  <data name="CouldNotLoadAgentVersions" xml:space="preserve">
+    <value>Could not load agent versions</value>
+  </data>
+  <data name="CouldNotLoadManagerVersions" xml:space="preserve">
+    <value>Could not load manager versions</value>
+  </data>
+  <data name="CouldNotMigrate0EnterKEYTOKENValuesDirectly" xml:space="preserve">
+    <value>Could not migrate {0}. Enter KEY/TOKEN values directly and preserve or re-register the fingerprint before applying settings.</value>
+  </data>
+  <data name="CouldNotOpenServiceEditor" xml:space="preserve">
+    <value>Could not open service editor</value>
+  </data>
+  <data name="CouldNotQueryTheWindowsServiceManager" xml:space="preserve">
+    <value>Could not query the Windows service manager.</value>
+  </data>
+  <data name="CouldNotReadLogFile012" xml:space="preserve">
+    <value>Could not read log file: {0}{1}{2}</value>
+  </data>
+  <data name="CouldNotSaveSettings" xml:space="preserve">
+    <value>Could not save settings</value>
+  </data>
+  <data name="CouldNotStartTheBackgroundServiceHelper" xml:space="preserve">
+    <value>Could not start the background-service helper.</value>
+  </data>
+  <data name="CouldNotStartTheElevatedServiceEditor" xml:space="preserve">
+    <value>Could not start the elevated service editor.</value>
+  </data>
+  <data name="CouldNotVerifyTheUpdateResultCheckTheInstalled" xml:space="preserve">
+    <value>Could not verify the update result. Check the installed version and background service in Extra.</value>
+  </data>
+  <data name="CurrentBeszelAgentLog" xml:space="preserve">
+    <value>Current (beszel-agent.log)</value>
+  </data>
+  <data name="CurrentCaptureFile0" xml:space="preserve">
+    <value>Current capture file: {0}</value>
+  </data>
+  <data name="CurrentCaptureFileCProgramDataBeszelAgentManagerServiceDataAgentLogs" xml:space="preserve">
+    <value>Current capture file: C:\ProgramData\BeszelAgentManager.ServiceData\agent_logs\beszel-agent.log</value>
+  </data>
+  <data name="CurrentFile0" xml:space="preserve">
+    <value>Current file: {0}</value>
+  </data>
+  <data name="CurrentFileCProgramDataBeszelAgentManagerManagerLog" xml:space="preserve">
+    <value>Current file: C:\ProgramData\BeszelAgentManager\manager.log</value>
+  </data>
+  <data name="CurrentManagerLog" xml:space="preserve">
+    <value>Current (manager.log)</value>
+  </data>
+  <data name="CurrentState0" xml:space="preserve">
+    <value>Current state: {0}.</value>
+  </data>
+  <data name="CustomEnvironmentVariable" xml:space="preserve">
+    <value>Custom environment variable.</value>
+  </data>
+  <data name="DataLogsAndUpdateStaging" xml:space="preserve">
+    <value>Data, logs, and update staging</value>
+  </data>
+  <data name="Debug" xml:space="preserve">
+    <value>Debug</value>
+  </data>
+  <data name="DebugLoggingDisabled" xml:space="preserve">
+    <value>Debug logging disabled</value>
+  </data>
+  <data name="DebugLoggingEnabled" xml:space="preserve">
+    <value>Debug logging enabled</value>
+  </data>
+  <data name="DefenderExclusionAdded" xml:space="preserve">
+    <value>Defender exclusion added</value>
+  </data>
+  <data name="DefenderExclusionRemoved" xml:space="preserve">
+    <value>Defender exclusion removed</value>
+  </data>
+  <data name="DefenderExclusionUpdateFailed" xml:space="preserve">
+    <value>Defender exclusion update failed</value>
+  </data>
+  <data name="DevicePathUsedByIntelGpuTopForIntel" xml:space="preserve">
+    <value>Device path used by intel_gpu_top for Intel GPU metrics.</value>
+  </data>
+  <data name="Disable" xml:space="preserve">
+    <value>Disable</value>
+  </data>
+  <data name="DisablesTheAgentSSHServerWhenSetToTrue" xml:space="preserve">
+    <value>Disables the agent SSH server when set to true.</value>
+  </data>
+  <data name="DisablingListenPort" xml:space="preserve">
+    <value>Disabling listen port</value>
+  </data>
+  <data name="DiskNamesOrPatternsToSkipDuringSM" xml:space="preserve">
+    <value>Disk names or patterns to skip during S.M.A.R.T. collection.</value>
+  </data>
+  <data name="DockerAPITimeoutInGoDurationFormatForExample" xml:space="preserve">
+    <value>Docker API timeout in Go duration format, for example 5s or 2100ms.</value>
+  </data>
+  <data name="DownloadBeszelAgentManager0" xml:space="preserve">
+    <value>Download BeszelAgentManager {0}</value>
+  </data>
+  <data name="DownloadingAndVerifyingTheLatestOfficialReleaseForThis" xml:space="preserve">
+    <value>Downloading and verifying the latest official release for this installation. The application will remain open until you confirm installation.</value>
+  </data>
+  <data name="Edit" xml:space="preserve">
+    <value>Edit</value>
+  </data>
+  <data name="EditService" xml:space="preserve">
+    <value>Edit service...</value>
+  </data>
+  <data name="Enable" xml:space="preserve">
+    <value>Enable</value>
+  </data>
+  <data name="EnableAutomaticUpdates" xml:space="preserve">
+    <value>Enable automatic updates</value>
+  </data>
+  <data name="EnableManagerDebugLogging" xml:space="preserve">
+    <value>Enable Manager Debug Logging</value>
+  </data>
+  <data name="EnablePeriodicRestart" xml:space="preserve">
+    <value>Enable periodic restart</value>
+  </data>
+  <data name="EnablesLibreHardwareMonitorSensorCollectionOnWindows" xml:space="preserve">
+    <value>Enables LibreHardwareMonitor sensor collection on Windows.</value>
+  </data>
+  <data name="EnablesNVIDIANVMLGPUMonitoringWhenSetToTrue" xml:space="preserve">
+    <value>Enables NVIDIA NVML GPU monitoring when set to true.</value>
+  </data>
+  <data name="EnablingListenPort" xml:space="preserve">
+    <value>Enabling listen port</value>
+  </data>
+  <data name="EnterAGitHubTokenToAvoidAPIRateLimiting" xml:space="preserve">
+    <value>Enter a GitHub token to avoid API rate limiting.</value>
+  </data>
+  <data name="EnterAHubURLIPFallbackBeforeEnablingThis" xml:space="preserve">
+    <value>Enter a Hub URL IP fallback before enabling this option.</value>
+  </data>
+  <data name="EnterATokenOrChooseClear" xml:space="preserve">
+    <value>Enter a token or choose Clear.</value>
+  </data>
+  <data name="EnterAWholeNumberFrom1To10080Minutes" xml:space="preserve">
+    <value>Enter a whole number from 1 to 10080 minutes.</value>
+  </data>
+  <data name="EnterAWholeNumberFrom1To168Hours" xml:space="preserve">
+    <value>Enter a whole number from 1 to 168 hours.</value>
+  </data>
+  <data name="EnterAWholeNumberFrom1To720Hours" xml:space="preserve">
+    <value>Enter a whole number from 1 to 720 hours. 720 hours is 30 days.</value>
+  </data>
+  <data name="EnvironmentAlreadyActive" xml:space="preserve">
+    <value>Environment already active</value>
+  </data>
+  <data name="EnvironmentSaved" xml:space="preserve">
+    <value>Environment saved</value>
+  </data>
+  <data name="EnvironmentTables" xml:space="preserve">
+    <value>Environment Tables</value>
+  </data>
+  <data name="Error" xml:space="preserve">
+    <value>Error</value>
+  </data>
+  <data name="Errors" xml:space="preserve">
+    <value>Errors</value>
+  </data>
+  <data name="Every" xml:space="preserve">
+    <value>Every</value>
+  </data>
+  <data name="Example401" xml:space="preserve">
+    <value>Example: 4.0.1</value>
+  </data>
+  <data name="ExecutablesAndProcesses" xml:space="preserve">
+    <value>Executables and processes</value>
+  </data>
+  <data name="Exit" xml:space="preserve">
+    <value>Exit</value>
+  </data>
+  <data name="EXITONDNSERRORCannotBeEnabledTogetherWith" xml:space="preserve">
+    <value>EXIT_ON_DNS_ERROR cannot be enabled together with WebSocket offline backoff. Remove EXIT_ON_DNS_ERROR under Environment or disable offline backoff under Extra.</value>
+  </data>
+  <data name="EXITONDNSERRORCannotBeEnabledTogetherWith2" xml:space="preserve">
+    <value>EXIT_ON_DNS_ERROR cannot be enabled together with WebSocket offline backoff. Choose one retry strategy.</value>
+  </data>
+  <data name="ExitsTheAgentWhenHubDNSLookupFailsDo" xml:space="preserve">
+    <value>Exits the agent when Hub DNS lookup fails. Do not combine with manager WebSocket offline backoff.</value>
+  </data>
+  <data name="ExportSupportBundle" xml:space="preserve">
+    <value>Export Support Bundle</value>
+  </data>
+  <data name="Extra" xml:space="preserve">
+    <value>Extra</value>
+  </data>
+  <data name="FallbackDisabled" xml:space="preserve">
+    <value>Fallback disabled</value>
+  </data>
+  <data name="FallbackEnabled" xml:space="preserve">
+    <value>Fallback enabled</value>
+  </data>
+  <data name="FallbackURLMissing" xml:space="preserve">
+    <value>Fallback URL missing</value>
+  </data>
+  <data name="File" xml:space="preserve">
+    <value>File:</value>
+  </data>
+  <data name="FingerprintCopied" xml:space="preserve">
+    <value>Fingerprint copied</value>
+  </data>
+  <data name="FingerprintReset" xml:space="preserve">
+    <value>Fingerprint reset</value>
+  </data>
+  <data name="FingerprintResetFailed" xml:space="preserve">
+    <value>Fingerprint reset failed</value>
+  </data>
+  <data name="FingerprintViewFailed" xml:space="preserve">
+    <value>Fingerprint view failed</value>
+  </data>
+  <data name="FingerprintViewFailed0" xml:space="preserve">
+    <value>Fingerprint view failed: {0}</value>
+  </data>
+  <data name="GitHubAPIRequestsWillUseTheSavedToken" xml:space="preserve">
+    <value>GitHub API requests will use the saved token.</value>
+  </data>
+  <data name="GitHubAuth" xml:space="preserve">
+    <value>GitHub Auth...</value>
+  </data>
+  <data name="GitHubAuthentication" xml:space="preserve">
+    <value>GitHub Authentication</value>
+  </data>
+  <data name="GitHubAuthentication2" xml:space="preserve">
+    <value>GitHub authentication</value>
+  </data>
+  <data name="GitHubAuthFailed" xml:space="preserve">
+    <value>GitHub auth failed</value>
+  </data>
+  <data name="GitHubDidNotReturnAManagerReleaseContaining0" xml:space="preserve">
+    <value>GitHub did not return a manager release containing {0}.</value>
+  </data>
+  <data name="GitHubDidNotReturnAnyStableBeszelAgentReleases" xml:space="preserve">
+    <value>GitHub did not return any stable Beszel Agent releases with the Windows agent asset.</value>
+  </data>
+  <data name="GitHubToken" xml:space="preserve">
+    <value>GitHub token</value>
+  </data>
+  <data name="GitHubTokenCleared" xml:space="preserve">
+    <value>GitHub token cleared</value>
+  </data>
+  <data name="GITHUBTOKENIsSetInTheEnvironmentAndWill" xml:space="preserve">
+    <value>GITHUB_TOKEN is set in the environment and will override any saved token.</value>
+  </data>
+  <data name="GitHubTokenNotChanged" xml:space="preserve">
+    <value>GitHub token not changed</value>
+  </data>
+  <data name="GitHubTokenSaved" xml:space="preserve">
+    <value>GitHub token saved</value>
+  </data>
+  <data name="GitHubTokenUnchanged" xml:space="preserve">
+    <value>GitHub token unchanged</value>
+  </data>
+  <data name="HashesVerified" xml:space="preserve">
+    <value>Hashes verified</value>
+  </data>
+  <data name="Hours" xml:space="preserve">
+    <value>hours</value>
+  </data>
+  <data name="CheckIntervalHours" xml:space="preserve">
+    <value>hour(s)</value>
+  </data>
+  <data name="Hours2" xml:space="preserve">
+    <value>Hours</value>
+  </data>
+  <data name="HowOftenSMARTDataIs" xml:space="preserve">
+    <value>How often S.M.A.R.T. data is refreshed, for example 1h.</value>
+  </data>
+  <data name="HubFallbackReachable0Ms" xml:space="preserve">
+    <value>Hub: Fallback reachable ({0} ms)</value>
+  </data>
+  <data name="HubFallbackUnreachable" xml:space="preserve">
+    <value>Hub: Fallback unreachable</value>
+  </data>
+  <data name="HubNotChecked" xml:space="preserve">
+    <value>Hub: Not checked</value>
+  </data>
+  <data name="HubNotConfigured" xml:space="preserve">
+    <value>Hub: Not configured</value>
+  </data>
+  <data name="HubReachable0Ms" xml:space="preserve">
+    <value>Hub: Reachable ({0} ms)</value>
+  </data>
+  <data name="HubUnreachable" xml:space="preserve">
+    <value>Hub: Unreachable</value>
+  </data>
+  <data name="HubURL" xml:space="preserve">
+    <value>Hub URL</value>
+  </data>
+  <data name="HubURL2" xml:space="preserve">
+    <value>Hub URL:</value>
+  </data>
+  <data name="HubURLIPFallback" xml:space="preserve">
+    <value>Hub URL IP fallback</value>
+  </data>
+  <data name="HubURLIPFallback2" xml:space="preserve">
+    <value>Hub URL IP Fallback:</value>
+  </data>
+  <data name="HubURLIPFallbackState" xml:space="preserve">
+    <value>Hub URL IP fallback state</value>
+  </data>
+  <data name="HubURLNotConfigured" xml:space="preserve">
+    <value>Hub URL not configured</value>
+  </data>
+  <data name="IncludeReleaseCandidatesAndOtherPrereleases" xml:space="preserve">
+    <value>Include release candidates and other prereleases</value>
+  </data>
+  <data name="Info" xml:space="preserve">
+    <value>Info</value>
+  </data>
+  <data name="InspectTheBackgroundServiceLog" xml:space="preserve">
+    <value>Inspect the background-service log.</value>
+  </data>
+  <data name="Install" xml:space="preserve">
+    <value>Install</value>
+  </data>
+  <data name="InstallAgent" xml:space="preserve">
+    <value>Install agent</value>
+  </data>
+  <data name="InstallAgentVersion" xml:space="preserve">
+    <value>Install agent version</value>
+  </data>
+  <data name="InstallationWasNotStartedPleaseTryAgainLaterTechnical" xml:space="preserve">
+    <value>Installation was not started. Please try again later. Technical details are available in the log.</value>
+  </data>
+  <data name="InstallBeszelAgent" xml:space="preserve">
+    <value>Install Beszel Agent?</value>
+  </data>
+  <data name="InstallBeszelAgent0" xml:space="preserve">
+    <value>Install Beszel Agent {0}?</value>
+  </data>
+  <data name="Installed0Available12" xml:space="preserve">
+    <value>Installed: {0}
+Available: {1} ({2})</value>
+  </data>
+  <data name="Installed0LatestOnGitHub12" xml:space="preserve">
+    <value>Installed: {0}
+Latest on GitHub: {1} ({2})</value>
+  </data>
+  <data name="InstalledVersion0" xml:space="preserve">
+    <value>Installed version: {0}</value>
+  </data>
+  <data name="Installing" xml:space="preserve">
+    <value>Installing...</value>
+  </data>
+  <data name="InstallingService" xml:space="preserve">
+    <value>Installing service...</value>
+  </data>
+  <data name="InstallNow" xml:space="preserve">
+    <value>Install now</value>
+  </data>
+  <data name="InstallTheBackgroundServiceFromExtraBeforeInstallingBeszel" xml:space="preserve">
+    <value>Install the background service from Extra before installing Beszel Agent.</value>
+  </data>
+  <data name="InstructionsCopied" xml:space="preserve">
+    <value>Instructions copied</value>
+  </data>
+  <data name="InvalidRestartInterval" xml:space="preserve">
+    <value>Invalid restart interval</value>
+  </data>
+  <data name="InvalidSignedUpdateResponse" xml:space="preserve">
+    <value>Invalid signed update response.</value>
+  </data>
+  <data name="InvalidUpdateInterval" xml:space="preserve">
+    <value>Invalid update interval</value>
+  </data>
+  <data name="KeepHistoricalAgentLogging" xml:space="preserve">
+    <value>Keep historical agent logging</value>
+  </data>
+  <data name="LegacyAgentSettingsMigrated" xml:space="preserve">
+    <value>Legacy agent settings migrated</value>
+  </data>
+  <data name="LegacyAgentSettingsNeedAttention" xml:space="preserve">
+    <value>Legacy agent settings need attention</value>
+  </data>
+  <data name="LimitsNetworkMonitoringToSpecificInterfaceNames" xml:space="preserve">
+    <value>Limits network monitoring to specific interface names.</value>
+  </data>
+  <data name="LinuxOnlyPackageUpdateCheckIntervalForExample1h" xml:space="preserve">
+    <value>Linux only. Package update check interval, for example 1h (default). Set to 0 to disable checks.</value>
+  </data>
+  <data name="LinuxOnlySetToTrueToDisableSystemdJournal" xml:space="preserve">
+    <value>Linux only. Set to true to disable systemd journal log collection.</value>
+  </data>
+  <data name="LinuxOnlySetToTrueToSkipSystemdIntegration" xml:space="preserve">
+    <value>Linux only. Set to true to skip systemd integration.</value>
+  </data>
+  <data name="ListenPort" xml:space="preserve">
+    <value>Listen Port</value>
+  </data>
+  <data name="ListenPort2" xml:space="preserve">
+    <value>Listen Port:</value>
+  </data>
+  <data name="ListenPortChangeCancelled" xml:space="preserve">
+    <value>Listen port change cancelled</value>
+  </data>
+  <data name="ListenPortChangeFailed" xml:space="preserve">
+    <value>Listen port change failed</value>
+  </data>
+  <data name="ListenPortDisabled" xml:space="preserve">
+    <value>Listen port disabled</value>
+  </data>
+  <data name="ListenPortEnabled" xml:space="preserve">
+    <value>Listen port enabled</value>
+  </data>
+  <data name="ListenPortState" xml:space="preserve">
+    <value>Listen Port state</value>
+  </data>
+  <data name="ListenPortStateSaved" xml:space="preserve">
+    <value>Listen Port state saved</value>
+  </data>
+  <data name="Loading" xml:space="preserve">
+    <value>Loading...</value>
+  </data>
+  <data name="LogFileIsEmpty0" xml:space="preserve">
+    <value>Log file is empty: {0}</value>
+  </data>
+  <data name="LogFileNotFound0" xml:space="preserve">
+    <value>Log file not found: {0}</value>
+  </data>
+  <data name="Logging" xml:space="preserve">
+    <value>Logging</value>
+  </data>
+  <data name="ManageAgentVersion" xml:space="preserve">
+    <value>Manage Agent Version</value>
+  </data>
+  <data name="ManageAgentVersion2" xml:space="preserve">
+    <value>Manage Agent Version...</value>
+  </data>
+  <data name="ManageManagerVersion" xml:space="preserve">
+    <value>Manage Manager Version</value>
+  </data>
+  <data name="ManageManagerVersion2" xml:space="preserve">
+    <value>Manage Manager Version...</value>
+  </data>
+  <data name="ManageOptionalDefenderExclusionOrViewThirdPartyAV" xml:space="preserve">
+    <value>Manage optional Defender exclusion or view third-party AV paths.</value>
+  </data>
+  <data name="ManagerDebugEntriesWillBeHiddenFromTheLog" xml:space="preserve">
+    <value>Manager debug entries will be hidden from the log.</value>
+  </data>
+  <data name="ManagerDebugEntriesWillNowBeWrittenToThe" xml:space="preserve">
+    <value>Manager debug entries will now be written to the log.</value>
+  </data>
+  <data name="ManagerLogFolder0" xml:space="preserve">
+    <value>Manager log folder: {0}</value>
+  </data>
+  <data name="ManagerLogFolderCProgramDataBeszelAgentManager" xml:space="preserve">
+    <value>Manager log folder: C:\ProgramData\BeszelAgentManager</value>
+  </data>
+  <data name="ManagerLogRotated" xml:space="preserve">
+    <value>Manager log rotated</value>
+  </data>
+  <data name="ManagerLogRotationFailed" xml:space="preserve">
+    <value>Manager log rotation failed</value>
+  </data>
+  <data name="ManagerSettings" xml:space="preserve">
+    <value>Manager settings</value>
+  </data>
+  <data name="ManagerSettingsAndAgentDataWereKept" xml:space="preserve">
+    <value>Manager settings and agent data were kept.</value>
+  </data>
+  <data name="ManagerStartupSetting" xml:space="preserve">
+    <value>Manager startup setting</value>
+  </data>
+  <data name="ManagerUpdateAvailable" xml:space="preserve">
+    <value>Manager update available</value>
+  </data>
+  <data name="ManagerUpdateCompleted" xml:space="preserve">
+    <value>Manager update completed</value>
+  </data>
+  <data name="ManagerUpdateNeedsAttention" xml:space="preserve">
+    <value>Manager update needs attention</value>
+  </data>
+  <data name="ManagerUpdateSettings" xml:space="preserve">
+    <value>Manager update settings</value>
+  </data>
+  <data name="ManagerUpdateSettingsSaved" xml:space="preserve">
+    <value>Manager update settings saved</value>
+  </data>
+  <data name="MaximumTimeAllowedForSensorCollectionForExample5s" xml:space="preserve">
+    <value>Maximum time allowed for sensor collection, for example 5s.</value>
+  </data>
+  <data name="Migrated0WithoutExposingTheirFilePathsToThe" xml:space="preserve">
+    <value>Migrated {0} without exposing their file paths to the privileged service.</value>
+  </data>
+  <data name="Minutes" xml:space="preserve">
+    <value>Minutes</value>
+  </data>
+  <data name="No0EntriesInSelectedLog" xml:space="preserve">
+    <value>No {0} entries in selected log.</value>
+  </data>
+  <data name="NoActiveEnvironmentVariablesMatchYourSearch" xml:space="preserve">
+    <value>No active environment variables match your search.</value>
+  </data>
+  <data name="NoAgentLogsFoundYet" xml:space="preserve">
+    <value>(No agent logs found yet.)</value>
+  </data>
+  <data name="NoAgentVersionsFound" xml:space="preserve">
+    <value>No agent versions found</value>
+  </data>
+  <data name="NoChangesToApply" xml:space="preserve">
+    <value>No changes to apply</value>
+  </data>
+  <data name="NoEnvironmentVariablesAreActive" xml:space="preserve">
+    <value>No environment variables are active.</value>
+  </data>
+  <data name="NoEnvironmentVariablesMatchYourSearch" xml:space="preserve">
+    <value>No environment variables match your search.</value>
+  </data>
+  <data name="NoLogContentLoadedFrom0" xml:space="preserve">
+    <value>No log content loaded from: {0}</value>
+  </data>
+  <data name="NoManagerLogsFoundYet" xml:space="preserve">
+    <value>(No manager logs found yet.)</value>
+  </data>
+  <data name="NoManagerVersionsFound" xml:space="preserve">
+    <value>No manager versions found</value>
+  </data>
+  <data name="NoReleaseNotes" xml:space="preserve">
+    <value>(No release notes.)</value>
+  </data>
+  <data name="NotifyMeWhenAManagerUpdateIsAvailable" xml:space="preserve">
+    <value>Notify me when a manager update is available</value>
+  </data>
+  <data name="NotNow" xml:space="preserve">
+    <value>Not now</value>
+  </data>
+  <data name="NoUsableInstallerReleasesWereReturnedByGitHub" xml:space="preserve">
+    <value>No usable installer releases were returned by GitHub.</value>
+  </data>
+  <data name="NoUsableReleaseFound" xml:space="preserve">
+    <value>No usable release found</value>
+  </data>
+  <data name="NSSMCouldNotBeFoundReinstallBeszelAgentManagerOrPlace" xml:space="preserve">
+    <value>NSSM could not be found. Reinstall BeszelAgentManager or place nssm.exe next to the installed app.</value>
+  </data>
+  <data name="OneOrMoreAgentFoldersCouldNotBeRemoved" xml:space="preserve">
+    <value>One or more agent folders could not be removed. Stop the service and close any open agent logs or folders, then try again.</value>
+  </data>
+  <data name="OnlyTheSupportedVariablesListedUnderAddEnvironmentCan" xml:space="preserve">
+    <value>Only the supported variables listed under Add environment can be configured. Added variables are always enabled.</value>
+  </data>
+  <data name="OpenAnInstallerRelease" xml:space="preserve">
+    <value>Open an installer release</value>
+  </data>
+  <data name="OpenBeszelAgentManager" xml:space="preserve">
+    <value>Open BeszelAgentManager</value>
+  </data>
+  <data name="OpenBeszelAgentManagerAndInstallTheAgentFirst" xml:space="preserve">
+    <value>Open BeszelAgentManager and install the agent first.</value>
+  </data>
+  <data name="OpenBeszelAgentManagerReleases" xml:space="preserve">
+    <value>Open BeszelAgentManager releases</value>
+  </data>
+  <data name="OpenExtra" xml:space="preserve">
+    <value>Open Extra</value>
+  </data>
+  <data name="OpenFolder" xml:space="preserve">
+    <value>Open folder</value>
+  </data>
+  <data name="OpenHubURL" xml:space="preserve">
+    <value>Open hub URL</value>
+  </data>
+  <data name="OpeningServiceEditor" xml:space="preserve">
+    <value>Opening service editor</value>
+  </data>
+  <data name="OpenReleasePage" xml:space="preserve">
+    <value>Open release page</value>
+  </data>
+  <data name="OptionalMicrosoftDefenderExclusion" xml:space="preserve">
+    <value>Optional Microsoft Defender exclusion</value>
+  </data>
+  <data name="OrderedCollectorsSuchAsNvtopNvmlIntelSysfsIntel" xml:space="preserve">
+    <value>Ordered collectors such as nvtop, nvml, intel_sysfs, intel_gpu_top, amd_sysfs, or rocm-smi.</value>
+  </data>
+  <data name="OverridesTheRootFilesystemPathUsedForDiskStatistics" xml:space="preserve">
+    <value>Overrides the root filesystem path used for disk statistics.</value>
+  </data>
+  <data name="OverridesTheSystemNameReportedByTheAgent" xml:space="preserve">
+    <value>Overrides the system name reported by the agent.</value>
+  </data>
+  <data name="PathOverrideForSystemSensorData" xml:space="preserve">
+    <value>Path override for system sensor data.</value>
+  </data>
+  <data name="PauseAfter12FailuresRetryAfter125" xml:space="preserve">
+    <value>Pause after 12 failures; retry after 1, 2, 5, 10, 30, then 60 minutes. Network changes retry immediately.</value>
+  </data>
+  <data name="PendingChanges" xml:space="preserve">
+    <value>Pending changes</value>
+  </data>
+  <data name="PeriodicRestartSaved" xml:space="preserve">
+    <value>Periodic restart saved</value>
+  </data>
+  <data name="PeriodicServiceRestart" xml:space="preserve">
+    <value>Periodic service restart</value>
+  </data>
+  <data name="PleaseTryAgainLaterTechnicalDetailsAreAvailableIn" xml:space="preserve">
+    <value>Please try again later. Technical details are available in the log.</value>
+  </data>
+  <data name="PointsTheAgentAtASpecificDockerDaemonEndpoint" xml:space="preserve">
+    <value>Points the agent at a specific Docker daemon endpoint.</value>
+  </data>
+  <data name="PrivilegedActionsAndSchedulesWillStopWorkingUntilThe" xml:space="preserve">
+    <value>Privileged actions and schedules will stop working until the service is installed again. Manager settings and agent data are kept.</value>
+  </data>
+  <data name="PublicKey" xml:space="preserve">
+    <value>Public Key</value>
+  </data>
+  <data name="PublicKey2" xml:space="preserve">
+    <value>Public Key:</value>
+  </data>
+  <data name="ReduceRetriesWhileHubIsUnreachable" xml:space="preserve">
+    <value>Reduce retries while hub is unreachable</value>
+  </data>
+  <data name="Refresh" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="Remove" xml:space="preserve">
+    <value>Remove</value>
+  </data>
+  <data name="RemoveDefenderExclusion" xml:space="preserve">
+    <value>Remove Defender exclusion</value>
+  </data>
+  <data name="RemoveDefenderExclusion2" xml:space="preserve">
+    <value>Remove Defender exclusion?</value>
+  </data>
+  <data name="RemoveExclusion" xml:space="preserve">
+    <value>Remove exclusion</value>
+  </data>
+  <data name="RemoveEXITONDNSERRORUnderEnvironmentBeforeEnabling" xml:space="preserve">
+    <value>Remove EXIT_ON_DNS_ERROR under Environment before enabling WebSocket offline backoff.</value>
+  </data>
+  <data name="RepairRemoveOrVerifyPrivilegedBackgroundService" xml:space="preserve">
+    <value>Repair, remove, or verify privileged background service.</value>
+  </data>
+  <data name="Reset" xml:space="preserve">
+    <value>Reset</value>
+  </data>
+  <data name="ResetFingerprint" xml:space="preserve">
+    <value>Reset fingerprint</value>
+  </data>
+  <data name="RestartBeszelAgentAutomaticallyOnAFixedInterval" xml:space="preserve">
+    <value>Restart Beszel Agent automatically on a fixed interval.</value>
+  </data>
+  <data name="RestartService" xml:space="preserve">
+    <value>Restart service</value>
+  </data>
+  <data name="RotateNow" xml:space="preserve">
+    <value>Rotate now</value>
+  </data>
+  <data name="RotatingAgentLog" xml:space="preserve">
+    <value>Rotating agent log</value>
+  </data>
+  <data name="Save" xml:space="preserve">
+    <value>Save</value>
+  </data>
+  <data name="SavedGitHubAuthenticationHasBeenRemoved" xml:space="preserve">
+    <value>Saved GitHub authentication has been removed.</value>
+  </data>
+  <data name="SaveSettings" xml:space="preserve">
+    <value>Save settings</value>
+  </data>
+  <data name="SearchNameOrDescription" xml:space="preserve">
+    <value>Search name or description</value>
+  </data>
+  <data name="SelectAgentVersion" xml:space="preserve">
+    <value>Select agent version:</value>
+  </data>
+  <data name="SelectsThePrimaryTemperatureSensorShownInBeszel" xml:space="preserve">
+    <value>Selects the primary temperature sensor shown in Beszel.</value>
+  </data>
+  <data name="SelectsWhichHardwareSensorsTheAgentReads" xml:space="preserve">
+    <value>Selects which hardware sensors the agent reads.</value>
+  </data>
+  <data name="SeparatorUsedBetweenSMARTDEVICESEntriesDefaultsToA" xml:space="preserve">
+    <value>Separator used between SMART_DEVICES entries. Defaults to a comma.</value>
+  </data>
+  <data name="Service0" xml:space="preserve">
+    <value>Service: {0}</value>
+  </data>
+  <data name="ServiceChecking" xml:space="preserve">
+    <value>Service: Checking...</value>
+  </data>
+  <data name="ServiceControl" xml:space="preserve">
+    <value>Service control</value>
+  </data>
+  <data name="ServiceEditorCancelled" xml:space="preserve">
+    <value>Service editor cancelled</value>
+  </data>
+  <data name="ServiceEditorOpened" xml:space="preserve">
+    <value>Service editor opened</value>
+  </data>
+  <data name="ServiceNamesOrPatternsToMonitor" xml:space="preserve">
+    <value>Service names or patterns to monitor.</value>
+  </data>
+  <data name="SettingsApplied" xml:space="preserve">
+    <value>Settings applied</value>
+  </data>
+  <data name="SetToFalseToDisableContainerImageUpdateChecks" xml:space="preserve">
+    <value>Set to false to disable container image update checks and registry requests. Defaults to true.</value>
+  </data>
+  <data name="SetToTrueToSkipGPUMetricsIncludingGPU" xml:space="preserve">
+    <value>Set to true to skip GPU metrics, including GPU temperature and fan sensors.</value>
+  </data>
+  <data name="SetToTrueToSkipWiFiSignalCollection" xml:space="preserve">
+    <value>Set to true to skip Wi-Fi signal collection. Windows uses the native WLAN API.</value>
+  </data>
+  <data name="ShowUpdateAvailabilityInTheTrayStatus" xml:space="preserve">
+    <value>Show update availability in the tray status</value>
+  </data>
+  <data name="ShowWindowWhenStartingWithWindows" xml:space="preserve">
+    <value>Show window when starting with Windows</value>
+  </data>
+  <data name="SkipNotificationsForVersionOptional" xml:space="preserve">
+    <value>Skip notifications for version (optional)</value>
+  </data>
+  <data name="SOCKS5OrSOCKS5HProxyForTheOutboundHubWebSocket" xml:space="preserve">
+    <value>SOCKS5 or SOCKS5H proxy for the outbound Hub WebSocket, for example socks5h://proxy.example.com:1080.</value>
+  </data>
+  <data name="SpecificSMARTDevicesOptionallyAs" xml:space="preserve">
+    <value>Specific S.M.A.R.T. devices, optionally as device:type entries such as /dev/sda:sat.</value>
+  </data>
+  <data name="StartBeszelAgentManagerWithWindows" xml:space="preserve">
+    <value>Start BeszelAgentManager with Windows</value>
+  </data>
+  <data name="StartService" xml:space="preserve">
+    <value>Start service</value>
+  </data>
+  <data name="Status0" xml:space="preserve">
+    <value>Status: {0}</value>
+  </data>
+  <data name="StatusCheckFailed" xml:space="preserve">
+    <value>Status: check failed</value>
+  </data>
+  <data name="StopService" xml:space="preserve">
+    <value>Stop service</value>
+  </data>
+  <data name="StoreADPAPIEncryptedTokenToAvoidAPIRate" xml:space="preserve">
+    <value>Store a DPAPI-encrypted token to avoid API rate limits. GITHUB_TOKEN overrides it.</value>
+  </data>
+  <data name="SupportBundleExported" xml:space="preserve">
+    <value>Support bundle exported</value>
+  </data>
+  <data name="SupportBundleExportFailed" xml:space="preserve">
+    <value>Support bundle export failed</value>
+  </data>
+  <data name="Task" xml:space="preserve">
+    <value>Task</value>
+  </data>
+  <data name="TheActionIsUnavailableWhileTheServiceStateIs" xml:space="preserve">
+    <value>The action is unavailable while the service state is {0}.</value>
+  </data>
+  <data name="TheAdministratorPromptWasCancelled" xml:space="preserve">
+    <value>The administrator prompt was cancelled.</value>
+  </data>
+  <data name="TheAgentCouldNotBeDownloadedOrInstalledCheck" xml:space="preserve">
+    <value>The agent could not be downloaded or installed. Check the log and antivirus quarantine.</value>
+  </data>
+  <data name="TheAgentFingerprintWasCopiedToTheClipboard" xml:space="preserve">
+    <value>The agent fingerprint was copied to the clipboard.</value>
+  </data>
+  <data name="TheAgentFingerprintWasResetAndTheServiceWas" xml:space="preserve">
+    <value>The agent fingerprint was reset and the service was started.</value>
+  </data>
+  <data name="TheAgentLogCouldNotBeRotatedCloseAny" xml:space="preserve">
+    <value>The agent log could not be rotated. Close any program holding the log file and try again.</value>
+  </data>
+  <data name="TheAgentOrConfigurationFileCouldNotBeFound" xml:space="preserve">
+    <value>The agent or configuration file could not be found.</value>
+  </data>
+  <data name="TheAntivirusAllowlistInstructionsWereCopiedToTheClipboard" xml:space="preserve">
+    <value>The antivirus allowlist instructions were copied to the clipboard.</value>
+  </data>
+  <data name="TheAutomaticUpdateScheduleCouldNotBeUpdatedHelper" xml:space="preserve">
+    <value>The automatic update schedule could not be updated (helper exit code {0}).</value>
+  </data>
+  <data name="TheAutomaticUpdateScheduleWasUpdatedTheBeszelAgent" xml:space="preserve">
+    <value>The automatic update schedule was updated. The Beszel Agent service was not restarted.</value>
+  </data>
+  <data name="TheBackgroundBrokerIdentityCouldNotBeVerified" xml:space="preserve">
+    <value>The background broker identity could not be verified.</value>
+  </data>
+  <data name="TheBackgroundServiceBlockedAVersionDowngradeInstallOlder" xml:space="preserve">
+    <value>The background service blocked a version downgrade. Install older versions manually with administrator approval.</value>
+  </data>
+  <data name="TheBackgroundServiceClosedTheBrokerConnectionWithoutA" xml:space="preserve">
+    <value>The background service closed the broker connection without a response.</value>
+  </data>
+  <data name="TheBackgroundServiceCouldNotAddTheDefenderExclusion" xml:space="preserve">
+    <value>The background service could not add the Defender exclusion (code {0}).</value>
+  </data>
+  <data name="TheBackgroundServiceCouldNotApplyTheBeszelAgent" xml:space="preserve">
+    <value>The background service could not apply the Beszel Agent service configuration.</value>
+  </data>
+  <data name="TheBackgroundServiceDidNotRespondInTime" xml:space="preserve">
+    <value>The background service did not respond in time.</value>
+  </data>
+  <data name="TheBackgroundServiceHelperIsMissingReinstallBeszelAgentManager" xml:space="preserve">
+    <value>The background-service helper is missing. Reinstall BeszelAgentManager.</value>
+  </data>
+  <data name="TheBackgroundServiceIsApplyingTheServiceAndFirewall" xml:space="preserve">
+    <value>The background service is applying the service and firewall configuration.</value>
+  </data>
+  <data name="TheBackgroundServiceIsCompletingTheOperationThisCan" xml:space="preserve">
+    <value>The background service is completing the operation. This can take a moment while files are downloaded or services are updated.</value>
+  </data>
+  <data name="TheBackgroundServiceIsCompletingTheRequestedAction" xml:space="preserve">
+    <value>The background service is completing the requested action.</value>
+  </data>
+  <data name="TheBackgroundServiceIsRotatingTheAgentLog" xml:space="preserve">
+    <value>The background service is rotating the agent log.</value>
+  </data>
+  <data name="TheBackgroundServiceReturnedAMismatchedBrokerResponse" xml:space="preserve">
+    <value>The background service returned a mismatched broker response.</value>
+  </data>
+  <data name="TheBackgroundServiceReturnedAnInvalidAgentStatus" xml:space="preserve">
+    <value>The background service returned an invalid agent status.</value>
+  </data>
+  <data name="TheBackgroundServiceReturnedAnInvalidBrokerResponse" xml:space="preserve">
+    <value>The background service returned an invalid broker response.</value>
+  </data>
+  <data name="TheBackgroundServiceReturnedCode0" xml:space="preserve">
+    <value>The background service returned code {0}.</value>
+  </data>
+  <data name="TheBackgroundServiceReturnedErrorCode0" xml:space="preserve">
+    <value>The background service returned error code {0}.</value>
+  </data>
+  <data name="TheBackgroundServiceReturnedExitCode0" xml:space="preserve">
+    <value>The background service returned exit code {0}.</value>
+  </data>
+  <data name="TheBeszelAgentArchiveChecksumIsMissingOrDoes" xml:space="preserve">
+    <value>The Beszel Agent archive checksum is missing or does not match. Installation was blocked.</value>
+  </data>
+  <data name="TheBeszelAgentManagerBackgroundServiceIsInstalledButNotRunning" xml:space="preserve">
+    <value>The BeszelAgentManager background service is installed but not running. Repair it now, or open Extra for service controls.</value>
+  </data>
+  <data name="TheBeszelAgentManagerBackgroundServiceIsNotAvailableReinstallOr" xml:space="preserve">
+    <value>The BeszelAgentManager background service is not available. Reinstall or restart the background service.</value>
+  </data>
+  <data name="TheBeszelAgentManagerBackgroundServiceIsNotInstalledInstallIt" xml:space="preserve">
+    <value>The BeszelAgentManager background service is not installed. Install it now, or open Extra for service controls.</value>
+  </data>
+  <data name="TheBeszelAgentServiceConfigurationAndAutomaticUpdateSchedule" xml:space="preserve">
+    <value>The Beszel Agent service configuration and automatic update schedule were updated.</value>
+  </data>
+  <data name="TheBeszelAgentServiceConfigurationCouldNotBeOpened" xml:space="preserve">
+    <value>The Beszel Agent service configuration could not be opened.</value>
+  </data>
+  <data name="TheBeszelAgentServiceIsAlreadyRunning" xml:space="preserve">
+    <value>The Beszel Agent service is already running.</value>
+  </data>
+  <data name="TheBeszelAgentServiceIsAlreadyStopped" xml:space="preserve">
+    <value>The Beszel Agent service is already stopped.</value>
+  </data>
+  <data name="TheBeszelAgentServiceIsNotInstalled" xml:space="preserve">
+    <value>The Beszel Agent service is not installed.</value>
+  </data>
+  <data name="TheConfigurationWasRejectedByTheSecurityPolicyRemove" xml:space="preserve">
+    <value>The configuration was rejected by the security policy. Remove unsupported or reserved environment variables and try again.</value>
+  </data>
+  <data name="TheConfigurationWasSavedAndTheBeszelAgentService" xml:space="preserve">
+    <value>The configuration was saved and the Beszel Agent service was restarted.</value>
+  </data>
+  <data name="TheConfiguredTokenWasKept" xml:space="preserve">
+    <value>The configured token was kept.</value>
+  </data>
+  <data name="TheCurrentAgentLogWasArchivedAndAFresh" xml:space="preserve">
+    <value>The current agent log was archived and a fresh log was started.</value>
+  </data>
+  <data name="TheCurrentManagerLogWasArchivedAndAFresh" xml:space="preserve">
+    <value>The current manager log was archived and a fresh log was started.</value>
+  </data>
+  <data name="TheCurrentSettingsAndAutomaticUpdateScheduleAreAlready" xml:space="preserve">
+    <value>The current settings and automatic update schedule are already applied.</value>
+  </data>
+  <data name="TheDownloadedArchiveDidNotContainBeszelAgentExe" xml:space="preserve">
+    <value>The downloaded archive did not contain beszel-agent.exe.</value>
+  </data>
+  <data name="TheElevatedHelperReturnedExitCode0" xml:space="preserve">
+    <value>The elevated helper returned exit code {0}.</value>
+  </data>
+  <data name="TheHelperReturnedExitCode0OpenExtraTo" xml:space="preserve">
+    <value>The helper returned exit code {0}. Open Extra to retry or inspect the service status.</value>
+  </data>
+  <data name="TheManagerWillRemainOpenCheckTheLogBefore" xml:space="preserve">
+    <value>The manager will remain open. Check the log before trying again.</value>
+  </data>
+  <data name="TheMicrosoftDefenderPreferenceWasUpdatedWithoutAUAC" xml:space="preserve">
+    <value>The Microsoft Defender preference was updated without a UAC prompt.</value>
+  </data>
+  <data name="TheNewUpdatePreferencesAreActive" xml:space="preserve">
+    <value>The new update preferences are active.</value>
+  </data>
+  <data name="ThePrivilegedBackgroundServiceIsInstalledAndRunning" xml:space="preserve">
+    <value>The privileged background service is installed and running.</value>
+  </data>
+  <data name="ThePrivilegedHelperIsNotPresentInTheApplication" xml:space="preserve">
+    <value>The privileged helper is not present in the application folder.</value>
+  </data>
+  <data name="ThereIsNoInstalledAgentExecutableOrWindowsService" xml:space="preserve">
+    <value>There is no installed agent executable or Windows service to remove.</value>
+  </data>
+  <data name="TheSavedTokenWasRemovedGITHUBTOKENRemainsActive" xml:space="preserve">
+    <value>The saved token was removed. GITHUB_TOKEN remains active from the environment.</value>
+  </data>
+  <data name="TheServiceActionCompleted" xml:space="preserve">
+    <value>The service action completed.</value>
+  </data>
+  <data name="TheServiceConfigurationWasUpdatedAndTheFirewallRule" xml:space="preserve">
+    <value>The service configuration was updated and the firewall rule was removed.</value>
+  </data>
+  <data name="TheServiceConfigurationWasUpdatedAndTheFirewallRule2" xml:space="preserve">
+    <value>The service configuration was updated and the firewall rule was added.</value>
+  </data>
+  <data name="TheServiceHelperReceivedAnUnknownCommand" xml:space="preserve">
+    <value>The service helper received an unknown command.</value>
+  </data>
+  <data name="TheServiceHelperReturnedErrorCode0" xml:space="preserve">
+    <value>The service helper returned error code {0}.</value>
+  </data>
+  <data name="ThirdPartyAntivirusAllowlistInstructions" xml:space="preserve">
+    <value>Third-party antivirus allowlist instructions</value>
+  </data>
+  <data name="ThirdPartyAVPaths" xml:space="preserve">
+    <value>Third-party AV paths...</value>
+  </data>
+  <data name="ThisExcludesOnlyTheBeszelAgentManagerInstallationDirectoryFromMicrosoft" xml:space="preserve">
+    <value>This excludes only the BeszelAgentManager installation directory from Microsoft Defender scanning. Enable it only if Defender interferes with the application.</value>
+  </data>
+  <data name="ThisResetsTheBeszelAgentFingerprintAndRestartsThe" xml:space="preserve">
+    <value>This resets the Beszel Agent fingerprint and restarts the service. The machine may need to be re-registered in the hub.</value>
+  </data>
+  <data name="ThisRestoresNormalMicrosoftDefenderScanningForTheBeszelAgentManager" xml:space="preserve">
+    <value>This restores normal Microsoft Defender scanning for the BeszelAgentManager installation directory.</value>
+  </data>
+  <data name="ThisSettingWasSaved" xml:space="preserve">
+    <value>This setting was saved.</value>
+  </data>
+  <data name="ThisVersionNeedsToBeInstalledManuallyOpenThe" xml:space="preserve">
+    <value>This version needs to be installed manually. Open the official release page, download {0}, and run it to update. Windows will ask for administrator approval.</value>
+  </data>
+  <data name="ThisWillDownloadTheLatestStableBeszelAgentAnd" xml:space="preserve">
+    <value>This will download the latest stable Beszel Agent and restart the service.</value>
+  </data>
+  <data name="ThisWillDownloadTheLatestStableBeszelAgentInstall" xml:space="preserve">
+    <value>This will download the latest stable Beszel Agent, install it to Program Files, configure the Windows service, and apply the current Connection settings.</value>
+  </data>
+  <data name="ThisWillInstallTheSelectedVersionAndRestartThe" xml:space="preserve">
+    <value>This will install the selected version and restart the service.</value>
+  </data>
+  <data name="ThisWillStopAndRemoveTheBeszelAgentService" xml:space="preserve">
+    <value>This will stop and remove the Beszel Agent service, scheduled agent tasks, firewall rule, agent files, legacy agent folder, and temporary agent files.
+
+Manager settings and manager logs are kept.</value>
+  </data>
+  <data name="Token" xml:space="preserve">
+    <value>Token</value>
+  </data>
+  <data name="Token2" xml:space="preserve">
+    <value>Token:</value>
+  </data>
+  <data name="Truncated" xml:space="preserve">
+    <value>(truncated)</value>
+  </data>
+  <data name="Type" xml:space="preserve">
+    <value>Type:</value>
+  </data>
+  <data name="Uninstall" xml:space="preserve">
+    <value>Uninstall</value>
+  </data>
+  <data name="UninstallAgent" xml:space="preserve">
+    <value>Uninstall agent</value>
+  </data>
+  <data name="UninstallBackgroundService" xml:space="preserve">
+    <value>Uninstall background service?</value>
+  </data>
+  <data name="UninstallBeszelAgent" xml:space="preserve">
+    <value>Uninstall Beszel Agent?</value>
+  </data>
+  <data name="Uninstalling" xml:space="preserve">
+    <value>Uninstalling...</value>
+  </data>
+  <data name="UnknownNavigationItemTag0" xml:space="preserve">
+    <value>Unknown navigation item tag: {0}</value>
+  </data>
+  <data name="UpdateAgent" xml:space="preserve">
+    <value>Update agent</value>
+  </data>
+  <data name="UpdateBeszelAgent" xml:space="preserve">
+    <value>Update Beszel Agent?</value>
+  </data>
+  <data name="UpdateCouldNotBeStarted" xml:space="preserve">
+    <value>Update could not be started</value>
+  </data>
+  <data name="UpdateCouldNotBeVerified" xml:space="preserve">
+    <value>Update could not be verified</value>
+  </data>
+  <data name="UpdateManager" xml:space="preserve">
+    <value>Update Manager</value>
+  </data>
+  <data name="UpdateSettings" xml:space="preserve">
+    <value>Update settings...</value>
+  </data>
+  <data name="Updating" xml:space="preserve">
+    <value>Updating...</value>
+  </data>
+  <data name="UseInstallAgentFirstToInstallAndConfigureBeszel" xml:space="preserve">
+    <value>Use Install agent first to install and configure Beszel Agent.</value>
+  </data>
+  <data name="VerifiedUpdatesInstallThroughTheBackgroundServiceOtherVersions" xml:space="preserve">
+    <value>Verified updates install through the background service. Other versions can be downloaded from the official release page and installed manually.</value>
+  </data>
+  <data name="VerifyingSignedUpdate" xml:space="preserve">
+    <value>Verifying signed update</value>
+  </data>
+  <data name="Version0IsAvailable" xml:space="preserve">
+    <value>Version {0} is available.</value>
+  </data>
+  <data name="View" xml:space="preserve">
+    <value>View</value>
+  </data>
+  <data name="ViewOrResetTheFingerprintAfterCloningAVM" xml:space="preserve">
+    <value>View or reset the fingerprint after cloning a VM or re-registering this machine.</value>
+  </data>
+  <data name="Warning" xml:space="preserve">
+    <value>Warning</value>
+  </data>
+  <data name="Warnings" xml:space="preserve">
+    <value>Warnings</value>
+  </data>
+  <data name="WebSocketBackoffSaved" xml:space="preserve">
+    <value>WebSocket backoff saved</value>
+  </data>
+  <data name="WebSocketOfflineBackoff" xml:space="preserve">
+    <value>WebSocket offline backoff</value>
+  </data>
+  <data name="YouCanNowEditTheBeszelAgentServiceSettings" xml:space="preserve">
+    <value>You can now edit the Beszel Agent service settings.</value>
+  </data>
+  <data name="ZFSPoolDetailRefreshIntervalScrubVdevsDatasetsFor" xml:space="preserve">
+    <value>ZFS pool detail refresh interval (scrub, vdevs, datasets), for example 1h. Not applicable to Windows.</value>
+  </data>
+  <data name="LanguageSaved" xml:space="preserve"><value>Language saved</value></data>
+  <data name="RestartForLanguageChange" xml:space="preserve"><value>Restart BeszelAgentManager now to apply the new language?</value></data>
+  <data name="RestartNow" xml:space="preserve"><value>Restart now</value></data>
+  <data name="Later" xml:space="preserve"><value>Later</value></data>
+  <data name="ManagerRestartFailed" xml:space="preserve"><value>Could not restart manager</value></data>
+  <data name="LanguageSavedRestartManually" xml:space="preserve"><value>Your language preference is saved. Please restart the manager manually.</value></data>
+  <data name="Language" xml:space="preserve"><value>Language</value></data>
+  <data name="SwitchLanguage" xml:space="preserve"><value>Switch language</value></data>
+  <data name="StateRunning" xml:space="preserve"><value>RUNNING</value></data>
+  <data name="StateStopped" xml:space="preserve"><value>STOPPED</value></data>
+  <data name="StateStarting" xml:space="preserve"><value>START_PENDING</value></data>
+  <data name="StateStopping" xml:space="preserve"><value>STOP_PENDING</value></data>
+  <data name="StateContinuing" xml:space="preserve"><value>CONTINUE_PENDING</value></data>
+  <data name="StatePausing" xml:space="preserve"><value>PAUSE_PENDING</value></data>
+  <data name="StatePaused" xml:space="preserve"><value>PAUSED</value></data>
+  <data name="StateUnknown" xml:space="preserve"><value>Unknown</value></data>
+  <data name="StateNotInstalled" xml:space="preserve"><value>Not installed</value></data>
+  <data name="OK" xml:space="preserve"><value>OK</value></data>
+</root>

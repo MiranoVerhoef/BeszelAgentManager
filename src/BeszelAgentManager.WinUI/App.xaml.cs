@@ -1,4 +1,4 @@
-﻿using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml;
 using BeszelAgentManager.WinUI.Services;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Data;
@@ -49,6 +49,7 @@ public partial class App : Application
         _mainInstance.Activated += MainInstance_Activated;
         var configService = new ConfigService();
         var config = await configService.LoadAsync();
+        Localization.Initialize(config.UiLanguage);
         Logger.SetDebugEnabled(config.DebugLogging);
         Logger.Info($"Starting WinUI manager v{AppInfo.ReleaseTag}");
         var legacyMigration = await configService.MigrateLegacyFileSettingsAsync(config);
@@ -65,15 +66,15 @@ public partial class App : Application
         {
             MainWindow.ShowActionStatus(
                 InfoBarSeverity.Warning,
-                "Legacy agent settings need attention",
-                $"Could not migrate {string.Join(", ", legacyMigration.Failed)}. Enter KEY/TOKEN values directly and preserve or re-register the fingerprint before applying settings.");
+                Localization.Get("LegacyAgentSettingsNeedAttention"),
+                Localization.Get("CouldNotMigrate0EnterKEYTOKENValuesDirectly", string.Join(", ", legacyMigration.Failed)));
         }
         else if (legacyMigration.Migrated.Count > 0)
         {
             MainWindow.ShowActionStatus(
                 InfoBarSeverity.Success,
-                "Legacy agent settings migrated",
-                $"Migrated {string.Join(", ", legacyMigration.Migrated)} without exposing their file paths to the privileged service.");
+                Localization.Get("LegacyAgentSettingsMigrated"),
+                Localization.Get("Migrated0WithoutExposingTheirFilePathsToThe", string.Join(", ", legacyMigration.Migrated)));
         }
         var startHidden = Environment.GetCommandLineArgs().Any(static argument =>
             string.Equals(argument, "--hidden", StringComparison.OrdinalIgnoreCase));
@@ -94,14 +95,14 @@ public partial class App : Application
                 {
                     var completed = result.RootElement.TryGetProperty("status", out var status) && status.GetString() == "completed";
                     MainWindow.ShowActionStatus(completed ? InfoBarSeverity.Success : InfoBarSeverity.Error,
-                        completed ? "Manager update completed" : "Manager update needs attention", message.GetString() ?? "Inspect the background-service log.");
+                        completed ? Localization.Get("ManagerUpdateCompleted") : Localization.Get("ManagerUpdateNeedsAttention"), message.GetString() ?? Localization.Get("InspectTheBackgroundServiceLog"));
                 }
             }
             catch (Exception ex)
             {
                 Logger.Error($"Could not read manager update result: {ex.Message}");
-                MainWindow.ShowActionStatus(InfoBarSeverity.Warning, "Manager update needs attention",
-                    "Could not verify the update result. Check the installed version and background service in Extra.");
+                MainWindow.ShowActionStatus(InfoBarSeverity.Warning, Localization.Get("ManagerUpdateNeedsAttention"),
+                    Localization.Get("CouldNotVerifyTheUpdateResultCheckTheInstalled"));
             }
         }
     }

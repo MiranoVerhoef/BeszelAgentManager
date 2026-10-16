@@ -56,7 +56,7 @@ internal sealed partial class BackgroundServiceManagementService
         var helperPath = Path.Combine(AppContext.BaseDirectory, "helper", "BeszelAgentManager.Helper.exe");
         if (!File.Exists(helperPath))
         {
-            throw new FileNotFoundException("The background-service helper is missing. Reinstall BeszelAgentManager.", helperPath);
+            throw new FileNotFoundException(Localization.Get("TheBackgroundServiceHelperIsMissingReinstallBeszelAgentManager"), helperPath);
         }
 
         using var process = Process.Start(new ProcessStartInfo
@@ -66,7 +66,7 @@ internal sealed partial class BackgroundServiceManagementService
             UseShellExecute = true,
             Verb = "runas",
             WindowStyle = ProcessWindowStyle.Hidden,
-        }) ?? throw new InvalidOperationException("Could not start the background-service helper.");
+        }) ?? throw new InvalidOperationException(Localization.Get("CouldNotStartTheBackgroundServiceHelper"));
         await process.WaitForExitAsync();
         return process.ExitCode;
     }
@@ -89,7 +89,7 @@ internal sealed partial class BackgroundServiceManagementService
         }
 
         using var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("Could not query the Windows service manager.");
+            ?? throw new InvalidOperationException(Localization.Get("CouldNotQueryTheWindowsServiceManager"));
         var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
         var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
         await process.WaitForExitAsync(cancellationToken);

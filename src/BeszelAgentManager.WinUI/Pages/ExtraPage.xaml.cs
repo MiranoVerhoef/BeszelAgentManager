@@ -2,6 +2,7 @@ using BeszelAgentManager.WinUI.Services;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.Windows.AppLifecycle;
 using Windows.ApplicationModel.DataTransfer;
 
 namespace BeszelAgentManager.WinUI.Pages;
@@ -36,10 +37,64 @@ public sealed partial class ExtraPage : Page
                 : 24).ToString();
         RestartIntervalUnitComboBox.SelectedIndex = unit == "minutes" ? 1 : 0;
         WebSocketBackoffCheckBox.IsChecked = _config.WebSocketOfflineBackoffEnabled;
+        LanguageComboBox.SelectedIndex = _config.UiLanguage == "zh-Hans" ? 1 : 0;
         UpdatePeriodicRestartControlState();
         UpdateDefenderButton();
         _loading = false;
         await RefreshBackgroundServiceStatusAsync(showNotification: false);
+    }
+
+    private async void LanguageComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_loading || LanguageComboBox.SelectedItem is not ComboBoxItem { Tag: string language })
+        {
+            return;
+        }
+
+        var previousLanguage = _config.UiLanguage;
+        if (language == previousLanguage)
+        {
+            return;
+        }
+
+        LanguageComboBox.IsEnabled = false;
+        try
+        {
+            var persisted = await _configService.LoadAsync();
+            persisted.UiLanguage = language;
+            await _configService.SaveAsync(persisted);
+            _config.UiLanguage = language;
+        }
+        catch (Exception ex)
+        {
+            _loading = true;
+            LanguageComboBox.SelectedIndex = previousLanguage == "zh-Hans" ? 1 : 0;
+            _loading = false;
+            App.Logger.Error($"Could not save UI language: {ex}");
+            App.MainWindow.ShowActionStatus(InfoBarSeverity.Error, Localization.Get("CouldNotSaveSettings"), ex.Message);
+            return;
+        }
+        finally
+        {
+            LanguageComboBox.IsEnabled = true;
+        }
+
+        var restartDialog = new ContentDialog
+        {
+            XamlRoot = App.MainWindow.Content.XamlRoot,
+            Title = Localization.Get("LanguageSaved"),
+            Content = Localization.Get("RestartForLanguageChange"),
+            PrimaryButtonText = Localization.Get("RestartNow"),
+            CloseButtonText = Localization.Get("Later"),
+            DefaultButton = ContentDialogButton.Close,
+        };
+        if (await restartDialog.ShowAsync() == ContentDialogResult.Primary)
+        {
+            var failure = AppInstance.Restart(string.Empty);
+            App.Logger.Error($"Manager restart failed after language change: {failure}");
+            App.MainWindow.ShowActionStatus(InfoBarSeverity.Error,
+                Localization.Get("ManagerRestartFailed"), Localization.Get("LanguageSavedRestartManually"));
+        }
     }
 
     private async void InstallBackgroundServiceButton_Click(object sender, RoutedEventArgs e)
@@ -53,20 +108,20 @@ public sealed partial class ExtraPage : Page
             {
                 var detail = BackgroundServiceManagementService.ReadLastHelperError();
                 throw new InvalidOperationException(string.IsNullOrWhiteSpace(detail)
-                    ? $"The elevated helper returned exit code {exitCode}."
+                    ? Localization.Get("TheElevatedHelperReturnedExitCode0", exitCode)
                     : detail);
             }
 
             await RefreshBackgroundServiceStatusAsync(showNotification: false);
             App.MainWindow.ShowActionStatus(
                 InfoBarSeverity.Success,
-                "Background service installed",
-                "The privileged background service is installed and running.");
+                Localization.Get("BackgroundServiceInstalled"),
+                Localization.Get("ThePrivilegedBackgroundServiceIsInstalledAndRunning"));
         }
         catch (Exception ex)
         {
             App.Logger.Error($"Background service installation failed: {ex}");
-            App.MainWindow.ShowActionStatus(InfoBarSeverity.Error, "Background service installation failed", ex.Message);
+            App.MainWindow.ShowActionStatus(InfoBarSeverity.Error, Localization.Get("BackgroundServiceInstallationFailed"), ex.Message);
         }
         finally
         {
@@ -79,10 +134,10 @@ public sealed partial class ExtraPage : Page
         var confirm = new ContentDialog
         {
             XamlRoot = XamlRoot,
-            Title = "Uninstall background service?",
-            Content = "Privileged actions and schedules will stop working until the service is installed again. Manager settings and agent data are kept.",
-            PrimaryButtonText = "Uninstall",
-            CloseButtonText = "Cancel",
+            Title = Localization.Get("UninstallBackgroundService"),
+            Content = Localization.Get("PrivilegedActionsAndSchedulesWillStopWorkingUntilThe"),
+            PrimaryButtonText = Localization.Get("Uninstall"),
+            CloseButtonText = Localization.Get("Cancel"),
             DefaultButton = ContentDialogButton.Close,
         };
         if (await confirm.ShowAsync() != ContentDialogResult.Primary)
@@ -97,19 +152,19 @@ public sealed partial class ExtraPage : Page
             var exitCode = await _backgroundServiceManagementService.UninstallAsync();
             if (exitCode != 0)
             {
-                throw new InvalidOperationException($"The elevated helper returned exit code {exitCode}.");
+                throw new InvalidOperationException(Localization.Get("TheElevatedHelperReturnedExitCode0", exitCode));
             }
 
             await RefreshBackgroundServiceStatusAsync(showNotification: false);
             App.MainWindow.ShowActionStatus(
                 InfoBarSeverity.Success,
-                "Background service uninstalled",
-                "Manager settings and agent data were kept.");
+                Localization.Get("BackgroundServiceUninstalled"),
+                Localization.Get("ManagerSettingsAndAgentDataWereKept"));
         }
         catch (Exception ex)
         {
             App.Logger.Error($"Background service uninstall failed: {ex}");
-            App.MainWindow.ShowActionStatus(InfoBarSeverity.Error, "Background service uninstall failed", ex.Message);
+            App.MainWindow.ShowActionStatus(InfoBarSeverity.Error, Localization.Get("BackgroundServiceUninstallFailed"), ex.Message);
         }
         finally
         {
@@ -129,23 +184,23 @@ public sealed partial class ExtraPage : Page
         {
             var status = await _backgroundServiceManagementService.GetStatusAsync();
             _backgroundServiceInstalled = status.IsInstalled;
-            BackgroundServiceStatusText.Text = $"Status: {status.State}";
+            BackgroundServiceStatusText.Text = Localization.Get("Status0", Localization.Status(status.State));
             UninstallBackgroundServiceButton.IsEnabled = status.IsInstalled;
             if (showNotification)
             {
                 App.MainWindow.ShowActionStatus(
                     status.IsInstalled ? InfoBarSeverity.Success : InfoBarSeverity.Warning,
-                    status.IsInstalled ? "Background service found" : "Background service not installed",
-                    status.IsInstalled ? $"Current state: {status.State}." : "Choose Install to repair the background service.");
+                    status.IsInstalled ? Localization.Get("BackgroundServiceFound") : Localization.Get("BackgroundServiceNotInstalled"),
+                    status.IsInstalled ? Localization.Get("CurrentState0", Localization.Status(status.State)) : Localization.Get("ChooseInstallToRepairTheBackgroundService"));
             }
         }
         catch (Exception ex)
         {
-            BackgroundServiceStatusText.Text = "Status: check failed";
+            BackgroundServiceStatusText.Text = Localization.Get("StatusCheckFailed");
             App.Logger.Error($"Background service status check failed: {ex}");
             if (showNotification)
             {
-                App.MainWindow.ShowActionStatus(InfoBarSeverity.Error, "Background service check failed", ex.Message);
+                App.MainWindow.ShowActionStatus(InfoBarSeverity.Error, Localization.Get("BackgroundServiceCheckFailed"), ex.Message);
             }
         }
         finally
@@ -181,8 +236,8 @@ public sealed partial class ExtraPage : Page
             WebSocketBackoffCheckBox.IsChecked = false;
             App.MainWindow.ShowActionStatus(
                 InfoBarSeverity.Warning,
-                "Conflicting retry settings",
-                "Remove EXIT_ON_DNS_ERROR under Environment before enabling WebSocket offline backoff.");
+                Localization.Get("ConflictingRetrySettings"),
+                Localization.Get("RemoveEXITONDNSERRORUnderEnvironmentBeforeEnabling"));
             return;
         }
 
@@ -194,8 +249,8 @@ public sealed partial class ExtraPage : Page
         App.Logger.Info($"WebSocket offline backoff saved: enabled={_config.WebSocketOfflineBackoffEnabled}");
         App.MainWindow.ShowActionStatus(
             InfoBarSeverity.Informational,
-            "WebSocket backoff saved",
-            "Choose Apply settings to update the background service.");
+            Localization.Get("WebSocketBackoffSaved"),
+            Localization.Get("ChooseApplySettingsToUpdateTheBackgroundService"));
     }
 
     private async void RestartIntervalTextBox_LostFocus(object sender, RoutedEventArgs e)
@@ -231,10 +286,10 @@ public sealed partial class ExtraPage : Page
         {
             App.MainWindow.ShowActionStatus(
                 InfoBarSeverity.Warning,
-                "Invalid restart interval",
+                Localization.Get("InvalidRestartInterval"),
                 unit == "minutes"
-                    ? "Enter a whole number from 1 to 10080 minutes."
-                    : "Enter a whole number from 1 to 168 hours.");
+                    ? Localization.Get("EnterAWholeNumberFrom1To10080Minutes")
+                    : Localization.Get("EnterAWholeNumberFrom1To168Hours"));
             return;
         }
 
@@ -253,8 +308,8 @@ public sealed partial class ExtraPage : Page
         App.Logger.Info($"Periodic service restart saved: enabled={_config.AutoRestartEnabled}, interval={interval} {unit}");
         App.MainWindow.ShowActionStatus(
             InfoBarSeverity.Informational,
-            "Periodic restart saved",
-            "Choose Apply settings to update the background-service schedule.");
+            Localization.Get("PeriodicRestartSaved"),
+            Localization.Get("ChooseApplySettingsToUpdateTheBackgroundServiceSchedule"));
     }
 
     private void UpdatePeriodicRestartControlState()
@@ -287,8 +342,8 @@ public sealed partial class ExtraPage : Page
     private void UpdateDefenderButton()
     {
         DefenderExclusionButton.Content = _config.DefenderExclusionEnabled
-            ? "Remove Defender exclusion"
-            : "Add Defender exclusion";
+            ? Localization.Get("RemoveDefenderExclusion")
+            : Localization.Get("AddDefenderExclusion");
     }
 
     private async void DefenderExclusionButton_Click(object sender, RoutedEventArgs e)
@@ -297,16 +352,16 @@ public sealed partial class ExtraPage : Page
         var confirm = new ContentDialog
         {
             XamlRoot = XamlRoot,
-            Title = enabling ? "Add Defender exclusion?" : "Remove Defender exclusion?",
+            Title = enabling ? Localization.Get("AddDefenderExclusion2") : Localization.Get("RemoveDefenderExclusion2"),
             Content = new TextBlock
             {
                 Text = enabling
-                    ? "This excludes only the BeszelAgentManager installation directory from Microsoft Defender scanning. Enable it only if Defender interferes with the application."
-                    : "This restores normal Microsoft Defender scanning for the BeszelAgentManager installation directory.",
+                    ? Localization.Get("ThisExcludesOnlyTheBeszelAgentManagerInstallationDirectoryFromMicrosoft")
+                    : Localization.Get("ThisRestoresNormalMicrosoftDefenderScanningForTheBeszelAgentManager"),
                 TextWrapping = TextWrapping.Wrap,
             },
-            PrimaryButtonText = enabling ? "Add exclusion" : "Remove exclusion",
-            CloseButtonText = "Cancel",
+            PrimaryButtonText = enabling ? Localization.Get("AddExclusion") : Localization.Get("RemoveExclusion"),
+            CloseButtonText = Localization.Get("Cancel"),
             DefaultButton = ContentDialogButton.Primary,
         };
         if (await confirm.ShowAsync() != ContentDialogResult.Primary)
@@ -320,7 +375,7 @@ public sealed partial class ExtraPage : Page
             var exitCode = await App.Broker.SetDefenderExclusionAsync(enabling);
             if (exitCode != 0)
             {
-                throw new InvalidOperationException($"The background service returned code {exitCode}.");
+                throw new InvalidOperationException(Localization.Get("TheBackgroundServiceReturnedCode0", exitCode));
             }
 
             _config.DefenderExclusionEnabled = enabling;
@@ -329,13 +384,13 @@ public sealed partial class ExtraPage : Page
             App.Logger.Info($"Windows Defender exclusion {(enabling ? "added" : "removed")}");
             App.MainWindow.ShowActionStatus(
                 InfoBarSeverity.Success,
-                enabling ? "Defender exclusion added" : "Defender exclusion removed",
-                "The Microsoft Defender preference was updated without a UAC prompt.");
+                enabling ? Localization.Get("DefenderExclusionAdded") : Localization.Get("DefenderExclusionRemoved"),
+                Localization.Get("TheMicrosoftDefenderPreferenceWasUpdatedWithoutAUAC"));
         }
         catch (Exception ex)
         {
             App.Logger.Error($"Defender exclusion update failed: {ex}");
-            App.MainWindow.ShowActionStatus(InfoBarSeverity.Error, "Defender exclusion update failed", ex.Message);
+            App.MainWindow.ShowActionStatus(InfoBarSeverity.Error, Localization.Get("DefenderExclusionUpdateFailed"), ex.Message);
         }
         finally
         {
@@ -349,23 +404,23 @@ public sealed partial class ExtraPage : Page
         var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
         (string Title, string[] Values)[] sections =
         [
-            ("Application folders",
+            (Localization.Get("ApplicationFolders"),
             [
                 Path.Combine(programFiles, "BeszelAgentManager"),
                 Path.Combine(programFiles, "Beszel-Agent"),
             ]),
-            ("Data, logs, and update staging",
+            (Localization.Get("DataLogsAndUpdateStaging"),
             [
                 Path.Combine(programData, "BeszelAgentManager"),
                 Path.Combine(programData, "BeszelAgentManager.ServiceData"),
             ]),
-            ("Executables and processes",
+            (Localization.Get("ExecutablesAndProcesses"),
             [
                 "BeszelAgentManager.exe",
                 "BeszelAgentManager.Helper.exe",
                 "beszel-agent.exe",
                 "nssm.exe",
-                "BeszelAgentManagerSetup.exe or BeszelAgentManagerSetup-Lite.exe (only while installing or updating)",
+                Localization.Get("BeszelAgentManagerSetupExeOrBeszelAgentManagerSetupLiteExeOnlyWhileInstalling"),
             ]),
         ];
         var instructions = string.Join(
@@ -387,10 +442,10 @@ public sealed partial class ExtraPage : Page
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
-            Title = "Third-party antivirus allowlist instructions",
+            Title = Localization.Get("ThirdPartyAntivirusAllowlistInstructions"),
             Content = scrollViewer,
-            PrimaryButtonText = "Copy instructions",
-            CloseButtonText = "Close",
+            PrimaryButtonText = Localization.Get("CopyInstructions"),
+            CloseButtonText = Localization.Get("Close"),
             DefaultButton = ContentDialogButton.Close,
         };
         if (await dialog.ShowAsync() == ContentDialogResult.Primary)
@@ -400,8 +455,8 @@ public sealed partial class ExtraPage : Page
             Clipboard.SetContent(package);
             App.MainWindow.ShowActionStatus(
                 InfoBarSeverity.Success,
-                "Instructions copied",
-                "The antivirus allowlist instructions were copied to the clipboard.");
+                Localization.Get("InstructionsCopied"),
+                Localization.Get("TheAntivirusAllowlistInstructionsWereCopiedToTheClipboard"));
         }
 
         void AddSection(string title, IEnumerable<string> values)
@@ -430,7 +485,7 @@ public sealed partial class ExtraPage : Page
         App.Logger.Info("GitHub authentication settings requested");
         var passwordBox = new PasswordBox
         {
-            PlaceholderText = "GitHub token",
+            PlaceholderText = Localization.Get("GitHubToken"),
             Width = 420,
         };
 
@@ -447,7 +502,7 @@ public sealed partial class ExtraPage : Page
         {
             panel.Children.Add(new TextBlock
             {
-                Text = "GITHUB_TOKEN is set in the environment and will override any saved token.",
+                Text = Localization.Get("GITHUBTOKENIsSetInTheEnvironmentAndWill"),
                 TextWrapping = TextWrapping.Wrap,
             });
         }
@@ -455,8 +510,8 @@ public sealed partial class ExtraPage : Page
         panel.Children.Add(new TextBlock
         {
             Text = hasEnvironmentToken || hasSavedToken
-                ? "A GitHub token is configured. Leave the masked value unchanged to keep it, or enter a new token. Choose Clear to remove the saved token."
-                : "Enter a GitHub token to avoid API rate limiting.",
+                ? Localization.Get("AGitHubTokenIsConfiguredLeaveTheMaskedValue")
+                : Localization.Get("EnterAGitHubTokenToAvoidAPIRateLimiting"),
             TextWrapping = TextWrapping.Wrap,
         });
         panel.Children.Add(passwordBox);
@@ -464,11 +519,11 @@ public sealed partial class ExtraPage : Page
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
-            Title = "GitHub Authentication",
+            Title = Localization.Get("GitHubAuthentication"),
             Content = panel,
-            PrimaryButtonText = "Save",
-            SecondaryButtonText = "Clear",
-            CloseButtonText = "Cancel",
+            PrimaryButtonText = Localization.Get("Save"),
+            SecondaryButtonText = Localization.Get("Clear"),
+            CloseButtonText = Localization.Get("Cancel"),
             DefaultButton = ContentDialogButton.Primary,
         };
 
@@ -480,20 +535,20 @@ public sealed partial class ExtraPage : Page
                 var token = passwordBox.Password.Trim();
                 if (token == MaskedToken && (hasEnvironmentToken || hasSavedToken))
                 {
-                    App.MainWindow.ShowActionStatus(InfoBarSeverity.Informational, "GitHub token unchanged", "The configured token was kept.");
+                    App.MainWindow.ShowActionStatus(InfoBarSeverity.Informational, Localization.Get("GitHubTokenUnchanged"), Localization.Get("TheConfiguredTokenWasKept"));
                     return;
                 }
 
                 if (string.IsNullOrWhiteSpace(token))
                 {
-                    App.MainWindow.ShowActionStatus(InfoBarSeverity.Warning, "GitHub token not changed", "Enter a token or choose Clear.");
+                    App.MainWindow.ShowActionStatus(InfoBarSeverity.Warning, Localization.Get("GitHubTokenNotChanged"), Localization.Get("EnterATokenOrChooseClear"));
                     return;
                 }
 
                 await _gitHubTokenService.SaveTokenAsync(token);
                 _config = await _configService.LoadAsync();
                 App.Logger.Info("GitHub token saved");
-                App.MainWindow.ShowActionStatus(InfoBarSeverity.Success, "GitHub token saved", "GitHub API requests will use the saved token.");
+                App.MainWindow.ShowActionStatus(InfoBarSeverity.Success, Localization.Get("GitHubTokenSaved"), Localization.Get("GitHubAPIRequestsWillUseTheSavedToken"));
             }
             else if (result == ContentDialogResult.Secondary)
             {
@@ -502,16 +557,16 @@ public sealed partial class ExtraPage : Page
                 App.Logger.Info("GitHub token cleared");
                 App.MainWindow.ShowActionStatus(
                     InfoBarSeverity.Success,
-                    "GitHub token cleared",
+                    Localization.Get("GitHubTokenCleared"),
                     hasEnvironmentToken
-                        ? "The saved token was removed. GITHUB_TOKEN remains active from the environment."
-                        : "Saved GitHub authentication has been removed.");
+                        ? Localization.Get("TheSavedTokenWasRemovedGITHUBTOKENRemainsActive")
+                        : Localization.Get("SavedGitHubAuthenticationHasBeenRemoved"));
             }
         }
         catch (Exception ex)
         {
             App.Logger.Error($"GitHub authentication update failed: {ex}");
-            App.MainWindow.ShowActionStatus(InfoBarSeverity.Error, "GitHub auth failed", ex.Message);
+            App.MainWindow.ShowActionStatus(InfoBarSeverity.Error, Localization.Get("GitHubAuthFailed"), ex.Message);
         }
     }
 
@@ -529,7 +584,7 @@ public sealed partial class ExtraPage : Page
             }
 
             App.Logger.Warning($"Agent fingerprint view failed: {result.Output}");
-            App.MainWindow.ShowActionStatus(InfoBarSeverity.Error, "Fingerprint view failed", result.Output);
+            App.MainWindow.ShowActionStatus(InfoBarSeverity.Error, Localization.Get("FingerprintViewFailed"), result.Output);
         }
         finally
         {
@@ -542,14 +597,14 @@ public sealed partial class ExtraPage : Page
         var confirm = new ContentDialog
         {
             XamlRoot = XamlRoot,
-            Title = "Reset fingerprint",
+            Title = Localization.Get("ResetFingerprint"),
             Content = new TextBlock
             {
-                Text = "This resets the Beszel Agent fingerprint and restarts the service. The machine may need to be re-registered in the hub.",
+                Text = Localization.Get("ThisResetsTheBeszelAgentFingerprintAndRestartsThe"),
                 TextWrapping = TextWrapping.Wrap,
             },
-            PrimaryButtonText = "Reset",
-            CloseButtonText = "Cancel",
+            PrimaryButtonText = Localization.Get("Reset"),
+            CloseButtonText = Localization.Get("Cancel"),
             DefaultButton = ContentDialogButton.Primary,
         };
 
@@ -566,17 +621,17 @@ public sealed partial class ExtraPage : Page
             if (exitCode == 0)
             {
                 App.Logger.Info("Agent fingerprint reset completed successfully");
-                App.MainWindow.ShowActionStatus(InfoBarSeverity.Success, "Fingerprint reset", "The agent fingerprint was reset and the service was started.");
+                App.MainWindow.ShowActionStatus(InfoBarSeverity.Success, Localization.Get("FingerprintReset"), Localization.Get("TheAgentFingerprintWasResetAndTheServiceWas"));
                 return;
             }
 
             App.Logger.Error($"Agent fingerprint reset failed with helper exit code {exitCode}");
-            App.MainWindow.ShowActionStatus(InfoBarSeverity.Error, "Fingerprint reset failed", $"The background service returned exit code {exitCode}.");
+            App.MainWindow.ShowActionStatus(InfoBarSeverity.Error, Localization.Get("FingerprintResetFailed"), Localization.Get("TheBackgroundServiceReturnedExitCode0", exitCode));
         }
         catch (Exception ex)
         {
             App.Logger.Error($"Agent fingerprint reset failed: {ex}");
-            App.MainWindow.ShowActionStatus(InfoBarSeverity.Error, "Fingerprint reset failed", ex.Message);
+            App.MainWindow.ShowActionStatus(InfoBarSeverity.Error, Localization.Get("FingerprintResetFailed"), ex.Message);
         }
         finally
         {
@@ -596,10 +651,10 @@ public sealed partial class ExtraPage : Page
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
-            Title = "Agent Fingerprint",
+            Title = Localization.Get("AgentFingerprint"),
             Content = textBox,
-            PrimaryButtonText = "Copy",
-            CloseButtonText = "Close",
+            PrimaryButtonText = Localization.Get("Copy"),
+            CloseButtonText = Localization.Get("Close"),
             DefaultButton = ContentDialogButton.Primary,
         };
 
@@ -608,7 +663,7 @@ public sealed partial class ExtraPage : Page
             var package = new DataPackage();
             package.SetText(textBox.Text);
             Clipboard.SetContent(package);
-            App.MainWindow.ShowActionStatus(InfoBarSeverity.Success, "Fingerprint copied", "The agent fingerprint was copied to the clipboard.");
+            App.MainWindow.ShowActionStatus(InfoBarSeverity.Success, Localization.Get("FingerprintCopied"), Localization.Get("TheAgentFingerprintWasCopiedToTheClipboard"));
         }
     }
 
